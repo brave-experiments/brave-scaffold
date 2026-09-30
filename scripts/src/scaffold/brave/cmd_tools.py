@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import contextlib
 import os
+import shlex
 import shutil
 import stat
 import tempfile
@@ -29,7 +30,8 @@ def local_shims(toolchain):
     directory = tempfile.mkdtemp(prefix="scaffold-shims-")
     try:
         shim = Path(directory) / "pnpm"
-        shim.write_text("#!/bin/sh\nexec '%s' '%s' \"$@\"\n" % (toolchain.node, toolchain.manager_entry))
+        shim.write_text("#!/bin/sh\nexec %s %s \"$@\"\n" % (shlex.quote(str(toolchain.node)),
+                                                             shlex.quote(str(toolchain.manager_entry))))
         shim.chmod(shim.stat().st_mode | stat.S_IXUSR)
         yield directory
     finally:

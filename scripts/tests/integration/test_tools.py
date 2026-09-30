@@ -40,6 +40,17 @@ class PackageExecutionTests(SandboxTest):
         self.assertEqual(record["launcher"], str(self.core))
         self.assertFalse((self.sandbox.root / "global-used").exists())
 
+    def test_the_pnpm_shim_works_from_a_checkout_whose_path_has_an_apostrophe_and_a_space(self):
+        core = self.sandbox.make_checkout("owner's checkout")
+        self.sandbox.write_config([("odd", core, "environments/odd")])
+        self.sandbox.bdev("env", "init", "--checkout", "odd", "--config", self.config)
+        self.sandbox.approve("odd")
+        hook = self.sandbox.hook("import subprocess\nif 'outer' in argv:\n    subprocess.run(['pnpm', 'inner', '--flag'], check=True)\n")
+        result = self.sandbox.bdev("--config", self.config, "--checkout", "odd", "run", "outer", tool="bpm",
+                                   env=self.sandbox.env(FAKE_HOOK=hook))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual([r["argv"][1:] for r in self.sandbox.records()], [["run", "outer"], ["inner", "--flag"]])
+
     def test_arguments_after_the_first_package_argument_are_forwarded_exactly(self):
         arguments = ["run", "test", "--filter", "", "--name=with space", "-5", "--json", "--checkout", "other",
                      "café ☕", "$(touch pwned)", "a;b|c&d", "--", "--json", "--flag", "--flag", "--flag=x"]

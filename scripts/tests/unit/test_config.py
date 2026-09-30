@@ -84,6 +84,31 @@ class ConfigTests(unittest.TestCase):
         with self.assertRaises(ScaffoldError):
             config_module.upsert_checkout(self.path, "/x/src/brave", alias="other")
 
+    AWKWARD = ("/work/owner's checkout/src/brave", '/work/say "hi"/src/brave', "/work/back\\slash/src/brave",
+               "/work/tab\there/src/brave", "/work/café ☕/src/brave", "/work/new\nline/src/brave")
+
+    def test_awkward_paths_and_directories_round_trip_through_generated_records(self):
+        for index, core in enumerate(self.AWKWARD):
+            with self.subTest(core=core):
+                path = self.dir / ("case-%d.toml" % index)
+                alias = "checkout-%d" % index
+                self.assertEqual(config_module.upsert_checkout(path, core, alias=alias), "added")
+                self.assertEqual(config_module.upsert_checkout(path, core, direnv_dir="env's \"dir\""), "updated")
+                self.assertEqual(config_module.upsert_checkout(path, core, alias=alias), "unchanged")
+                record = config_module.load_config(path).checkouts[0]
+                self.assertEqual((record.alias, str(record.core), record.direnv_dir_text),
+                                 (alias, core, "env's \"dir\""))
+                with self.assertRaises(ScaffoldError):
+                    config_module.upsert_checkout(path, core, alias=alias + "x")
+
+    def test_a_file_that_would_not_parse_is_not_replaced(self):
+        broken = 'schema_version = 1\nlogging = [\n[[checkouts]]\ncore = "/x/src/brave"\n'
+        self.path.write_text(broken)
+        with self.assertRaises(ScaffoldError) as caught:
+            config_module.upsert_checkout(self.path, "/x/src/brave", alias="a")
+        self.assertEqual(caught.exception.code, "CONFIG_INVALID")
+        self.assertEqual(self.path.read_text(), broken)
+
 
 if __name__ == "__main__":
     unittest.main()

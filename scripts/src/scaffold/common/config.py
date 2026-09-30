@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import tempfile
@@ -191,11 +192,35 @@ def atomic_write(path, text):
             os.unlink(temporary)
 
 
+def toml_string(value):
+    """A TOML basic string for any text: quotes, backslashes, control characters, and Unicode are escaped."""
+    return json.dumps(str(value), ensure_ascii=False).replace("\x7f", "\\u007f")
+
+
+def _record_of(block_text):
+    """The [[checkouts]] table in one block of text, parsed as TOML (never by pattern matching)."""
+    try:
+        return tomllib.loads(block_text)["checkouts"][0]
+    except (tomllib.TOMLDecodeError, KeyError, IndexError):
+        return {}
+
+
+def write_validated_config(path, text):
+    """Replace the configuration only if the new text is still valid TOML."""
+    try:
+        tomllib.loads(text)
+    except tomllib.TOMLDecodeError as error:
+        raise ScaffoldError("CONFIG_INVALID", "%s would not be valid TOML after this change (%s); nothing was written."
+                            % (path, error), details={"file": str(path)}, repairs=[])
+    atomic_write(path, text)
+
+
 def upsert_checkout(path, core, alias=None, direnv_dir=None):
     """Add or update the single record for a Core path without disturbing other text.
 
     Existing values are never replaced silently: a different alias or environment
-    directory is reported as a conflict.
+    directory is reported as a conflict. Values are written as TOML strings, so any
+    path or alias round-trips, and a result that would not parse is never written.
     """
     path = Path(path)
     text = path.read_text(encoding="utf-8") if path.exists() else "schema_version = 1\n"
@@ -203,39 +228,38 @@ def upsert_checkout(path, core, alias=None, direnv_dir=None):
     lines = text.splitlines(keepends=True)
     match = None
     for start, end in _block_ranges(lines):
-        found = re.search(r'^\s*core\s*=\s*"([^"]*)"', "".join(lines[start:end]), re.MULTILINE)
-        if found and Path(os.path.realpath(found.group(1))) == core_real:
+        found = _record_of("".join(lines[start:end])).get("core")
+        if found and Path(os.path.realpath(found)) == core_real:
             match = (start, end)
     if match is None:
         block = ["[[checkouts]]\n"]
         if alias:
-            block.append('alias = "%s"\n' % alias)
-        block.append('core = "%s"\n' % core_real)
+            block.append("alias = %s\n" % toml_string(alias))
+        block.append("core = %s\n" % toml_string(core_real))
         if direnv_dir:
-            block.append('direnv_dir = "%s"\n' % direnv_dir)
+            block.append("direnv_dir = %s\n" % toml_string(direnv_dir))
         prefix = "" if not text or text.endswith("\n") else "\n"
-        atomic_write(path, text + prefix + "\n" + "".join(block))
+        write_validated_config(path, text + prefix + "\n" + "".join(block))
         return "added"
     start, end = match
     changed = False
     for key, value in (("alias", alias), ("direnv_dir", direnv_dir)):
         if value is None:
             continue
-        body = "".join(lines[start:end])
-        existing = re.search(r'^\s*%s\s*=\s*"([^"]*)"' % key, body, re.MULTILINE)
-        if existing:
-            if existing.group(1) != value:
+        existing = _record_of("".join(lines[start:end])).get(key)
+        if existing is not None:
+            if existing != value:
                 raise ScaffoldError(
                     "CONFIG_INVALID",
                     "The checkout already has %s = %r; edit %s to change it deliberately."
-                    % (key, existing.group(1), path),
+                    % (key, existing, path),
                     details={"file": str(path), "field": key})
             continue
         core_line = next(i for i in range(start, end) if re.match(r"\s*core\s*=", lines[i]))
-        lines.insert(core_line + 1, '%s = "%s"\n' % (key, value))
+        lines.insert(core_line + 1, "%s = %s\n" % (key, toml_string(value)))
         end += 1
         changed = True
     if changed:
-        atomic_write(path, "".join(lines))
+        write_validated_config(path, "".join(lines))
         return "updated"
     return "unchanged"
