@@ -47,6 +47,7 @@ Nothing requires a `PATH` change, a shell hook, or an edit inside Brave Core.
 | Install and run a first command | [Getting started](docs/getting-started.md) |
 | Configure checkouts and environments | [Configuration and environments](docs/configuration-and-environments.md) |
 | Look up commands, options, results, exit codes | [Commands](docs/commands.md) |
+| Sign commits | [Commit signing](docs/signing.md) |
 | Diagnose a failure | [Troubleshooting](docs/troubleshooting.md) |
 | Drive the tools from an agent | [Agent workflows](docs/agent-workflows.md) |
 | Change or extend the tools | [Development](docs/development.md) |

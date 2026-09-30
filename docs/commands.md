@@ -34,7 +34,7 @@ look, and what the codes mean. Only delivered commands appear here.
 | `bdev shell` | Child shell in Core with the environment loaded | Whatever you do in the shell |
 | `bdev context` | Resolved checkout, selection source, environment, tools | None |
 | `bdev capabilities` | Supported, limited, unverified, unsupported combinations | None; needs no checkout |
-| `bdev doctor [scope]` | Named readiness checks (`mac`, `shell`) | None |
+| `bdev doctor [scope]` | Named readiness checks (`mac`, `shell`, `signing`) | None |
 | `bdev tools setup` | Explicit repair of checkout-local Node/package-manager payloads | Runs the checkout's payload installer inside the checkout |
 | `bdev vpython3 [options] [--] <args>` | Checkout-local Python | Whatever the program does |
 | `bpm [options] <package args>` | Checkout's package manager | Whatever the package command does |
@@ -140,7 +140,7 @@ Codes for artifacts, devices, and preparation appear when those commands ship.
 
 ## Doctor
 
-`bdev doctor [mac|shell]` runs named checks, each `pass`, `blocker`, `warning`,
+`bdev doctor [mac|shell|signing]` runs named checks, each `pass`, `blocker`, `warning`,
 `unsupported`, or `not_checked`, marked required or optional. Without a scope it
 runs every delivered scope. A blocker in a required check gives
 `READINESS_BLOCKED`; otherwise an unevaluated required check gives
