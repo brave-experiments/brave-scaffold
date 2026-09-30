@@ -126,6 +126,29 @@ loaded; exiting restores your shell unchanged. An interactive direnv hook and an
 yourself. If you do, do not use `source_env` to pull in the mapped environment:
 it skips the approval check. Never put such a file inside Core.
 
+## Workspace activation (optional)
+
+To type `bdev` and `bpm` without a path while working in the scaffold repository,
+add a workspace `.envrc` at its root that only extends `PATH`:
+
+```sh
+PATH_add scripts
+```
+
+Review it and run `direnv allow` yourself. It selects no checkout and adds no
+checkout tools, so it cannot change which checkout a command uses; that always
+comes from `--checkout` or the current directory. Leaving the directory unloads it.
+
+## Operation records and state
+
+Builds, tests, syncs, and patch updates write a record before they change anything,
+and complete it afterwards. Records, per-output build history, patch receipts, and
+the shared Android support cache live in `.bdev/` next to `brave-scaffold.toml`
+(ignored by Git), never in Core. The newest 100 completed operation records are
+kept; incomplete records and any record an output still refers to are never
+pruned, and build outputs are never touched by pruning. `bdev context` lists
+operations that never finished.
+
 ## Python runtime
 
 Tooling runs on the scaffold-owned virtual environment at `scripts/.venv`
