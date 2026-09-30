@@ -14,11 +14,12 @@ from pathlib import Path
 
 from ..common.cli import CommandSpec, Opt, Positional
 from ..common.platforms import RECOGNIZED_TARGETS, effective_target
-from ..common.results import EXIT_PARTIAL, Result, ScaffoldError
-from .records import track
+from ..common.results import EXIT_PARTIAL, Cancelled, Result, ScaffoldError
+from .records import all_operations, track
 
 CONFIG_NAMES = {"debug": "Debug", "release": "Release"}
 SUPPORTED_TARGETS = ("mac", "android")
+PRIVATE_PREFIX = ".scaffold-deleting-"
 
 
 @dataclass
@@ -30,6 +31,8 @@ class Entry:
     detail: str | None = None
     identity: tuple | None = None
     parent_identity: tuple | None = None
+    original: str | None = None  # the output an interrupted deletion was removing, for a recorded remainder
+    private: str | None = None  # the private name the directory was moved to once its deletion began
 
 
 def _with_arch(name, base, arch):
@@ -97,11 +100,19 @@ def _identity(status):
     return (status.st_dev, status.st_ino)
 
 
-def plan_cleanup(out_dir, targets, configs, arch, sizes):
-    """Matching directories, each with the identity of the directory that was approved."""
+def plan_cleanup(out_dir, targets, configs, arch, sizes, remnants=()):
+    """Matching directories, each with the identity of the directory that was approved.
+
+    `remnants` are the directories earlier interrupted deletions recorded (see `records.all_operations`). A
+    directory with a cleanup name is a remainder only when a record names it and it is still the recorded
+    directory; any other directory with that kind of name is reported and left alone.
+    """
     entries = []
     parent = _identity(os.stat(out_dir))
     for child in sorted(out_dir.iterdir()):
+        if child.name.startswith(PRIVATE_PREFIX):
+            entries.append(_remainder_entry(child, out_dir, parent, targets, configs, arch, remnants))
+            continue
         if not any(matches(child.name, t, c, arch) for t in targets for c in configs):
             continue
         entry = Entry(child.name, Path(os.path.realpath(child)) if not child.is_symlink() else child)
@@ -114,6 +125,27 @@ def plan_cleanup(out_dir, targets, configs, arch, sizes):
                 entry.size_kib = disk_usage_kib(child)
         entries.append(entry)
     return entries
+
+
+def _remainder_entry(child, out_dir, parent, targets, configs, arch, remnants):
+    entry = Entry(child.name, child)
+    if child.is_symlink() or not child.is_dir():
+        entry.outcome, entry.detail = "skipped", "has a cleanup name but is not a directory; left alone"
+        return entry
+    identity = _identity(os.lstat(child))
+    recorded = next((item for item in remnants if item["private"] == child.name and
+                     tuple(item["identity"]) == identity and item["out_dir"] == str(out_dir)), None)
+    if recorded is None:
+        entry.outcome, entry.detail = "skipped", ("has a cleanup name that no interrupted deletion of this "
+                                                   "checkout recorded, or is not the directory it recorded; left alone")
+        return entry
+    entry.original, entry.identity, entry.parent_identity = recorded["directory"], identity, parent
+    describe = "unfinished deletion of %s (operation %s)" % (recorded["directory"], recorded["operation_id"])
+    if any(matches(recorded["directory"], t, c, arch) for t in targets for c in configs):
+        entry.detail = describe
+    else:
+        entry.outcome, entry.detail = "skipped", "%s; select its target to finish it" % describe
+    return entry
 
 
 def _remove_contents(directory_fd):
@@ -132,7 +164,7 @@ def _remove_contents(directory_fd):
         os.rmdir(name, dir_fd=directory_fd)
 
 
-def _delete_approved(out_fd, entry, during_delete=None):
+def _delete_approved(out_fd, out_dir, entry, during_delete=None, op=None):
     """Delete exactly the directory that was approved; return (outcome, detail).
 
     The name is checked against the planned identity, then the directory is held open and moved
@@ -160,23 +192,68 @@ def _delete_approved(out_fd, entry, during_delete=None):
             pass
         if during_delete:
             during_delete(entry)
-        private = ".scaffold-deleting-%s-%s" % (entry.name, secrets.token_hex(4))
+        private = "%s%s-%s" % (PRIVATE_PREFIX, entry.name, secrets.token_hex(4))
+        _record_start(op, entry, private, out_dir)
         os.rename(entry.name, private, src_dir_fd=out_fd, dst_dir_fd=out_fd)
+        entry.private = private
         if _identity(os.lstat(private, dir_fd=out_fd)) != entry.identity:
             os.rename(private, entry.name, src_dir_fd=out_fd, dst_dir_fd=out_fd)
+            entry.private = None
+            _record_end(op, False, directory=entry.name, reason="changed while it was being deleted")
             return "skipped", "changed while it was being deleted"
-        try:
-            _remove_contents(held)
-            os.rmdir(private, dir_fd=out_fd)
-        except OSError as error:
-            return "failed", "%s; what is left of the directory is %s in src/out" % (error, private)
-        return "deleted", None
+        return _remove_held(out_fd, held, private, op, entry.name)
     finally:
         os.close(held)
 
 
-def execute_plan(entries, out_dir, before_delete=None, during_delete=None):
-    """Delete each entry that is still the approved directory inside the approved src/out."""
+def _record_start(op, entry, private, out_dir):
+    """Save what a later run needs to recognise the remainder, before the directory is moved or emptied."""
+    if op is not None:
+        op.start("delete", directory=entry.original or entry.name, private=private, out_dir=str(out_dir),
+                 identity=list(entry.identity))
+
+
+def _record_end(op, succeeded, **outcome):
+    if op is not None:
+        (op.succeed if succeeded else op.fail)("delete", **outcome)
+
+
+def _remove_held(out_fd, held, private, op, directory):
+    try:
+        _remove_contents(held)
+        os.rmdir(private, dir_fd=out_fd)
+    except OSError as error:
+        _record_end(op, False, directory=directory, private=private, reason=str(error))
+        return "failed", "%s; what is left of the directory is %s in src/out" % (error, private)
+    _record_end(op, True, directory=directory)
+    return "deleted", None
+
+
+def _finish_remainder(out_fd, out_dir, entry, op=None):
+    """Continue an interrupted deletion of the directory a record names, if it is still exactly that directory."""
+    try:
+        status = os.lstat(entry.name, dir_fd=out_fd)
+    except FileNotFoundError:
+        return "skipped", "no longer exists"
+    if stat.S_ISLNK(status.st_mode) or not stat.S_ISDIR(status.st_mode) or _identity(status) != entry.identity:
+        return "skipped", "is no longer the directory the interrupted deletion recorded"
+    held = os.open(entry.name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=out_fd)
+    try:
+        if _identity(os.fstat(held)) != entry.identity:
+            return "skipped", "is no longer the directory the interrupted deletion recorded"
+        entry.private = entry.name
+        _record_start(op, entry, entry.name, out_dir)
+        return _remove_held(out_fd, held, entry.name, op, entry.original)
+    finally:
+        os.close(held)
+
+
+def execute_plan(entries, out_dir, before_delete=None, during_delete=None, op=None):
+    """Delete each entry that is still the approved directory inside the approved src/out.
+
+    With an operation record, the private name and identity of a directory are saved before it is moved, and a
+    cancellation leaves the entry `interrupted` with the remainder named.
+    """
     out_fd = os.open(out_dir, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     try:
         for entry in entries:
@@ -189,9 +266,17 @@ def execute_plan(entries, out_dir, before_delete=None, during_delete=None):
                 entry.outcome, entry.detail = "skipped", "src/out was replaced after the plan was made"
                 continue
             try:
-                entry.outcome, entry.detail = _delete_approved(out_fd, entry, during_delete)
+                if entry.original:
+                    entry.outcome, entry.detail = _finish_remainder(out_fd, out_dir, entry, op)
+                else:
+                    entry.outcome, entry.detail = _delete_approved(out_fd, out_dir, entry, during_delete, op)
             except OSError as error:
                 entry.outcome, entry.detail = "failed", str(error)
+            except Cancelled:
+                if entry.private:
+                    entry.outcome, entry.detail = "interrupted", "cancelled; what is left of the directory is %s in " \
+                                                                 "src/out" % entry.private
+                raise
     finally:
         os.close(out_fd)
 
@@ -212,15 +297,31 @@ def run_clean(ctx):
     arch = ctx.parsed.get("arch")
     execute = bool(ctx.parsed.get("execute"))
     out_dir = owned_out_dir(identity)
-    entries = plan_cleanup(out_dir, targets, configs, arch, not ctx.parsed.get("no_size")) if out_dir else []
+    remnants = recorded_remainders(identity, ctx.state_root)
+    entries = plan_cleanup(out_dir, targets, configs, arch, not ctx.parsed.get("no_size"), remnants) if out_dir else []
     if execute and any(entry.outcome == "planned" for entry in entries):
         with track(ctx, "clean", identity, {"targets": targets, "configurations": configs, "arch": arch,
                                             "out_dir": str(out_dir)}) as op:
-            execute_plan(entries, out_dir)
-            op.detail(**{outcome: [e.name for e in entries if e.outcome == outcome]
-                         for outcome in ("deleted", "skipped", "failed")})
+            try:
+                execute_plan(entries, out_dir, op=op)
+            finally:
+                op.detail(**{outcome: [e.name for e in entries if e.outcome == outcome]
+                             for outcome in ("deleted", "skipped", "failed", "interrupted")},
+                          remaining=[e.private for e in entries if e.private and e.outcome in ("failed", "interrupted")])
             return op.complete(clean_result(ctx, identity, entries, out_dir, targets, configs, arch, execute))
     return clean_result(ctx, identity, entries, out_dir, targets, configs, arch, execute)
+
+
+def recorded_remainders(identity, state_root):
+    """Directories that earlier cleanups of this checkout recorded as moved aside and not fully removed."""
+    found = []
+    for record in all_operations(state_root, identity.core, "clean"):
+        for step in record["steps"]:
+            if step["name"] == "delete" and step.get("status") in ("running", "interrupted", "failed") \
+                    and step.get("private") and step.get("identity"):
+                found.append({**{key: step[key] for key in ("directory", "private", "identity", "out_dir")},
+                              "operation_id": record["operation_id"]})
+    return found
 
 
 def clean_result(ctx, identity, entries, out_dir, targets, configs, arch, execute):

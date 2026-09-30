@@ -224,13 +224,17 @@ def prune(root, keep=KEEP_OPERATIONS):
         path.unlink(missing_ok=True)
 
 
-def incomplete_operations(root=None, checkout=None):
-    found = []
+def all_operations(root=None, checkout=None, command=None):
+    """Saved operation records, oldest first, optionally for one checkout and command."""
     for path in sorted((store_root(root) / "operations").glob("*.json")):
         data = _read(path)
-        if data and data.get("state") == "incomplete" and (checkout is None or data.get("checkout") == str(checkout)):
-            found.append(data)
-    return found
+        if data and (checkout is None or data.get("checkout") == str(checkout)) and \
+                (command is None or data.get("command") == command):
+            yield data
+
+
+def incomplete_operations(root=None, checkout=None):
+    return [data for data in all_operations(root, checkout) if data.get("state") == "incomplete"]
 
 
 class OutputState:

@@ -156,7 +156,17 @@ If `src/out` itself is a symlink or resolves elsewhere, nothing is deleted
 
 ## Interruption
 
-Interrupting cleanup (Ctrl-C or SIGTERM) can leave a directory partly removed.
-Nothing is restored. Rerun `bdev clean` to preview what remains, then delete or
-rebuild it. A partly removed output is not a usable build; rebuild before running
-it.
+Interrupting cleanup (Ctrl-C or SIGTERM), or a failure part way, can leave a directory partly
+removed. Nothing is restored and nothing resumes by itself. Before it moves a directory
+aside, cleanup saves its private name and identity in the operation record (step `delete`,
+in `.bdev/operations/`), so the record still names the remainder if the process dies. A
+cancelled run reports the directory as `interrupted` with its private name, and records
+what remains under `details.remaining`.
+
+The next `bdev clean` finds the remainder. A directory with a `.scaffold-deleting-*` name
+counts as a remainder only when a record from this checkout names it and it is still the
+directory that record identified (same device and inode). It is listed as `planned` with
+"unfinished deletion of <output> (operation <id>)", for the targets you select, and
+`--execute` continues removing exactly that directory. Any other directory with a
+cleanup-style name is listed as `skipped` and left alone, and so is a recorded name that has
+since been replaced. A partly removed output is not a usable build; rebuild before running it.

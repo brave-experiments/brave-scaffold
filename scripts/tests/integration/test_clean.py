@@ -205,5 +205,105 @@ class RevalidationTests(SandboxTest):
         self.assertEqual(list(out.iterdir()), [])
         self.assertTrue((outside / "keep").exists())
 
+class InterruptedCleanupTests(SandboxTest):
+    """A deletion that is cancelled after the private rename leaves a remainder that later runs can find."""
+
+    def setUp(self):
+        super().setUp()
+        self.core = self.sandbox.make_checkout("main")
+        self.out = self.core.parent / "out"
+        (self.out / "Debug_arm64" / "obj").mkdir(parents=True)
+        (self.out / "Debug_arm64" / "obj" / "x.o").write_text("approved")
+        (self.out / "Debug_arm64" / "args.gn").write_text("approved")
+        (self.out / "Release_arm64").mkdir()
+        self.sandbox.write_config([("main", self.core, None)])
+        self.config = str(self.sandbox.config)
+
+    def run_cli(self, *args, patched=None):
+        import contextlib
+        import io
+        import json
+        from unittest import mock
+        from scaffold.brave import app, bdev
+        spec, tokens = bdev.resolve_command(["--json", "clean", "--checkout", "main", "--config", self.config, *args])
+        parsed = bdev.parse_command(spec, tokens)
+        stdout = io.StringIO()
+        with contextlib.ExitStack() as stack:
+            if patched:
+                stack.enter_context(mock.patch.object(clean, "_remove_contents", patched))
+            code = app.run_command(spec.name, parsed, spec.handler, argv_environ=self.sandbox.env(),
+                                   stdout=stdout, stderr=io.StringIO())
+        return code, json.loads(stdout.getvalue())
+
+    def record(self):
+        import json
+        (path,) = (self.sandbox.config.parent / ".bdev" / "operations").glob("*.json")
+        return json.loads(path.read_text())
+
+    def interrupt_after_rename(self, partial):
+        from scaffold.common.results import Cancelled
+
+        def interrupted(directory_fd):
+            if partial:
+                os.unlink("args.gn", dir_fd=directory_fd)
+            raise Cancelled(130)
+        code, document = self.run_cli("mac", "--configuration", "debug", "--execute", patched=interrupted)
+        self.assertEqual((code, document["status"]), (130, "cancelled"))
+        return document
+
+    def test_cancellation_after_the_rename_records_the_remainder_and_the_partial_outcome(self):
+        for partial in (False, True):
+            with self.subTest(partial=partial):
+                shutil.rmtree(self.out)
+                (self.out / "Debug_arm64" / "obj").mkdir(parents=True)
+                (self.out / "Debug_arm64" / "obj" / "x.o").write_text("approved")
+                (self.out / "Debug_arm64" / "args.gn").write_text("approved")
+                shutil.rmtree(self.sandbox.config.parent / ".bdev", ignore_errors=True)
+                self.interrupt_after_rename(partial)
+                (remainder,) = [p for p in self.out.iterdir() if p.name.startswith(".scaffold-deleting-Debug_arm64-")]
+                record = self.record()
+                (step,) = [item for item in record["steps"] if item["name"] == "delete"]
+                self.assertEqual((step["status"], step["private"], step["directory"]),
+                                 ("interrupted", remainder.name, "Debug_arm64"))
+                self.assertEqual(step["identity"], [os.lstat(remainder).st_dev, os.lstat(remainder).st_ino])
+                self.assertEqual(record["details"]["interrupted"], ["Debug_arm64"])
+                self.assertEqual(record["details"]["remaining"], [remainder.name])
+
+    def test_the_next_cleanup_finds_the_owned_remainder_and_leaves_lookalikes_alone(self):
+        self.interrupt_after_rename(partial=True)
+        (remainder,) = [p for p in self.out.iterdir() if p.name.startswith(".scaffold-deleting-Debug_arm64-")]
+        lookalike = self.out / ".scaffold-deleting-Debug_arm64-0000"
+        lookalike.mkdir()
+        (lookalike / "keep").write_text("not ours")
+        code, document = self.run_cli("mac", "--configuration", "debug")
+        outcomes = {e["name"]: (e["outcome"], e["detail"]) for e in document["data"]["entries"]}
+        self.assertEqual(outcomes[remainder.name][0], "planned")
+        self.assertIn("unfinished deletion of Debug_arm64", outcomes[remainder.name][1])
+        self.assertEqual(outcomes[lookalike.name][0], "skipped")
+        self.assertIn("left alone", outcomes[lookalike.name][1])
+        self.assertTrue(remainder.exists(), "the preview deletes nothing")
+        code, document = self.run_cli("mac", "--configuration", "debug", "--execute")
+        self.assertEqual(code, 6, "the lookalike is reported as skipped, so the run is partial")
+        self.assertFalse(remainder.exists())
+        self.assertEqual((lookalike / "keep").read_text(), "not ours")
+        self.assertTrue((self.out / "Release_arm64").exists())
+
+    def test_a_remainder_that_is_not_the_recorded_directory_is_never_deleted(self):
+        self.interrupt_after_rename(partial=False)
+        (remainder,) = [p for p in self.out.iterdir() if p.name.startswith(".scaffold-deleting-Debug_arm64-")]
+        shutil.rmtree(remainder)
+        remainder.mkdir()
+        (remainder / "keep").write_text("a different directory under the same name")
+        code, document = self.run_cli("mac", "--configuration", "debug", "--execute")
+        self.assertEqual((remainder / "keep").read_text(), "a different directory under the same name")
+        entry = next(e for e in document["data"]["entries"] if e["name"] == remainder.name)
+        self.assertEqual(entry["outcome"], "skipped")
+
+    def test_a_cleanup_with_no_remainder_and_no_lookalike_is_unchanged(self):
+        code, document = self.run_cli("mac", "--configuration", "debug", "--execute")
+        self.assertEqual(code, 0)
+        self.assertEqual([e["name"] for e in document["data"]["entries"]], ["Debug_arm64"])
+
+
 if __name__ == "__main__":
     unittest.main()
