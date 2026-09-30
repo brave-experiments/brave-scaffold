@@ -57,6 +57,7 @@ class CommandSpec:
     max_positionals: int | None = None
     leading_only: bool = False
     creates_config: bool = False
+    post_parse: object = None
 
     @property
     def positional_limit(self):

@@ -7,15 +7,30 @@
 from __future__ import annotations
 
 from ..common.cli import CommandSpec, Opt, Positional
-from . import clean, cmd_setup, cmd_tools, doctor
+from . import clean, cmd_build, cmd_setup, cmd_tools, doctor
 
 WITH_PYTHONPATH = Opt("--with-pythonpath", "with_pythonpath", takes_value=False,
                       help="Also export PYTHONPATH for Core's script directory.")
 CWD = Opt("--cwd", "cwd", metavar="DIRECTORY",
           help="Run in this directory (relative to your current directory) instead of the current one.")
 
+CONFIGURATION = Opt("--configuration", "configuration", choices=("debug", "release"),
+                    help="Build configuration (default: debug).", metavar="CONFIG")
+OFFLINE = Opt("--offline", "offline", takes_value=False,
+              help="Compile locally instead of using remote build execution (RBE/Siso, the default).")
+FORCE_GN = Opt("--force-gn", "force_gn", takes_value=False, help="Regenerate GN files even if they exist.")
+PLAN = Opt("--plan", "plan", takes_value=False, help="Show the steps without running any that change anything.")
+ARTIFACT = Opt("--artifact", "artifact", metavar="PATH", help="Application to run instead of the default output.")
+FILTER = Opt("--filter", "filter", metavar="PATTERN", help="Only run tests matching the pattern within the suite.")
+DIFF = Opt("--diff", "diff", takes_value=False, help="Print the Git diff of each drifted file.")
+TARGET = Positional("target", help="mac or android (default: configured platform, else this host).")
+BUILD_SIDE_EFFECTS = ("Writes the build output under the checkout's src/out, applies Core patches when they are "
+                      "out of date and no local edits are at risk, and may update the Metal toolchain setting for the "
+                      "child only. Never cleans, installs, or launches anything.")
+
 # Commands that take a group word first ("checkout add"). The value is the set of subcommands.
-GROUPS = {"checkout": ("add", "list"), "env": ("init", "export", "check"), "tools": ("setup",)}
+GROUPS = {"checkout": ("add", "list"), "env": ("init", "export", "check"), "tools": ("setup",),
+          "patches": ("update",)}
 
 
 def build_registry():
@@ -65,6 +80,52 @@ def build_registry():
                     notes="Scaffold options must come before the first Python argument. Use -- to be explicit.",
                     examples=("bdev vpython3 -- tools/example.py --flag", "bdev vpython3 --cwd out -- ../script.py")),
         clean.SPEC,
+        CommandSpec("build", "Prepare and compile Brave for a target, then verify its output.", cmd_build.cmd_build,
+                    positionals=(TARGET,), options=(CONFIGURATION, OFFLINE, FORCE_GN, PLAN), forward=True,
+                    side_effects=BUILD_SIDE_EFFECTS,
+                    notes="Unknown options and extra arguments go to 'bpm run build' after the generated ones.",
+                    examples=("bdev build", "bdev build mac --offline", "bdev build --plan")),
+        CommandSpec("build-run", "Build, then restart the browser with exactly the output that build produced.",
+                    cmd_build.cmd_build_run, aliases=("br",), positionals=(TARGET,),
+                    options=(CONFIGURATION, OFFLINE, FORCE_GN, PLAN), forward=True,
+                    side_effects=BUILD_SIDE_EFFECTS + " Then stops any running instance of the same application and "
+                                                     "launches the new build.",
+                    examples=("bdev br",)),
+        CommandSpec("sync", "Run the supported Core source sync.", cmd_build.cmd_sync,
+                    positionals=(Positional("targets", help="Comma-separated targets: mac, android."),),
+                    options=(PLAN,), forward=True,
+                    side_effects="Updates the checkout's sources and dependencies. Stops first if local work "
+                                 "could be overwritten. Mobile targets keep the checkout's existing target_os values.",
+                    examples=("bdev sync", "bdev sync mac,android --plan")),
+        CommandSpec("sync-build", "Sync, then build; stops at the first failed phase.", cmd_build.cmd_sync_build,
+                    aliases=("sb",), positionals=(TARGET,), options=(CONFIGURATION, OFFLINE, FORCE_GN, PLAN),
+                    forward=True, side_effects="Sync effects, then build effects.", examples=("bdev sb",),
+                    notes="Extra arguments go to the build phase only."),
+        CommandSpec("sync-build-run", "Sync, build, then restart the browser with the built output.",
+                    cmd_build.cmd_sync_build_run, aliases=("sbr",), positionals=(TARGET,),
+                    options=(CONFIGURATION, OFFLINE, FORCE_GN, PLAN), forward=True,
+                    side_effects="Sync, build, and restart effects.", examples=("bdev sbr",),
+                    notes="Extra arguments go to the build phase only."),
+        CommandSpec("test", "Compile if needed and run one test suite (macOS).", cmd_build.cmd_test,
+                    positionals=(TARGET, Positional("suite", True, help="Test suite, for example brave_unit_tests.")),
+                    options=(CONFIGURATION, OFFLINE, FILTER, PLAN), forward=True, max_positionals=2,
+                    post_parse=cmd_build.post_parse_test,
+                    side_effects=BUILD_SIDE_EFFECTS.replace("Never cleans, installs, or launches anything.",
+                                                            "Runs the tests, which may launch test browsers."),
+                    notes="The suite must come before any forwarded arguments. --filter only narrows the suite.",
+                    examples=("bdev test brave_unit_tests", "bdev test mac brave_browser_tests --filter 'Example.*'")),
+        CommandSpec("run", "Restart the browser with an existing output; never builds.", cmd_build.cmd_run,
+                    positionals=(TARGET,), options=(CONFIGURATION, ARTIFACT, PLAN),
+                    side_effects="Quits any running instance of the same application (from any checkout), then "
+                                 "launches the selected one. Profiles and app data are kept.",
+                    notes="Older or independently built outputs may run; staleness or unknown freshness is reported.",
+                    examples=("bdev run", "bdev run --artifact ./out/Custom/'Brave Browser Development.app'")),
+        CommandSpec("drift", "Compare patched Chromium files with the patch metadata (read-only).", cmd_build.cmd_drift,
+                    options=(DIFF,), examples=("bdev drift", "bdev drift --diff")),
+        CommandSpec("patches update", "Generate Core patch changes from local Chromium edits.",
+                    cmd_build.cmd_patches_update, forward=True,
+                    side_effects="Runs 'bpm run update_patches', which rewrites patch files in Core. Nothing is "
+                                 "committed.", examples=("bdev patches update",)),
     ]
     registry = {}
     for spec in specs:

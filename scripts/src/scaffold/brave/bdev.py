@@ -76,6 +76,17 @@ def resolve_command(argv):
     return spec, rest
 
 
+def parse_command(spec, tokens):
+    if spec.leading_only:
+        return parse_leading(spec, tokens)
+    parsed = parse_tokens(spec, tokens)
+    if spec.post_parse:
+        spec.post_parse(spec, parsed)
+    else:
+        check_positionals(spec, parsed)
+    return parsed
+
+
 def _wants_help(tokens):
     for token in tokens:
         if token == "--":
@@ -100,11 +111,7 @@ def main(argv, stdout=None, stderr=None):
         if _wants_help(tokens):
             stdout.write(render_help(spec))
             return 0
-        if spec.leading_only:
-            parsed = parse_leading(spec, tokens)
-        else:
-            parsed = parse_tokens(spec, tokens)
-            check_positionals(spec, parsed)
+        parsed = parse_command(spec, tokens)
     except ScaffoldError as error:
         failure = Parsed(values={"json": json_mode})
 

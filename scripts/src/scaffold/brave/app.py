@@ -38,6 +38,11 @@ class Context:
         self.log.enabled = self.config.commands_logging
         return self.config
 
+    @property
+    def state_root(self):
+        """Operation records and output state live beside the active configuration file."""
+        return self.config.directory
+
     def identity(self, required=True, validate=True):
         """Select the checkout: explicit selector, otherwise the caller's cwd."""
         if self.selected is not None:

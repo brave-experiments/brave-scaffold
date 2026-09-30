@@ -37,6 +37,10 @@ def effective_target(explicit, config):
     """Explicit target, then configured platform, then the host platform."""
     if explicit:
         target, source = normalize_target(explicit), "explicit"
+        if target is None:
+            raise ScaffoldError(
+                "INVALID_INPUT", "%r is not a target. Use mac or android; choose the configuration with "
+                "--configuration debug|release." % explicit, details={"targets": list(INITIAL_TARGETS)})
     elif config.default_platform:
         target, source = normalize_target(config.default_platform), "configured"
     else:
@@ -57,8 +61,9 @@ def effective_target(explicit, config):
 # Combinations proven on a real checkout. A combination absent from this set is
 # reported as unverified, never as supported.
 VALIDATED = set()
-# Operations whose commands exist in this release.
-AVAILABLE_OPERATIONS = set()
+# (target, operation) pairs whose commands exist in this release.
+AVAILABLE_OPERATIONS = {("mac", operation) for operation in
+                        ("sync", "build", "test", "run", "clean", "drift", "patches-update")}
 
 
 def capability_table():
@@ -68,7 +73,7 @@ def capability_table():
     def add(target, operation, configuration, architecture, intended, note="", host="mac-arm64"):
         key = (target, operation, configuration, architecture)
         status = intended
-        if intended in (SUPPORTED, LIMITED) and operation not in AVAILABLE_OPERATIONS and operation != "any":
+        if intended in (SUPPORTED, LIMITED) and (target, operation) not in AVAILABLE_OPERATIONS and operation != "any":
             status, note = UNVERIFIED, "The command is not available in this release."
         elif intended == SUPPORTED and key not in VALIDATED:
             status, note = UNVERIFIED, (note + " Not yet validated on a real checkout.").strip()

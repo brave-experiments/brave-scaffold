@@ -1,0 +1,198 @@
+# Copyright (c) 2026 The Brave Authors. All rights reserved.
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this file,
+# You can obtain one at https://mozilla.org/MPL/2.0/.
+"""Interpretation of output-affecting options forwarded to Core's build and test scripts.
+
+Forwarded arguments always reach the package command unchanged. This module
+only reads the ones that decide what gets built and where, so readiness,
+artifact selection, and records match the effective build. Repeated options
+follow the package command's option parser, where the last occurrence wins.
+"""
+
+from __future__ import annotations
+
+import os
+import platform
+from dataclasses import dataclass, field
+from pathlib import Path
+
+from ..common.results import ScaffoldError
+
+CONFIG_TOKENS = ("Debug", "Release", "Component", "Static")
+OS_ALIASES = {"mac": "mac", "macos": "mac", "android": "android", "ios": "ios", "linux": "linux",
+              "win": "win", "windows": "win"}
+VALUE_OPTIONS = ("--target_os", "--target_arch", "--target", "--channel")
+INFO_FLAGS = ("-h", "--help", "-V", "--version")
+
+
+@dataclass
+class Forwarded:
+    target_os: str | None = None
+    target_arch: str | None = None
+    build_dir: str | None = None
+    build_config: str | None = None
+    target: str | None = None
+    channel: str | None = None
+    offline: bool = False
+    remoteexec: bool | None = None
+    info_only: bool = False
+    problems: list = field(default_factory=list)
+
+
+def interpret(tokens):
+    """Read output-affecting options from forwarded tokens; the tokens stay untouched."""
+    found = Forwarded()
+    index = 0
+    while index < len(tokens):
+        token = tokens[index]
+        if token in INFO_FLAGS:
+            found.info_only = True
+        elif token == "--offline":
+            found.offline = True
+        elif token.startswith("--use_remoteexec"):
+            value = "true"
+            if "=" in token:
+                value = token.partition("=")[2]
+            elif index + 1 < len(tokens) and tokens[index + 1] in ("true", "false"):
+                index += 1
+                value = tokens[index]
+            found.remoteexec = value == "true"
+        elif token == "-C" or (token.startswith("-C") and not token.startswith("--") and len(token) > 2):
+            if token == "-C":
+                if index + 1 < len(tokens):
+                    index += 1
+                    found.build_dir = tokens[index]
+                else:
+                    found.problems.append("-C has no value")
+            else:
+                found.build_dir = token[2:]
+        elif token.split("=")[0] in VALUE_OPTIONS:
+            name, equals, value = token.partition("=")
+            if not equals:
+                if index + 1 < len(tokens):
+                    index += 1
+                    value = tokens[index]
+                else:
+                    found.problems.append("%s has no value" % name)
+                    value = None
+            if value is not None:
+                key = name.lstrip("-")
+                setattr(found, key, value)
+        elif token in CONFIG_TOKENS:
+            found.build_config = token
+        index += 1
+    return found
+
+
+def normalize_os(value):
+    if value == "host_os":
+        return "mac" if platform.system() == "Darwin" else None
+    return OS_ALIASES.get(value)
+
+
+def normalize_arch(value):
+    if value == "host_cpu":
+        machine = platform.machine().lower()
+        return "arm64" if machine in ("arm64", "aarch64") else "x64" if machine in ("x86_64", "amd64") else machine
+    return value
+
+
+@dataclass
+class Effective:
+    target: str
+    configuration: str
+    arch: str
+    output_dir: Path | None
+    build_dir_arg: str | None
+    generated: list
+    forwarded: list
+    build_target: str | None
+    channel: str | None
+    offline: bool
+    sources: dict
+    unresolved: list
+
+
+def conflict(field_name, scaffold_value, forwarded_value, example):
+    return ScaffoldError(
+        "SELECTOR_CONFLICT",
+        "%s is %s from the scaffold options but %s from the forwarded arguments." % (
+            field_name, scaffold_value, forwarded_value),
+        details={"scaffold": scaffold_value, "forwarded": forwarded_value, "example": example})
+
+
+def resolve_output_dir(src, build_dir):
+    """Core's build scripts resolve a relative -C beneath Chromium's src/out."""
+    if build_dir is None:
+        return None
+    path = Path(build_dir)
+    return path if path.is_absolute() else Path(os.path.normpath(src / "out" / build_dir))
+
+
+def default_build_dir(target, configuration, arch):
+    """Directory name (under src/out) Core's build script uses by default."""
+    name = configuration if arch == "x64" else "%s_%s" % (configuration, arch)
+    return name if target == "mac" else "%s_%s" % (target, name)
+
+
+def resolve_effective(src, forwarded_tokens, target, configuration, explicit_target, explicit_configuration,
+                      explicit_offline, default_arch="arm64"):
+    """Combine scaffold selections with interpreted forwarded options.
+
+    Explicit scaffold selections that disagree with forwarded ones fail before
+    anything runs. Forwarded values override scaffold defaults, and the
+    corresponding generated argument is left out so the child sees one choice.
+    """
+    fwd = interpret(forwarded_tokens)
+    sources = {"target": "scaffold", "configuration": "scaffold", "arch": "default", "output": "default"}
+    effective_target = target
+    if fwd.target_os is not None:
+        os_name = normalize_os(fwd.target_os)
+        if os_name is None:
+            raise ScaffoldError("UNSUPPORTED_CAPABILITY", "--target_os=%s is not supported here." % fwd.target_os)
+        if explicit_target and os_name != explicit_target:
+            raise conflict("The target", explicit_target, os_name, "bdev build %s" % os_name)
+        effective_target, sources["target"] = os_name, "forwarded"
+    effective_configuration = configuration
+    if fwd.build_config is not None:
+        forwarded_config = fwd.build_config.lower()
+        if explicit_configuration and forwarded_config != explicit_configuration.lower():
+            raise conflict("The configuration", explicit_configuration, fwd.build_config,
+                           "bdev build --configuration %s" % forwarded_config)
+        effective_configuration, sources["configuration"] = fwd.build_config, "forwarded"
+    arch = default_arch
+    if fwd.target_arch is not None:
+        arch, sources["arch"] = normalize_arch(fwd.target_arch), "forwarded"
+    if explicit_offline and (fwd.remoteexec is True):
+        raise conflict("Compilation mode", "--offline", "--use_remoteexec=true", "bdev build --offline")
+    generated = []
+    if fwd.target_os is None:
+        generated.append("--target_os=%s" % effective_target)
+    if fwd.target_arch is None:
+        generated.append("--target_arch=%s" % arch)
+    default_dir = default_build_dir(effective_target, effective_configuration, arch)
+    build_dir_arg = fwd.build_dir if fwd.build_dir is not None else default_dir
+    if fwd.build_dir is None:
+        generated.extend(["-C", default_dir])
+    else:
+        sources["output"] = "forwarded"
+    if fwd.build_config is None:
+        generated.append(effective_configuration)
+    if effective_configuration == "Release" and fwd.channel is None:
+        generated.append("--channel=release")
+    offline = explicit_offline or fwd.offline or fwd.remoteexec is False
+    if not fwd.offline and fwd.remoteexec is None:
+        generated.append("--offline" if explicit_offline else "--use_remoteexec=true")
+    unresolved = list(fwd.problems)
+    if fwd.info_only:
+        unresolved.append("the forwarded arguments ask the package command for information, not a build")
+    if fwd.build_dir is not None and not fwd.build_dir:
+        unresolved.append("-C has an empty value")
+    if fwd.target and fwd.target != "brave":
+        unresolved.append("build target %r does not produce the application" % fwd.target)
+    output = resolve_output_dir(src, build_dir_arg)
+    return Effective(target=effective_target, configuration=effective_configuration, arch=arch, output_dir=output,
+                     build_dir_arg=build_dir_arg, generated=generated, forwarded=list(forwarded_tokens),
+                     build_target=fwd.target, channel=fwd.channel, offline=offline, sources=sources,
+                     unresolved=unresolved)

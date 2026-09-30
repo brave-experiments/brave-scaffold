@@ -51,17 +51,14 @@ class EnvelopeTests(SandboxTest):
     def test_every_help_example_parses(self):
         from scaffold.brave import bdev, bpm
         from scaffold.brave.registry import REGISTRY
-        from scaffold.common.cli import check_positionals, parse_leading, parse_tokens
+        from scaffold.common.cli import parse_leading
         for spec in REGISTRY.values():
             for example in spec.examples:
                 with self.subTest(example=example):
                     words = shlex.split(example)
                     self.assertEqual(words[0], "bdev")
                     found, tokens = bdev.resolve_command(words[1:])
-                    if found.leading_only:
-                        parse_leading(found, tokens)
-                    else:
-                        check_positionals(found, parse_tokens(found, tokens))
+                    bdev.parse_command(found, tokens)
         for example in bpm.SPEC.examples:
             words = shlex.split(example)
             parse_leading(bpm.SPEC, words[1:])
