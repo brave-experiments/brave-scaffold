@@ -70,13 +70,48 @@ class Operation:
     def save(self):
         _write(self.path, self.data)
 
-    def step(self, name, **fields):
+    def note(self, name, **fields):
+        """Evidence recorded once, such as the plan a phase was judged by; it is not a phase."""
         self.data["steps"].append({"name": name, "at": now(), **fields})
         self.save()
 
-    def update(self, **fields):
-        self.data.update(fields)
+    def start(self, name, **fields):
+        """A phase begins. It stays `running` in the saved record until it succeeds or fails, so a process that
+        dies mid-phase leaves the evidence of where."""
+        self.data["steps"].append({**fields, "name": name, "at": now(), "status": "running"})
         self.save()
+
+    def succeed(self, name, **outcome):
+        """The phase finished; `outcome` holds the facts callers and errors should keep about it."""
+        self._close(name, "succeeded", outcome)
+
+    def fail(self, name, **outcome):
+        self._close(name, "failed", outcome)
+
+    def attach_artifacts(self, artifacts):
+        """Save the verified artifacts now, so a later phase failing cannot lose them."""
+        self.data["artifacts"] = [dict(item) for item in artifacts]
+        self.save()
+
+    def _close(self, name, status, outcome):
+        step = next((item for item in reversed(self.data["steps"]) if item["name"] == name and
+                     item.get("status") == "running"), None)
+        if step is None:
+            step = {"name": name, "at": now()}
+            self.data["steps"].append(step)
+        step.update(status=status, finished=now(), outcome=outcome)
+        self.save()
+
+    def settle(self, status):
+        """Mark phases still running when the operation ends (an error or cancellation) with how it ended."""
+        for item in self.data["steps"]:
+            if item.get("status") == "running":
+                item.update(status=status, finished=now())
+
+    def completed(self):
+        """The facts of every phase that finished, oldest first."""
+        return [{"phase": item["name"], **item.get("outcome", {})} for item in self.data["steps"]
+                if item.get("status") == "succeeded"]
 
     def detail(self, **fields):
         self.data["details"].update(fields)
@@ -86,10 +121,10 @@ class Operation:
         self.data["commands"].append(entry)
         self.save()
 
-    def finish(self, status, exit_code, commands=None, artifacts=None, child_exit_code=None, error=None, cleanup=None):
+    def finish(self, status, exit_code, child_exit_code=None, error=None, cleanup=None):
+        """End the record. The phases, artifacts, and commands already saved are its summary; nothing is rebuilt."""
         self.data.update(state="complete", finished=now(), status=status, exit_code=exit_code)
-        for name, value in (("commands", commands), ("artifacts", artifacts), ("child_exit_code", child_exit_code),
-                            ("error", error), ("cleanup", cleanup)):
+        for name, value in (("child_exit_code", child_exit_code), ("error", error), ("cleanup", cleanup)):
             if value is not None:
                 self.data[name] = value
         self.save()
@@ -98,7 +133,9 @@ class Operation:
     def complete(self, result):
         """Finish from a command's result and stamp the operation ID on it."""
         result.operation_id = self.id
-        self.finish(result.status, result.exit_code, artifacts=[dict(item) for item in result.artifacts],
+        if result.artifacts:
+            self.attach_artifacts(result.artifacts)
+        self.finish(result.status, result.exit_code,
                     child_exit_code=result.child_exit_code, error=result.error and
                     {"code": result.error["code"], "message": result.error["message"]})
         return result
@@ -142,15 +179,22 @@ def track(ctx, command, identity, details, validated=False):
     try:
         yield op
     except ScaffoldError as error:
+        op.settle("failed")
         error.operation_id = op.id
+        if op.completed():
+            error.details.setdefault("completed_phases", op.completed())
+        error.artifacts = op.data["artifacts"]
         op.finish("error", error.exit_code, child_exit_code=error.child_exit_code,
                   error={"code": error.code, "message": error.message})
         raise
     except Cancelled as cancelled:
+        op.settle("interrupted")
         cancelled.operation_id = op.id
+        cancelled.completed_phases = op.completed()
         op.finish("cancelled", cancelled.exit_code, cleanup={"complete": not cancelled.cleanup_incomplete})
         raise
     except Exception as error:
+        op.settle("failed")
         op.finish("error", 1, error={"code": "INTERNAL_ERROR", "message": str(error)})
         raise
     finally:

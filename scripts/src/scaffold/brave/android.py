@@ -103,14 +103,15 @@ def prepare_support(ctx, execution, op, effective):
     writes = [str(identity.src / key) for key in android_deps.planned_writes(identity, wc, plan.scripts, ctx.log)] \
         if plan.action == "refresh" else []
     described = step_module.support_step(identity, plan, writes).record()
-    op.step("android-support-plan", action=plan.action, reason=plan.reason, working_copy=plan.evidence.get("working_copy"),
+    op.note("android-support-plan", action=plan.action, reason=plan.reason, working_copy=plan.evidence.get("working_copy"),
             **described)
     if plan.action == "conflict":
         raise android_deps.conflict_error(plan, identity)
     refreshed = False
     if plan.action == "refresh":
-        op.step("android-support-refresh", scripts=list(plan.scripts), **described)
-        android_deps.refresh(ctx, identity, execution.environ, plan, ctx.log)
+        op.start("android-support-refresh", scripts=list(plan.scripts), **described)
+        refresh = android_deps.refresh(ctx, identity, execution.environ, plan, ctx.log)
+        op.succeed("android-support-refresh", recorded=refresh["recorded"])
         refreshed = True
     return refreshed
 
@@ -178,15 +179,20 @@ def restart_apk(ctx, identity, artifact, result, device=None, op=None):
                             note="aapt2 comes from the Android support resources, which the build prepares before "
                                  "compiling; this builds too. It is not part of 'bdev tools setup'.")])
     adapter, device, source = device or preflight_device(ctx)
+    progress = None
     if op is not None:
         for step in (step_module.install_apk_step(device["id"], artifact["path"]),
                      step_module.stop_package_step(device["id"], artifact["package"]),
                      step_module.launch_package_step(device["id"], artifact["package"])):
-            op.step(step.name, **step.record())
+            op.start(step.name, **step.record())
+        progress = op.succeed
     output_dir = artifact.get("output_dir") or str(Path(artifact["path"]).parent.parent)
     assessment = cmd_build.artifact_freshness(ctx, identity, output_dir, android=True)
     cmd_build.add_freshness_warning(result, assessment)
-    outcome = adb.restart_package(adapter, device["id"], artifact["path"], artifact["package"], ctx.environ, ctx.log)
+    outcome = adb.restart_package(adapter, device["id"], artifact["path"], artifact["package"], ctx.environ, ctx.log,
+                                  progress=progress)
+    if op is not None:
+        op.succeed("run", artifact=artifact["path"])
     result.data = {**(result.data or {}), "run": {"artifact": artifact, "freshness": assessment,
                                                   "device_selection": source, **outcome}}
     if not result.artifacts:
@@ -223,7 +229,7 @@ def run_android(ctx, identity, validated=False):
         return run_plan(ctx, identity, artifact)
     with track(ctx, ctx.command, identity, {"target": "android", "artifact": artifact["path"]},
                validated=validated) as op:
-        op.step("run", artifact=artifact["path"])
+        op.start("run", artifact=artifact["path"])
         return op.complete(restart_apk(ctx, identity, artifact, Result(command=ctx.command), None, op))
 
 

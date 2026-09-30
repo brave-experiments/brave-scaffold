@@ -157,6 +157,15 @@ went (`logs.commands`, `logs.child_output`; child output goes to the terminal or
 `--json`, to stderr, and no per-operation log file is written). An expected failure or a
 caught SIGINT/SIGTERM finishes the record with the actual status (exit 5, 130, 143, ...) and
 the result carries the same `operation_id`; only a process that dies leaves it incomplete.
+
+Each phase (sync, patch application, build or test, output verification, install, stop, launch)
+is a step that is `running` from the moment it starts and then `succeeded`, `failed`, or, when
+you cancel, `interrupted`, with its actual child exit status and outcome. A step that is still
+`running` in an incomplete record shows where the process died. Verified artifacts are saved
+when they are verified. If a later phase fails, the error result keeps what earlier phases
+achieved: `error.details.completed_phases` lists them (for example a finished sync or a
+verified build) and `artifacts` holds the verified output, so a caller does not need the
+record to see that a build finished before its launch failed.
 Records, per-output build history, patch receipts, and
 the shared Android support cache live in `.bdev/` next to `brave-scaffold.toml`
 (ignored by Git), never in Core. The newest 100 completed operation records are

@@ -102,22 +102,29 @@ def _adb(adb, device, args, environ, log, timeout=120):
     return run_capture([adb, "-s", device, *args], os.getcwd(), environ, log, timeout=timeout)
 
 
-def restart_package(adb, device, apk, package, environ, log=None, verify_seconds=VERIFY_SECONDS):
-    """Install over the existing app (data is kept), stop only this package, launch, verify."""
+def restart_package(adb, device, apk, package, environ, log=None, verify_seconds=VERIFY_SECONDS, progress=None):
+    """Install over the existing app (data is kept), stop only this package, launch, verify.
+
+    `progress(name)` is called as each of "install-apk", "stop-package", and "launch-package" succeeds.
+    """
+    progress = progress or (lambda name: None)
     installed = _adb(adb, device, ["install", "-d", "-r", "-g", apk], environ, log, timeout=600)
     if installed.returncode != 0 or "Success" not in installed.stdout:
         output = (installed.stdout + installed.stderr).strip()
         raise ScaffoldError("LAUNCH_FAILED", "Installing %s on %s failed: %s" % (apk, device, output[-500:]),
                             details={"device": device, "exit": installed.returncode})
+    progress("install-apk")
     stopped = _adb(adb, device, ["shell", "am", "force-stop", package], environ, log)
     if stopped.returncode != 0:
         raise ScaffoldError("LAUNCH_FAILED", "Stopping %s on %s failed, so it was not restarted: %s" % (
             package, device, stopped.stderr.strip()[-300:] or "exit %d" % stopped.returncode),
             details={"device": device, "package": package, "exit": stopped.returncode})
+    progress("stop-package")
     launched = _adb(adb, device, ["shell", "monkey", "-p", package, "1"], environ, log)
     if launched.returncode != 0:
         raise ScaffoldError("LAUNCH_FAILED", "Launching %s on %s failed." % (package, device),
                             details={"device": device, "stderr": launched.stderr.strip()[-500:]})
+    progress("launch-package")
     deadline = time.monotonic() + verify_seconds
     while True:
         probe = _adb(adb, device, ["shell", "pidof", package], environ, log, timeout=30)

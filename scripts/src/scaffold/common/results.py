@@ -75,6 +75,7 @@ class ScaffoldError(Exception):
         self.exit_code = CODE_EXIT.get(code, EXIT_INTERNAL) if exit_code is None else exit_code
         self.child_exit_code = child_exit_code
         self.operation_id = None
+        self.artifacts = []  # verified artifacts of phases that finished before this failure
 
 
 class Cancelled(BaseException):
@@ -85,6 +86,7 @@ class Cancelled(BaseException):
         self.exit_code = exit_code
         self.cleanup_incomplete = False
         self.operation_id = None
+        self.completed_phases = []
 
 
 @dataclass
@@ -137,7 +139,8 @@ class Result:
 
 def error_result(command, error, context=None):
     result = Result(command=command, status="error", exit_code=error.exit_code,
-                    child_exit_code=error.child_exit_code, operation_id=error.operation_id)
+                    child_exit_code=error.child_exit_code, operation_id=error.operation_id,
+                    artifacts=list(error.artifacts))
     if context:
         result.context = context
     result.error = {"code": error.code, "message": error.message,

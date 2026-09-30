@@ -74,6 +74,8 @@ def run_command(command, parsed, handler, argv_environ=None, needs_config=True, 
         result = Result(command=command, status="cancelled", exit_code=cancelled.exit_code,
                         operation_id=cancelled.operation_id)
         result.error = {"code": "CANCELLED", "message": "The command was interrupted.", "details": {}, "repairs": []}
+        if cancelled.completed_phases:
+            result.error["details"]["completed_phases"] = cancelled.completed_phases
         if cancelled.cleanup_incomplete:
             result.error["details"]["cleanup_incomplete"] = True
             result.add_warning("CLEANUP_INCOMPLETE", "Some processes started by this command may still be running; "

@@ -122,7 +122,7 @@ def prepare_patches(ctx, execution, op):
     identity = execution.identity
     plan = patches.plan_patch_preparation(identity, ctx.log, ctx.state_root)
     apply_argv = tools_module.package_argv(execution.toolchain, ["run", "apply_patches"])
-    op.step("patch-preparation-plan", action=plan.action, reason=plan.reason,
+    op.note("patch-preparation-plan", action=plan.action, reason=plan.reason,
             **step_module.patches_step(identity, plan, apply_argv).record())
     if plan.action == "current":
         state = patches.snapshot_files(identity, plan.report)
@@ -130,9 +130,10 @@ def prepare_patches(ctx, execution, op):
         return False, plan
     if plan.action == "conflict":
         raise patches.conflict_error(plan, identity)
-    op.step("apply-patches", **step_module.patches_step(identity, plan, apply_argv).record())
+    op.start("apply-patches", **step_module.patches_step(identity, plan, apply_argv).record())
     argv, code = packages.run(ctx, execution, ["run", "apply_patches"])
     if code != 0:
+        op.fail("apply-patches", exit=code)
         raise ScaffoldError("CHILD_FAILED", "Applying Core patches failed (exit %d)." % code,
                             details={"argv": argv, "phase": "patches"}, child_exit_code=code)
     after = patches.collect_drift(identity)
@@ -143,6 +144,7 @@ def prepare_patches(ctx, execution, op):
                             repairs=[repair(["bdev", "drift", "--diff", "--checkout", str(identity.core)])])
     patches.write_receipt(identity, plan.trees, patches.snapshot_files(identity, after), ctx.state_root,
                           patches.core_output(identity))
+    op.succeed("apply-patches", exit=0)
     return True, plan
 
 
@@ -205,8 +207,8 @@ def run_output_step(ctx, execution, effective, op, arguments, phase, extra_env=N
     if state is not None:
         state.begin_attempt(op.id, effective.changes_output)
     argv_plan = tools_module.package_argv(execution.toolchain, arguments)
-    op.step(phase, package_arguments=arguments,
-            **step_module.build_step(identity, effective, phase, arguments, argv_plan, ["patch-preparation"]).record())
+    op.start(phase, package_arguments=arguments,
+             **step_module.build_step(identity, effective, phase, arguments, argv_plan, ["patch-preparation"]).record())
     try:
         if before_child is not None:
             before_child()
@@ -218,9 +220,11 @@ def run_output_step(ctx, execution, effective, op, arguments, phase, extra_env=N
     if code != 0 and state is not None:
         state.end_attempt(op.id, "failed")
     if code != 0:
+        op.fail(phase, exit=code)
         raise ScaffoldError("CHILD_FAILED", "The package %s command exited with status %d." % (phase, code),
                             details={"argv": argv, "cwd": str(identity.core), "output_dir": str(effective.output_dir)},
                             child_exit_code=code)
+    op.succeed(phase, exit=0)
     return argv, state
 
 
@@ -237,22 +241,33 @@ def perform_build(ctx, execution, effective, op, force_gn=False):
     arguments = build_arguments(effective, "build", (), force_gn or changed)
     if android:
         described = step_module.gn_step(effective, effective.output_dir / "args.gn", effective.chosen_gn_keys)
-        op.step(described.name, **described.record())
-    op.update(effective={"target": effective.target, "configuration": effective.configuration,
+        op.start(described.name, **described.record())
+    op.detail(effective={"target": effective.target, "configuration": effective.configuration,
                          "arch": effective.arch, "output_dir": str(effective.output_dir),
                          "package_arguments": arguments})
+
+    def write_overrides():
+        _android().write_gn_overrides(identity, effective)
+        op.succeed("gn-overrides")
+
     argv, state = run_output_step(
         ctx, execution, effective, op, arguments, "build",
         _android().build_environment(execution.context(ctx)) if android else metal_environment(ctx, execution.environ),
-        (lambda: _android().write_gn_overrides(identity, effective)) if android else None)
+        write_overrides if android else None)
+    op.start("verify-output", output_dir=str(effective.output_dir))
     try:
         artifact, reason = artifact_for(effective, identity, execution.environ, ctx.log)
     except ScaffoldError as error:
+        op.fail("verify-output", code=error.code)
         if state is not None:
             state.end_attempt(op.id, "output-invalid")
         error.child_exit_code = 0
         error.details.setdefault("argv", argv)
         raise
+    op.succeed("verify-output", artifact_status="verified" if artifact else "unresolved",
+               verified_output=artifact["output_dir"] if artifact else None, explanation=reason)
+    if artifact:
+        op.attach_artifacts([artifact])
     inputs = freshness.compute(identity, plan.report.patched_paths, arguments, ctx.log,
                                android_deps.freshness_inputs(identity, ctx.log) if android else None)
     if artifact is not None and state is not None:
@@ -578,15 +593,18 @@ def run_phase(ctx, execution, bundle, result, device=None, op=None):
     identity = execution.identity
     ctx = execution.context(ctx)
     if op is not None:
-        op.step("run", artifact=bundle["path"])
+        op.start("run", artifact=bundle["path"])
         if bundle.get("kind") != "apk":
             described = step_module.launch_step(bundle["path"], True)
-            op.step(described.name, **described.record())
+            op.start(described.name, **described.record())
     if bundle.get("kind") == "apk":
         return _android().restart_apk(ctx, identity, bundle, result, device, op)
     assessment = artifact_freshness(ctx, identity, Path(bundle["path"]).parent)
     add_freshness_warning(result, assessment)
     outcome = macos.restart(bundle, ctx.environ, ctx.log)
+    if op is not None:
+        op.succeed("launch", pid=outcome["launched_pid"], stopped=outcome["stopped"])
+        op.succeed("run", artifact=bundle["path"])
     result.data = {**(result.data or {}), "run": {"artifact": bundle, "freshness": assessment, **outcome}}
     if not result.artifacts:
         result.artifacts = [{**bundle, "verified": False, "freshness": assessment["status"]}]
@@ -712,19 +730,20 @@ def do_sync_phase(ctx, execution, op, target, forwarded):
     before = {"core_head": freshness.resolve_head(identity.core, ctx.log),
               "chromium_head": freshness.resolve_head(identity.src, ctx.log)}
     arguments = sync_arguments(ctx, target, forwarded, identity)
-    op.step("sync", arguments=arguments, before=before,
+    op.start("sync", arguments=arguments, before=before,
             **step_module.sync_step(identity, arguments, tools_module.package_argv(execution.toolchain, arguments)).record())
     argv, code = packages.run(ctx, execution, arguments)
     if code != 0:
+        op.fail("sync", exit=code)
         raise ScaffoldError("CHILD_FAILED", "The sync command exited with status %d." % code,
                             details={"argv": argv, "phase": "sync"}, child_exit_code=code)
     after = {"core_head": freshness.resolve_head(identity.core, ctx.log),
              "chromium_head": freshness.resolve_head(identity.src, ctx.log)}
-    op.step("sync-complete", after=after)
+    op.succeed("sync", exit=0, revisions_before=before, revisions_after=after)
     try:
         sync_scope.checkpoint(identity, ctx.state_root, ctx.log)
     except ScaffoldError as error:
-        op.step("sync-checkpoint", outcome="not recorded", reason=error.message)
+        op.note("sync-checkpoint", outcome="not recorded", reason=error.message)
     return {"argv": argv, "revisions_before": before, "revisions_after": after}
 
 

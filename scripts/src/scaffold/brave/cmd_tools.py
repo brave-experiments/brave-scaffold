@@ -94,12 +94,14 @@ def tools_setup(ctx):
         ran = []
         for entry in entries:
             argv = [str(loaded["VPYTHON3"]), str(installer), entry]
+            op.start("installer", entry=entry, argv=argv)
             code = run_streaming(argv, str(identity.core), loaded, ctx.log, json_mode=ctx.json_mode)
             ran.append({"argv": argv, "exit": code})
-            op.step("installer", entry=entry, exit=code)
             if code != 0:
+                op.fail("installer", entry=entry, exit=code)
                 raise ScaffoldError("CHILD_FAILED", "The payload installer failed for %s." % entry,
                                     details={"argv": argv}, child_exit_code=code)
+            op.succeed("installer", entry=entry, exit=0)
         after, after_checks = tools_module.inspect_toolchain(identity, ctx.log)
         result = Result(command="tools setup", data={"installer_runs": ran, "ready": after is not None,
                                                       "tools": after.describe() if after else None},

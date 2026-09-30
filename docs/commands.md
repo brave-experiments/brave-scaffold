@@ -190,6 +190,11 @@ a Git linked worktree or an unavailable platform), `ENVIRONMENT_REQUIRED`,
 `ARTIFACT_MISMATCH`, `ARTIFACT_UNRESOLVED`, `ARTIFACT_AMBIGUOUS`, `LAUNCH_FAILED`,
 `CHILD_FAILED`, `CANCELLED`, and `INTERNAL_ERROR`.
 
+When a later phase of a combined command fails, `error.details.completed_phases` lists the
+phases that finished (each with its `phase` name and outcome, for example a sync with its
+revisions or a build with its exit status and `artifact_status`), and `artifacts` keeps the
+verified output. A cancelled command lists them the same way.
+
 ## Plans
 
 `--plan` (on `build`, `test`, `sync`, the combined commands, `run`, and `deploy`) shows the

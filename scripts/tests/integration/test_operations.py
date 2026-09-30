@@ -77,6 +77,55 @@ class RecordLifecycleTests(RecordCase, BuildTestCase):
                 self.assertEqual(record["cleanup"], {"complete": True})
                 self.assertEqual(document["operation_id"], record["operation_id"])
 
+    def steps(self, record):
+        return {step["name"]: step for step in record["steps"]}
+
+    def test_a_launch_failure_after_a_build_keeps_the_completed_build_in_the_error_and_the_record(self):
+        result, document = self.document("build-run", env=self.env(FAKE_OPEN_EXIT="1"))
+        self.assertEqual(document["error"]["code"], "LAUNCH_FAILED")
+        completed = {item["phase"]: item for item in document["error"]["details"]["completed_phases"]}
+        self.assertEqual(completed["build"]["exit"], 0)
+        self.assertEqual(completed["verify-output"]["artifact_status"], "verified")
+        self.assertEqual([item["path"] for item in document["artifacts"]], [str(self.output_app())])
+        record = self.record_of(document)
+        steps = self.steps(record)
+        self.assertEqual((steps["build"]["status"], steps["build"]["outcome"]["exit"]), ("succeeded", 0))
+        self.assertEqual(steps["run"]["status"], "failed")
+        self.assertEqual([item["path"] for item in record["artifacts"]], [str(self.output_app())])
+        self.assertNotIn("planned", [step["status"] for step in record["steps"]], "no step is left as a description")
+
+    def test_a_failed_build_after_a_sync_keeps_the_completed_sync(self):
+        self.hook = self.sandbox.hook("if 'build' in argv:\n    raise SystemExit(3)\nraise SystemExit(0)\n")
+        result, document = self.document("sync-build")
+        self.assertEqual((document["error"]["code"], document["child_exit_code"]), ("CHILD_FAILED", 3))
+        completed = {item["phase"]: item for item in document["error"]["details"]["completed_phases"]}
+        self.assertIn("revisions_after", completed["sync"])
+        self.assertNotIn("build", completed)
+        steps = self.steps(self.record_of(document))
+        self.assertEqual((steps["sync"]["status"], steps["build"]["status"]), ("succeeded", "failed"))
+        self.assertEqual(steps["build"]["outcome"]["exit"], 3)
+
+    def test_a_cancelled_phase_is_recorded_as_interrupted_and_a_killed_process_leaves_it_running(self):
+        for how in ("cancel", "kill"):
+            with self.subTest(how=how):
+                self.sandbox.record.unlink(missing_ok=True)
+                process = subprocess.Popen(
+                    [str(SCRIPTS / "bdev"), "--json", "--config", self.config, "--checkout", "main", "test",
+                     "brave_unit_tests"], env=self.env(FAKE_SLEEP="60"), stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE, text=True)
+                deadline = time.time() + 30
+                while not self.node_calls() and time.time() < deadline:
+                    time.sleep(0.05)
+                if how == "cancel":
+                    process.send_signal(signal.SIGTERM)
+                else:
+                    process.kill()
+                stdout, _ = process.communicate(timeout=60)
+                record = self.records("test")[-1]
+                expected = "interrupted" if how == "cancel" else "running"
+                self.assertEqual(self.steps(record)["test"]["status"], expected)
+                self.assertEqual(record["state"], "complete" if how == "cancel" else "incomplete")
+
     def test_a_failed_restart_after_a_build_finishes_the_record_and_keeps_the_build_phase(self):
         result, document = self.document("build-run", env=self.env(FAKE_OPEN_EXIT="1"))
         self.assertEqual((result.returncode, document["error"]["code"]), (5, "LAUNCH_FAILED"))
