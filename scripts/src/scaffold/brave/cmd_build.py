@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import os
 import re
 from dataclasses import dataclass, field
@@ -75,13 +76,27 @@ class Prepared:
     loaded: dict
     toolchain: object
     checks: list = field(default_factory=list)
+    ctx: object = None
+
+
+def load_context(ctx, identity):
+    """Load and validate the checkout's approved environment once.
+
+    Returns a copy of the context whose environment is the loaded one, so every later phase (readiness,
+    device and tool lookups, child processes) sees the same values, plus that environment.
+    """
+    if ctx.prepared:
+        return ctx, ctx.environ
+    loaded = env_module.load_environment(identity, ctx.environ, ctx.log)
+    return dataclasses.replace(ctx, environ=loaded, prepared=True), loaded
 
 
 def prepare_environment(ctx, identity, target):
-    loaded = env_module.load_environment(identity, ctx.environ, ctx.log)
+    """Environment, checkout-local tools, and readiness for one request; returns them with the prepared context."""
+    ctx, loaded = load_context(ctx, identity)
     toolchain, tool_checks = tools_module.require_toolchain(identity, ctx.log)
     checks = readiness_gate(ctx, target)
-    return Prepared(loaded, toolchain, [*tool_checks, *checks])
+    return Prepared(loaded, toolchain, [*tool_checks, *checks], ctx)
 
 
 def package_environment(prepared, shims):
@@ -336,6 +351,7 @@ def do_build(ctx, command, sync_first=False, run_after=False):
                            build_plan_steps(ctx, identity, effective, "build", (), sync_plan))
     if parsed.get("device") and effective.target != "android":
         raise ScaffoldError("INVALID_INPUT", "--device applies to Android only.")
+    ctx, _ = load_context(ctx, identity)
     device = _android().preflight_device(ctx) if run_after and effective.target == "android" else None
     prepared = prepare_environment(ctx, identity, effective.target)
     op = Operation(command, identity, {"target": effective.target, "configuration": effective.configuration},
@@ -423,6 +439,7 @@ def cmd_test(ctx):
         return plan_result("test", ctx, identity, effective,
                            build_plan_steps(ctx, identity, effective, "test", script_args))
     prepared = prepare_environment(ctx, identity, effective.target)
+    ctx = prepared.ctx
     op = Operation("test", identity, {"target": effective.target, "suite": parsed.get("suite")}, ctx.state_root)
     try:
         arguments = build_arguments(effective, "test", script_args, False)
@@ -514,9 +531,9 @@ def add_freshness_warning(result, assessment):
 
 def run_phase(ctx, identity, bundle, result, device=None):
     """Restart the browser (or reinstall the APK) with a validated output and add the outcome to a result."""
+    ctx, _ = load_context(ctx, identity)
     if bundle.get("kind") == "apk":
         return _android().restart_apk(ctx, identity, bundle, result, device)
-    env_module.require_environment(identity, ctx.environ, ctx.log)
     assessment = artifact_freshness(ctx, identity, Path(bundle["path"]).parent)
     add_freshness_warning(result, assessment)
     outcome = macos.restart(bundle, ctx.environ, ctx.log)
@@ -543,6 +560,8 @@ def cmd_run(ctx):
     require_available_target(target)
     if parsed.get("device") and target != "android":
         raise ScaffoldError("INVALID_INPUT", "--device applies to Android only.")
+    if not parsed.get("plan"):
+        ctx, _ = load_context(ctx, identity)
     if target == "android":
         return _android().run_android(ctx, identity)
     configuration = requested_configuration(ctx) or "Debug"
@@ -653,6 +672,7 @@ def cmd_sync(ctx):
         result.text = "Plan for sync (nothing was run): bpm " + " ".join(redact_argv(result.data["plan"]["argv_arguments"]))
         return result
     prepared = prepare_environment(ctx, identity, "mac")
+    ctx = prepared.ctx
     op = Operation("sync", identity, {"targets": targets}, ctx.state_root)
     try:
         phase = do_sync_phase(ctx, identity, prepared, op, mobile, parsed.forwarded)
@@ -701,6 +721,7 @@ def cmd_drift(ctx):
 def cmd_patches_update(ctx):
     identity = ctx.identity()
     prepared = prepare_environment(ctx, identity, "mac")
+    ctx = prepared.ctx
     op = Operation("patches update", identity, {}, ctx.state_root)
     argv, code = run_package_step(ctx, identity, prepared, ["run", "update_patches", *ctx.parsed.forwarded])
     if code != 0:

@@ -10,7 +10,6 @@ import os
 import zipfile
 from pathlib import Path
 
-from ..common import env as env_module
 from ..common.platforms import host_architecture, host_platform
 from ..common.procs import run_capture
 from ..common.results import Result, ScaffoldError, repair
@@ -172,7 +171,6 @@ def restart_apk(ctx, identity, artifact, result, device=None):
             details={"artifact": artifact["path"]},
             repairs=[repair(["bdev", "tools", "setup", "--checkout", str(identity.core)], requires_user_action=False,
                             note="Explicit repair of checkout-local tools; run it only if aapt2 is missing.")])
-    env_module.require_environment(identity, ctx.environ, ctx.log)
     adapter, device, source = device or preflight_device(ctx)
     output_dir = artifact.get("output_dir") or str(Path(artifact["path"]).parent.parent)
     assessment = cmd_build.artifact_freshness(ctx, identity, output_dir, android=True)

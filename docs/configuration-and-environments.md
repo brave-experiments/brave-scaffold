@@ -114,7 +114,11 @@ whether or not a shell hook is active. Before loading, tool-owned variables
 (`BRAVE_CORE_DIR`, `BRAVE_SRC_ROOT`, `BRAVE_LAUNCHER_CHECKOUT_DIR`, and similar)
 are removed from the inherited environment so stale exports cannot pick a
 checkout. After loading, the result must agree with the selected checkout or the
-command stops with `CHECKOUT_ENV_CONFLICT`. Loading evaluates the approved
+command stops with `CHECKOUT_ENV_CONFLICT`. This covers `run` and `deploy` too: they load
+and validate the environment before stopping or launching anything. The loaded
+environment is then the one every phase of the command uses (readiness checks, `adb`
+and SDK lookups, build settings such as `JAVA_OPTS`, and child processes), not the
+shell you started from. Loading evaluates the approved
 `.envrc`, which is code you reviewed; the scaffold's own template only derives
 exports.
 
