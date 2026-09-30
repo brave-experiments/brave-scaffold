@@ -21,7 +21,7 @@ ALIAS_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]*")
 PLATFORM_NAMES = ("mac", "macos", "android")
 TOP_FIELDS = {"schema_version", "logging", "defaults", "checkouts"}
 LOGGING_FIELDS = {"commands"}
-DEFAULT_FIELDS = {"platform"}
+DEFAULT_FIELDS = {"platform", "android_device"}
 CHECKOUT_FIELDS = {"alias", "core", "direnv_dir"}
 EXAMPLE = """[[checkouts]]
 alias = "main"
@@ -48,6 +48,7 @@ class Config:
     exists: bool
     commands_logging: bool = True
     default_platform: str | None = None
+    default_android_device: str | None = None
     checkouts: list = field(default_factory=list)
 
     @property
@@ -117,6 +118,12 @@ def _validate(path, data):
                                "must be one of: %s" % ", ".join(PLATFORM_NAMES),
                                '[defaults]\nplatform = "mac"')
             config.default_platform = platform.lower()
+        device = data["defaults"].get("android_device")
+        if device is not None:
+            if not isinstance(device, str) or not device:
+                raise _invalid(path, "defaults.android_device", "must be a device id string",
+                               '[defaults]\nandroid_device = "emulator-5554"')
+            config.default_android_device = device
     raw = data.get("checkouts", [])
     if not isinstance(raw, list):
         raise _invalid(path, "checkouts", "must be an array of tables", EXAMPLE)

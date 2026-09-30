@@ -63,7 +63,8 @@ def effective_target(explicit, config):
 VALIDATED = set()
 # (target, operation) pairs whose commands exist in this release.
 AVAILABLE_OPERATIONS = {("mac", operation) for operation in
-                        ("sync", "build", "test", "run", "clean", "drift", "patches-update")}
+                        ("sync", "build", "test", "run", "clean", "drift", "patches-update")} | {
+    ("android", operation) for operation in ("sync", "build", "deploy", "run", "clean")}
 
 
 def capability_table():

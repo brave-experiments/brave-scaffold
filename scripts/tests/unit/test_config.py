@@ -51,6 +51,11 @@ class ConfigTests(unittest.TestCase):
         self.assertIn("example", error.details)
         self.fails('schema_version = 1\n[[checkouts]]\ncore = "/a/src/brave"\nextra = 1\n', "checkouts[0].extra")
 
+    def test_default_android_device_is_validated(self):
+        config = self.load('schema_version = 1\n[defaults]\nandroid_device = "emulator-5554"\n')
+        self.assertEqual(config.default_android_device, "emulator-5554")
+        self.fails("schema_version = 1\n[defaults]\nandroid_device = 5\n", "defaults.android_device")
+
     def test_duplicates_are_rejected(self):
         base = 'schema_version = 1\n[[checkouts]]\nalias = "a"\ncore = "/x/src/brave"\ndirenv_dir = "e/a"\n'
         self.fails(base + '[[checkouts]]\nalias = "a"\ncore = "/y/src/brave"\n', "checkouts[1].alias")

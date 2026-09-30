@@ -70,6 +70,17 @@ class EffectiveTests(unittest.TestCase):
             self.assertEqual(caught.exception.code, "SELECTOR_CONFLICT")
         resolve(["Debug"], explicit_configuration="Debug")
 
+    def test_android_adds_its_generated_arguments_unless_forwarded(self):
+        effective = resolve([], target="android")
+        self.assertIn("--target_android_output_format=apk", effective.generated)
+        self.assertIn("--gn=use_mold:false", effective.generated)
+        forwarded = resolve(["--gn", "use_mold:true", "--gn=is_component_build:true"], target="android")
+        self.assertNotIn("--gn=use_mold:false", forwarded.generated)
+        self.assertNotIn("--gn=is_component_build:false", forwarded.generated)
+        self.assertIn("--gn=enable_android_secondary_abi:false", forwarded.generated)
+        self.assertTrue(resolve(["--target_android_output_format=aab"], target="android").unresolved)
+        self.assertNotIn("--gn=use_mold:false", resolve([]).generated, "macOS is unchanged")
+
     def test_unresolvable_builds_are_flagged(self):
         for tokens in (["--help"], ["--target", "brave_unit_tests"], ["-C"]):
             self.assertTrue(resolve(tokens).unresolved, tokens)

@@ -197,3 +197,15 @@ def _register_signing():
 
 
 _register_signing()
+
+
+def _register_android():
+    from . import android_checks
+    register_group("android-machine", android_checks.machine_checks)
+    register_group("android-build", android_checks.build_checks)
+    register_group("android-support", android_checks.support_checks)
+    register_scope("android", ("machine", "host-mac", "android-machine", "checkout", "android-build",
+                               "android-support"))
+
+
+_register_android()

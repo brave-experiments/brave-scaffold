@@ -1,0 +1,12 @@
+# Copyright (c) 2026 The Brave Authors. All rights reserved.
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this file,
+# You can obtain one at https://mozilla.org/MPL/2.0/.
+
+# Where the Android-on-Mac support repository comes from. Compatibility with a
+# checkout is not read from a table here: it is decided by the support
+# repository's own version gates (copyMacRes.sh -v) run against that checkout.
+[support]
+url = "https://github.com/brave-experiments/brave-android-mac-support.git"
+# Used only when a new working copy is created without --ref.
+default_ref = "main"

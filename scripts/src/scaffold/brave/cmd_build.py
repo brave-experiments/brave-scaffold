@@ -92,7 +92,11 @@ def run_package_step(ctx, identity, prepared, arguments, extra_env=None):
     argv = tools_module.package_argv(prepared.toolchain, arguments)
     with local_shims(prepared.toolchain) as shims:
         env = package_environment(prepared, shims)
-        env.update(extra_env or {})
+        for name, value in (extra_env or {}).items():
+            if value is None:
+                env.pop(name, None)
+            else:
+                env[name] = value
         return argv, run_streaming(argv, str(identity.core), env, ctx.log, json_mode=ctx.json_mode)
 
 
@@ -183,7 +187,7 @@ class BuildOutcome:
     prepared_patches: bool
 
 
-def run_output_step(ctx, identity, effective, prepared, op, arguments, phase, extra_env=None):
+def run_output_step(ctx, identity, effective, prepared, op, arguments, phase, extra_env=None, before_child=None):
     """Run the package command that writes the output directory.
 
     The attempt is recorded before the child starts, so an earlier success stops
@@ -194,6 +198,8 @@ def run_output_step(ctx, identity, effective, prepared, op, arguments, phase, ex
         state.begin_attempt(op.id)
     op.step(phase, package_arguments=arguments)
     try:
+        if before_child is not None:
+            before_child()
         argv, code = run_package_step(ctx, identity, prepared, arguments, extra_env)
     except Cancelled:
         if state is not None:
@@ -211,12 +217,17 @@ def run_output_step(ctx, identity, effective, prepared, op, arguments, phase, ex
 def perform_build(ctx, identity, effective, prepared, op, force_gn=False):
     """Prepare sources, run the package build, then verify the resulting output."""
     changed, plan = prepare_patches(ctx, identity, prepared, op)
+    android = effective.target == "android"
+    if android:
+        changed = _android().prepare_support(ctx, identity, prepared, op, effective) or changed
     arguments = build_arguments(effective, "build", (), force_gn or changed)
     op.update(effective={"target": effective.target, "configuration": effective.configuration,
                          "arch": effective.arch, "output_dir": str(effective.output_dir),
                          "package_arguments": arguments})
-    argv, state = run_output_step(ctx, identity, effective, prepared, op, arguments, "build",
-                                  metal_environment(ctx) if effective.target == "mac" else {})
+    argv, state = run_output_step(
+        ctx, identity, effective, prepared, op, arguments, "build",
+        _android().build_environment(ctx) if android else metal_environment(ctx),
+        (lambda: _android().write_gn_overrides(identity, effective)) if android else None)
     try:
         artifact, reason = artifact_for(effective)
     except ScaffoldError as error:
@@ -316,6 +327,9 @@ def do_build(ctx, command, sync_first=False, run_after=False):
         sync_plan = sync_arguments(ctx, effective.target, [], identity) if sync_first else None
         return plan_result(command, ctx, identity, effective,
                            build_plan_steps(ctx, identity, effective, "build", (), sync_plan))
+    if parsed.get("device") and effective.target != "android":
+        raise ScaffoldError("INVALID_INPUT", "--device applies to Android only.")
+    device = _android().preflight_device(ctx) if run_after and effective.target == "android" else None
     prepared = prepare_environment(ctx, identity, effective.target)
     op = Operation(command, identity, {"target": effective.target, "configuration": effective.configuration},
                    ctx.state_root)
@@ -337,7 +351,7 @@ def do_build(ctx, command, sync_first=False, run_after=False):
     if sync_result:
         result.data["sync"] = sync_result
     if run_after:
-        result = run_phase(ctx, identity, outcome.artifact, result)
+        result = run_phase(ctx, identity, outcome.artifact, result, device)
     op.finish(result.status, result.exit_code, ctx.log.records, [outcome.artifact] if outcome.artifact else [])
     return result
 
@@ -469,8 +483,7 @@ def select_artifact(ctx, identity, target, configuration, arch):
     return candidates[0]
 
 
-def artifact_freshness(ctx, identity, bundle):
-    output_dir = Path(bundle["path"]).parent
+def artifact_freshness(ctx, identity, output_dir):
     state = OutputState(identity, output_dir, ctx.state_root)
     report = patches.collect_drift(identity)
     recorded = (state.success or {}).get("fingerprint")
@@ -478,15 +491,21 @@ def artifact_freshness(ctx, identity, bundle):
     return freshness.assess(recorded, current, state)
 
 
-def run_phase(ctx, identity, bundle, result):
-    """Restart the browser with a validated bundle and add the outcome to a result."""
-    env_module.require_environment(identity, ctx.environ, ctx.log)
-    assessment = artifact_freshness(ctx, identity, bundle)
+def add_freshness_warning(result, assessment):
     if assessment["status"] == "stale":
         result.add_warning("STALE_BUILD", "This output does not include the latest changes: %s" %
                            "; ".join(assessment["evidence"]), freshness=assessment)
     elif assessment["status"] == "unknown":
         result.add_warning("UNKNOWN_FRESHNESS", freshness.UNKNOWN_MESSAGE, freshness=assessment)
+
+
+def run_phase(ctx, identity, bundle, result, device=None):
+    """Restart the browser (or reinstall the APK) with a validated output and add the outcome to a result."""
+    if bundle.get("kind") == "apk":
+        return _android().restart_apk(ctx, identity, bundle, result, device)
+    env_module.require_environment(identity, ctx.environ, ctx.log)
+    assessment = artifact_freshness(ctx, identity, Path(bundle["path"]).parent)
+    add_freshness_warning(result, assessment)
     outcome = macos.restart(bundle, ctx.environ, ctx.log)
     result.data = {**(result.data or {}), "run": {"artifact": bundle, "freshness": assessment, **outcome}}
     if not result.artifacts:
@@ -496,11 +515,21 @@ def run_phase(ctx, identity, bundle, result):
     return result
 
 
+def cmd_deploy(ctx):
+    """`deploy android` is `run android`."""
+    if ctx.parsed.positionals[0].lower() != "android":
+        raise ScaffoldError("INVALID_INPUT", "deploy installs an Android build; use 'bdev run' for macOS.",
+                            details={"example": "bdev deploy android"})
+    return cmd_run(ctx)
+
+
 def cmd_run(ctx):
     parsed = ctx.parsed
     identity = ctx.identity()
     target, _ = effective_target(parsed.positionals[0] if parsed.positionals else None, ctx.config)
     require_available_target(target)
+    if parsed.get("device") and target != "android":
+        raise ScaffoldError("INVALID_INPUT", "--device applies to Android only.")
     if target == "android":
         return _android().run_android(ctx, identity)
     configuration = requested_configuration(ctx) or "Debug"

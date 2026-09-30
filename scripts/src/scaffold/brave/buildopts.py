@@ -19,10 +19,12 @@ from pathlib import Path
 
 from ..common.results import ScaffoldError
 
+ANDROID_GN_ARGS = (("is_component_build", "false"), ("enable_android_secondary_abi", "false"),
+                   ("use_mold", "false"), ("use_system_xcode", "false"))
 CONFIG_TOKENS = ("Debug", "Release", "Component", "Static")
 OS_ALIASES = {"mac": "mac", "macos": "mac", "android": "android", "ios": "ios", "linux": "linux",
               "win": "win", "windows": "win"}
-VALUE_OPTIONS = ("--target_os", "--target_arch", "--target", "--channel")
+VALUE_OPTIONS = ("--target_os", "--target_arch", "--target", "--channel", "--target_android_output_format")
 INFO_FLAGS = ("-h", "--help", "-V", "--version")
 
 
@@ -37,6 +39,8 @@ class Forwarded:
     offline: bool = False
     remoteexec: bool | None = None
     info_only: bool = False
+    output_format: str | None = None
+    gn_keys: set = field(default_factory=set)
     problems: list = field(default_factory=list)
 
 
@@ -67,6 +71,10 @@ def interpret(tokens):
                     found.problems.append("-C has no value")
             else:
                 found.build_dir = token[2:]
+        elif token == "--gn" or token.startswith("--gn="):
+            value = token.partition("=")[2] if "=" in token else (tokens[index + 1] if index + 1 < len(tokens) else "")
+            index += 0 if "=" in token else 1
+            found.gn_keys.add(value.split(":", 1)[0])
         elif token.split("=")[0] in VALUE_OPTIONS:
             name, equals, value = token.partition("=")
             if not equals:
@@ -78,7 +86,7 @@ def interpret(tokens):
                     value = None
             if value is not None:
                 key = name.lstrip("-")
-                setattr(found, key, value)
+                setattr(found, "output_format" if key == "target_android_output_format" else key, value)
         elif token in CONFIG_TOKENS:
             found.build_config = token
         index += 1
@@ -179,6 +187,12 @@ def resolve_effective(src, forwarded_tokens, target, configuration, explicit_tar
         sources["output"] = "forwarded"
     if fwd.build_config is None:
         generated.append(effective_configuration)
+    if effective_target == "android":
+        if fwd.output_format is None:
+            generated.append("--target_android_output_format=apk")
+        for key, value in ANDROID_GN_ARGS:
+            if key not in fwd.gn_keys:
+                generated.append("--gn=%s:%s" % (key, value))
     if effective_configuration == "Release" and fwd.channel is None:
         generated.append("--channel=release")
     offline = explicit_offline or fwd.offline or fwd.remoteexec is False
@@ -189,6 +203,8 @@ def resolve_effective(src, forwarded_tokens, target, configuration, explicit_tar
         unresolved.append("the forwarded arguments ask the package command for information, not a build")
     if fwd.build_dir is not None and not fwd.build_dir:
         unresolved.append("-C has an empty value")
+    if effective_target == "android" and fwd.output_format not in (None, "apk"):
+        unresolved.append("the output format %r does not produce an APK" % fwd.output_format)
     if fwd.target and fwd.target != "brave":
         unresolved.append("build target %r does not produce the application" % fwd.target)
     output = resolve_output_dir(src, build_dir_arg)

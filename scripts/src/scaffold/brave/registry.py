@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 from ..common.cli import CommandSpec, Opt, Positional
-from . import clean, cmd_build, cmd_setup, cmd_tools, doctor
+from . import android, clean, cmd_build, cmd_setup, cmd_tools, doctor
 
 WITH_PYTHONPATH = Opt("--with-pythonpath", "with_pythonpath", takes_value=False,
                       help="Also export PYTHONPATH for Core's script directory.")
@@ -22,6 +22,9 @@ FORCE_GN = Opt("--force-gn", "force_gn", takes_value=False, help="Regenerate GN 
 PLAN = Opt("--plan", "plan", takes_value=False, help="Show the steps without running any that change anything.")
 ARTIFACT = Opt("--artifact", "artifact", metavar="PATH", help="Application to run instead of the default output.")
 FILTER = Opt("--filter", "filter", metavar="PATTERN", help="Only run tests matching the pattern within the suite.")
+DEVICE = Opt("--device", "device", metavar="ID", help="Android device id (required when several are usable).")
+SOURCE = Opt("--source", "source", metavar="URL_OR_PATH", help="Support repository to clone (default: the standard source).")
+REF = Opt("--ref", "ref", metavar="REF", help="Support repository branch, tag, or commit for this checkout only.")
 DIFF = Opt("--diff", "diff", takes_value=False, help="Print the Git diff of each drifted file.")
 TARGET = Positional("target", help="mac or android (default: configured platform, else this host).")
 BUILD_SIDE_EFFECTS = ("Writes the build output under the checkout's src/out, applies Core patches when they are "
@@ -30,7 +33,7 @@ BUILD_SIDE_EFFECTS = ("Writes the build output under the checkout's src/out, app
 
 # Commands that take a group word first ("checkout add"). The value is the set of subcommands.
 GROUPS = {"checkout": ("add", "list"), "env": ("init", "export", "check"), "tools": ("setup",),
-          "patches": ("update",)}
+          "patches": ("update",), "android": ("setup",)}
 
 
 def build_registry():
@@ -87,7 +90,7 @@ def build_registry():
                     examples=("bdev build", "bdev build mac --offline", "bdev build --plan")),
         CommandSpec("build-run", "Build, then restart the browser with exactly the output that build produced.",
                     cmd_build.cmd_build_run, aliases=("br",), positionals=(TARGET,),
-                    options=(CONFIGURATION, OFFLINE, FORCE_GN, PLAN), forward=True,
+                    options=(CONFIGURATION, OFFLINE, FORCE_GN, PLAN, DEVICE), forward=True,
                     side_effects=BUILD_SIDE_EFFECTS + " Then stops any running instance of the same application and "
                                                      "launches the new build.",
                     examples=("bdev br",)),
@@ -103,7 +106,7 @@ def build_registry():
                     notes="Extra arguments go to the build phase only."),
         CommandSpec("sync-build-run", "Sync, build, then restart the browser with the built output.",
                     cmd_build.cmd_sync_build_run, aliases=("sbr",), positionals=(TARGET,),
-                    options=(CONFIGURATION, OFFLINE, FORCE_GN, PLAN), forward=True,
+                    options=(CONFIGURATION, OFFLINE, FORCE_GN, PLAN, DEVICE), forward=True,
                     side_effects="Sync, build, and restart effects.", examples=("bdev sbr",),
                     notes="Extra arguments go to the build phase only."),
         CommandSpec("test", "Compile if needed and run one test suite (macOS).", cmd_build.cmd_test,
@@ -115,11 +118,25 @@ def build_registry():
                     notes="The suite must come before any forwarded arguments. --filter only narrows the suite.",
                     examples=("bdev test brave_unit_tests", "bdev test mac brave_browser_tests --filter 'Example.*'")),
         CommandSpec("run", "Restart the browser with an existing output; never builds.", cmd_build.cmd_run,
-                    positionals=(TARGET,), options=(CONFIGURATION, ARTIFACT, PLAN),
-                    side_effects="Quits any running instance of the same application (from any checkout), then "
-                                 "launches the selected one. Profiles and app data are kept.",
+                    positionals=(TARGET,), options=(CONFIGURATION, ARTIFACT, PLAN, DEVICE),
+                    side_effects="macOS: quits any running instance of the same application (from any checkout), "
+                                 "then launches the selected one. Android: installs the APK over the existing app on "
+                                 "one device, stops that package there, and launches it. Profiles and app data are kept.",
                     notes="Older or independently built outputs may run; staleness or unknown freshness is reported.",
                     examples=("bdev run", "bdev run --artifact ./out/Custom/'Brave Browser Development.app'")),
+        CommandSpec("deploy", "Install the Android build on a device and launch it (same as 'run android').",
+                    cmd_build.cmd_deploy, positionals=(Positional("target", True, help="android"),),
+                    options=(CONFIGURATION, ARTIFACT, PLAN, DEVICE),
+                    side_effects="Installs the APK over the existing app on one device (data is kept), stops that "
+                                 "package there, and launches it.",
+                    examples=("bdev deploy android", "bdev deploy android --device emulator-5554")),
+        CommandSpec("android setup", "Create this checkout's Android-on-Mac support working copy.",
+                    android.cmd_android_setup, options=(SOURCE, REF),
+                    side_effects="Uses the network: updates a shared Git object cache under .bdev/cache and clones "
+                                 "the support repository into <workspace>/brave-android-mac-support for this "
+                                 "checkout. An existing working copy is switched only to an explicit --ref, and only "
+                                 "when it has no local changes and no unpushed commits.",
+                    examples=("bdev android setup --checkout main", "bdev android setup --ref main")),
         CommandSpec("drift", "Compare patched Chromium files with the patch metadata (read-only).", cmd_build.cmd_drift,
                     options=(DIFF,), examples=("bdev drift", "bdev drift --diff")),
         CommandSpec("patches update", "Generate Core patch changes from local Chromium edits.",
