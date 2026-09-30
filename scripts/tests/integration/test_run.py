@@ -215,6 +215,9 @@ class RunTests(BuildTestCase):
         self.assertTrue(self.state().needs_revalidation)
         result, document = self.run_app("--artifact", str(self.output_app()))
         self.assertEqual(document["data"]["run"]["freshness"]["status"], "unknown")
+        result, document = self.document("context")
+        self.assertEqual([w["code"] for w in document["warnings"]], ["INCOMPLETE_OPERATION"])
+        self.assertEqual(len(document["data"]["incomplete_operations"]), 1)
 
 
 class RestartEscalationTests(unittest.TestCase):

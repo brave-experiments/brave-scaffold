@@ -21,6 +21,7 @@ from ..common.checks import PASS
 from ..common.platforms import capability_table
 from ..common.procs import run_capture, run_streaming
 from ..common.results import Result, ScaffoldError
+from . import records
 
 MINIMAL_CONFIG = "schema_version = 1\n\n[logging]\ncommands = true\n"
 GENERATED_MARKER = env_module.GENERATED_MARKER
@@ -188,6 +189,16 @@ def context(ctx):
     data["environment"] = {"directory": str(record.direnv_dir) if record and record.direnv_dir else None,
                            **approval}
     lines.append("  Environment: %s" % approval["state"])
+    incomplete = records.incomplete_operations(ctx.state_root, identity.core)
+    data["incomplete_operations"] = [{"operation_id": item["operation_id"], "command": item["command"],
+                                      "started": item["started"]} for item in incomplete]
+    if incomplete:
+        result.add_warning("INCOMPLETE_OPERATION",
+                           "%d earlier operation(s) on this checkout never finished (interrupted or killed). "
+                           "Inspect the checkout before retrying; their outputs may be partly written." % len(incomplete),
+                           operations=[item["operation_id"] for item in incomplete])
+        lines.append("  Earlier operations that never finished: %s" %
+                     ", ".join(item["operation_id"] for item in incomplete))
     toolchain, checks = tools_module.inspect_toolchain(identity, ctx.log)
     data["tools"] = {"ready": toolchain is not None, "checks": [check.to_dict() for check in checks]}
     for check in checks:
