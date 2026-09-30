@@ -3,9 +3,14 @@
 The repository includes a configuration template. The CLI, configuration reader,
 and environment setup are not implemented yet; these files do not activate tools.
 
-Copy `bdev.example.toml` to `bdev.toml` and replace its placeholder Core path with
-the absolute path to your checkout's `src/brave` directory. `bdev.toml` is ignored
+Copy `brave-scaffold.example.toml` to `brave-scaffold.toml` and replace its placeholder Core path with
+the absolute path to your checkout's `src/brave` directory. `brave-scaffold.toml` is ignored
 by Git. Keep machine paths out of the tracked example.
+
+`brave-scaffold.toml` is the project-level configuration for Brave Scaffold.
+`bdev` is its main command, not the owner of the configuration file. Other
+scaffold tools and Brave project integrations may add documented sections when
+implemented. Do not add speculative fields or extra configuration layers now.
 
 The initial configuration contract is:
 
@@ -16,7 +21,7 @@ The initial configuration contract is:
 | `defaults.platform` | Optional platform override; absent means the current host platform |
 | `checkouts[].alias` | Optional name for a checkout; does not select a default checkout |
 | `checkouts[].core` | Absolute canonical path to that checkout's Core Git root |
-| `checkouts[].direnv_dir` | Directory containing the checkout's `.envrc`, loaded through direnv before command execution; relative paths resolve beside `bdev.toml` |
+| `checkouts[].direnv_dir` | Directory containing the checkout's `.envrc`, loaded through direnv before command execution; relative paths resolve beside `brave-scaffold.toml` |
 
 Add another `[[checkouts]]` table for each checkout. Each checkout needs its own
 Core path and environment directory. Store Core's path once; surrounding source

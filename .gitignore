@@ -8,7 +8,7 @@ __pycache__/
 /scripts/htmlcov/
 
 # Machine configuration and generated state
-/bdev.toml
+/brave-scaffold.toml
 /environments/
 /.bdev/
 /.worktrees/
