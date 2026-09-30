@@ -26,7 +26,9 @@ operations.
 - Keep tooling implementation, launchers, dependencies, and tests under `scripts/`.
   Do not create root-level `src/` or `tests/` directories for tooling.
 - Use Python 3.14 or newer. Prefer standard-library code and tests without
-  third-party Python dependencies.
+  third-party Python dependencies. Create the tooling runtime explicitly at
+  `scripts/.venv` with `venv --without-pip`; launchers use its absolute interpreter
+  path, never a browser runtime or a silent PATH fallback.
 - Keep machine-specific checkout paths and generated state in ignored local
   configuration. Browser checkouts do not need to live in this repository.
 - Scaffold setup must not write integration files, hooks, Git configuration, or
@@ -51,6 +53,21 @@ Place operational skill source directly in `.agents/skills/`. Do not replace
 user-owned entries. These skills configure this repository only; they do not
 permit writes inside Core or prove that a client can discover skills from an
 external environment.
+
+## Execution and artifact handling
+
+Forward unknown package arguments unchanged. Interpret supported output-affecting
+options so readiness, output selection, and records match the effective build.
+Forwarded values may replace defaults; conflicts with explicit scaffold selectors
+must fail before mutation. Combined build/run commands must identify the actual
+build output before restarting the browser; an older default artifact is not a
+substitute for unresolved output.
+
+A failed or interrupted rebuild can partly overwrite an earlier output. Mark its
+previous success record as needing revalidation before writes begin. Preserve
+history and untouched outputs. Valid older artifacts may still launch after
+inspection with stale/unknown warnings; do not treat an old receipt as proof that
+the current output remains intact. Do not rebuild, delete, or roll back implicitly.
 
 ## Changes and verification
 

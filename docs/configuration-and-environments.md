@@ -12,6 +12,31 @@ by Git. Keep machine paths out of the tracked example.
 scaffold tools and Brave project integrations may add documented sections when
 implemented. Do not add speculative fields or extra configuration layers now.
 
+## Tooling interpreter
+
+The planned tooling runtime is a standard-library virtual environment under
+`scripts/.venv`. Create it explicitly from the scaffold root with Python 3.14 or
+newer, without installing pip or other packages:
+
+```sh
+python3.14 -m venv --without-pip scripts/.venv
+```
+
+An absolute path to another compatible Python interpreter is also valid. Python
+itself is a machine prerequisite; launchers and direnv activation will not install
+it. Creating this environment does not implement or activate the pending CLI.
+
+Launchers will invoke this installation's `scripts/.venv/bin/python` directly,
+check its version, and ignore inherited Python home/search-path overrides for the
+scaffold process. They will not fall back to a Python on PATH or require manual
+activation. Checkout-local `vpython3` remains a separate runtime for browser work.
+
+If the scaffold moves or the base interpreter disappears, recreate the
+scaffold-owned virtual environment explicitly. Missing, broken, or incompatible
+runtime errors must explain that repair; they must not change browser toolchains.
+
+## Checkout configuration
+
 The initial configuration contract is:
 
 | Field | Meaning |
