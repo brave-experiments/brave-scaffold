@@ -74,6 +74,7 @@ class ScaffoldError(Exception):
         self.repairs = repairs or []
         self.exit_code = CODE_EXIT.get(code, EXIT_INTERNAL) if exit_code is None else exit_code
         self.child_exit_code = child_exit_code
+        self.operation_id = None
 
 
 class Cancelled(BaseException):
@@ -83,6 +84,7 @@ class Cancelled(BaseException):
         super().__init__(exit_code)
         self.exit_code = exit_code
         self.cleanup_incomplete = False
+        self.operation_id = None
 
 
 @dataclass
@@ -135,7 +137,7 @@ class Result:
 
 def error_result(command, error, context=None):
     result = Result(command=command, status="error", exit_code=error.exit_code,
-                    child_exit_code=error.child_exit_code)
+                    child_exit_code=error.child_exit_code, operation_id=error.operation_id)
     if context:
         result.context = context
     result.error = {"code": error.code, "message": error.message,

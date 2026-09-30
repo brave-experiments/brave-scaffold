@@ -21,7 +21,7 @@ from ..common.redaction import redact_argv
 from ..common.results import Cancelled, Result, ScaffoldError, repair
 from . import android_deps, buildopts, freshness, macos, patches
 from .cmd_tools import local_shims
-from .records import Operation, OutputState, output_states
+from .records import OutputState, output_states, track
 
 SUITE_PATTERN = re.compile(r"[A-Za-z][A-Za-z0-9_]*_tests?")
 COMMON_SUITES = ("brave_browser_tests", "brave_unit_tests", "brave_all_unit_tests", "chromium_unit_tests",
@@ -372,30 +372,21 @@ def do_build(ctx, command, sync_first=False, run_after=False):
     device = _android().preflight_device(ctx) if run_after and effective.target == "android" else None
     remote = not effective.offline
     prepared = prepare_environment(ctx, identity, effective.target, "sync" if sync_first else "build", remote)
-    op = Operation(command, identity, {"target": effective.target, "configuration": effective.configuration},
-                   ctx.state_root)
-    sync_result = None
-    try:
+    with track(ctx, command, identity, {"target": effective.target, "configuration": effective.configuration,
+                                        "arch": effective.arch}) as op:
+        sync_result = None
         if sync_first:
             sync_result = do_sync_phase(ctx, identity, prepared, op, effective.target, [])
             prepared = revalidate_for_build(prepared, identity, effective.target, remote)
         outcome = perform_build(ctx, identity, effective, prepared, op, bool(parsed.get("force_gn")))
         if run_after and outcome.artifact is None:
             raise unresolved_error(outcome, identity)
-    except Cancelled:
-        op.finish("cancelled", 130)
-        raise
-    except ScaffoldError as error:
-        op.finish("error", error.exit_code)
-        error.details.setdefault("operation_id", op.id)
-        raise
-    result = finish_build_result(command, outcome, identity, op, prepared)
-    if sync_result:
-        result.data["sync"] = sync_result
-    if run_after:
-        result = run_phase(ctx, identity, outcome.artifact, result, device)
-    op.finish(result.status, result.exit_code, ctx.log.records, [outcome.artifact] if outcome.artifact else [])
-    return result
+        result = finish_build_result(command, outcome, identity, op, prepared)
+        if sync_result:
+            result.data["sync"] = sync_result
+        if run_after:
+            result = run_phase(ctx, identity, outcome.artifact, result, device, op)
+        return op.complete(result)
 
 
 def cmd_build(ctx):
@@ -459,22 +450,13 @@ def cmd_test(ctx):
                            build_plan_steps(ctx, identity, effective, "test", script_args))
     prepared = prepare_environment(ctx, identity, effective.target, "build", not effective.offline)
     ctx = prepared.ctx
-    op = Operation("test", identity, {"target": effective.target, "suite": parsed.get("suite")}, ctx.state_root)
-    try:
+    with track(ctx, "test", identity, {"target": effective.target, "suite": parsed.get("suite")}) as op:
         arguments = build_arguments(effective, "test", script_args, False)
         outcome = run_test_package(ctx, identity, effective, prepared, op, arguments)
-    except Cancelled:
-        op.finish("cancelled", 130)
-        raise
-    except ScaffoldError as error:
-        op.finish("error", error.exit_code)
-        raise
-    result = Result(command="test", operation_id=op.id, child_exit_code=0,
-                    checks=[check.to_dict() for check in prepared.checks])
-    result.data = {"suite": parsed.get("suite"), "argv": outcome, "cwd": str(identity.core)}
-    result.text = "Test suite %s passed." % parsed.get("suite")
-    op.finish("ok", 0, ctx.log.records)
-    return result
+        result = Result(command="test", child_exit_code=0, checks=[check.to_dict() for check in prepared.checks])
+        result.data = {"suite": parsed.get("suite"), "argv": outcome, "cwd": str(identity.core)}
+        result.text = "Test suite %s passed." % parsed.get("suite")
+        return op.complete(result)
 
 
 def run_test_package(ctx, identity, effective, prepared, op, arguments):
@@ -548,9 +530,11 @@ def add_freshness_warning(result, assessment):
         result.add_warning("UNKNOWN_FRESHNESS", freshness.UNKNOWN_MESSAGE, freshness=assessment)
 
 
-def run_phase(ctx, identity, bundle, result, device=None):
+def run_phase(ctx, identity, bundle, result, device=None, op=None):
     """Restart the browser (or reinstall the APK) with a validated output and add the outcome to a result."""
     ctx, _ = load_context(ctx, identity)
+    if op is not None:
+        op.step("run", artifact=bundle["path"])
     if bundle.get("kind") == "apk":
         return _android().restart_apk(ctx, identity, bundle, result, device)
     assessment = artifact_freshness(ctx, identity, Path(bundle["path"]).parent)
@@ -590,8 +574,8 @@ def cmd_run(ctx):
                                                                                      "launch selected bundle"]}})
         result.text = "Plan for run (nothing was run): restart %s" % bundle["path"]
         return result
-    result = Result(command="run")
-    return run_phase(ctx, identity, bundle, result)
+    with track(ctx, ctx.command, identity, {"target": target, "artifact": bundle["path"]}) as op:
+        return op.complete(run_phase(ctx, identity, bundle, Result(command=ctx.command), None, op))
 
 
 # --- sync ------------------------------------------------------------------------------
@@ -693,20 +677,12 @@ def cmd_sync(ctx):
         return result
     prepared = prepare_environment(ctx, identity, "mac", "sync")
     ctx = prepared.ctx
-    op = Operation("sync", identity, {"targets": targets}, ctx.state_root)
-    try:
+    with track(ctx, "sync", identity, {"targets": targets}) as op:
         phase = do_sync_phase(ctx, identity, prepared, op, mobile, parsed.forwarded)
-    except Cancelled:
-        op.finish("cancelled", 130)
-        raise
-    except ScaffoldError as error:
-        op.finish("error", error.exit_code)
-        raise
-    result = Result(command="sync", operation_id=op.id, child_exit_code=0, data={"sync": phase, "targets": targets},
-                    checks=[check.to_dict() for check in prepared.checks])
-    result.text = "Sync completed for %s." % ", ".join(targets)
-    op.finish("ok", 0, ctx.log.records)
-    return result
+        result = Result(command="sync", child_exit_code=0, data={"sync": phase, "targets": targets},
+                        checks=[check.to_dict() for check in prepared.checks])
+        result.text = "Sync completed for %s." % ", ".join(targets)
+        return op.complete(result)
 
 
 # --- drift and patch update --------------------------------------------------------------
@@ -742,18 +718,15 @@ def cmd_patches_update(ctx):
     identity = ctx.identity()
     prepared = prepare_environment(ctx, identity, "mac")
     ctx = prepared.ctx
-    op = Operation("patches update", identity, {}, ctx.state_root)
-    argv, code = run_package_step(ctx, identity, prepared, ["run", "update_patches", *ctx.parsed.forwarded])
-    if code != 0:
-        op.finish("error", 5)
-        raise ScaffoldError("CHILD_FAILED", "update_patches exited with status %d." % code,
-                            details={"argv": argv}, child_exit_code=code)
-    status = run_capture(["git", "-C", str(identity.core), "status", "--short", "--branch"], str(identity.core), None,
-                         ctx.log, timeout=120)
-    changes = [line for line in status.stdout.splitlines()[1:]]
-    result = Result(command="patches update", operation_id=op.id, child_exit_code=0,
-                    data={"argv": argv, "changed_files": changes})
-    result.text = ("Patch changes for review (nothing was committed):\n  " + "\n  ".join(changes)) if changes \
-        else "No patch changes detected."
-    op.finish("ok", 0, ctx.log.records)
-    return result
+    with track(ctx, "patches update", identity, {}) as op:
+        argv, code = run_package_step(ctx, identity, prepared, ["run", "update_patches", *ctx.parsed.forwarded])
+        if code != 0:
+            raise ScaffoldError("CHILD_FAILED", "update_patches exited with status %d." % code,
+                                details={"argv": argv}, child_exit_code=code)
+        status = run_capture(["git", "-C", str(identity.core), "status", "--short", "--branch"], str(identity.core),
+                             None, ctx.log, timeout=120)
+        changes = [line for line in status.stdout.splitlines()[1:]]
+        result = Result(command="patches update", child_exit_code=0, data={"argv": argv, "changed_files": changes})
+        result.text = ("Patch changes for review (nothing was committed):\n  " + "\n  ".join(changes)) if changes \
+            else "No patch changes detected."
+        return op.complete(result)

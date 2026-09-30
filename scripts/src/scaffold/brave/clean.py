@@ -15,6 +15,7 @@ from pathlib import Path
 from ..common.cli import CommandSpec, Opt, Positional
 from ..common.platforms import RECOGNIZED_TARGETS, effective_target
 from ..common.results import EXIT_PARTIAL, Result, ScaffoldError
+from .records import track
 
 CONFIG_NAMES = {"debug": "Debug", "release": "Release"}
 SUPPORTED_TARGETS = ("mac", "android")
@@ -212,8 +213,17 @@ def run_clean(ctx):
     execute = bool(ctx.parsed.get("execute"))
     out_dir = owned_out_dir(identity)
     entries = plan_cleanup(out_dir, targets, configs, arch, not ctx.parsed.get("no_size")) if out_dir else []
-    if execute:
-        execute_plan(entries, out_dir)
+    if execute and any(entry.outcome == "planned" for entry in entries):
+        with track(ctx, "clean", identity, {"targets": targets, "configurations": configs, "arch": arch,
+                                            "out_dir": str(out_dir)}) as op:
+            execute_plan(entries, out_dir)
+            op.detail(**{outcome: [e.name for e in entries if e.outcome == outcome]
+                         for outcome in ("deleted", "skipped", "failed")})
+            return op.complete(clean_result(ctx, identity, entries, out_dir, targets, configs, arch, execute))
+    return clean_result(ctx, identity, entries, out_dir, targets, configs, arch, execute)
+
+
+def clean_result(ctx, identity, entries, out_dir, targets, configs, arch, execute):
     total = None if ctx.parsed.get("no_size") else sum(e.size_kib or 0 for e in entries if e.size_kib is not None)
     data = {"mode": "execute" if execute else "preview", "targets": targets, "configurations": configs,
             "arch": arch, "out_dir": str(out_dir) if out_dir else None, "total_kib": total,

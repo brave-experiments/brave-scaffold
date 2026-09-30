@@ -14,7 +14,7 @@ from ..common.platforms import host_architecture, host_platform
 from ..common.procs import run_capture
 from ..common.results import Result, ScaffoldError, repair
 from . import adb, android_deps
-from .records import OutputState, output_states
+from .records import OutputState, output_states, track
 
 PACKAGE_PREFIX = "com.brave."
 DEFAULT_JAVA_OPTS = "-Xmx10G -Xms1G"
@@ -194,7 +194,9 @@ def run_android(ctx, identity):
             "launch and verify the process"]}})
         result.text = "Plan for %s (nothing was run): install %s" % (ctx.command, artifact["path"])
         return result
-    return restart_apk(ctx, identity, artifact, Result(command=ctx.command))
+    with track(ctx, ctx.command, identity, {"target": "android", "artifact": artifact["path"]}) as op:
+        op.step("run", artifact=artifact["path"])
+        return op.complete(restart_apk(ctx, identity, artifact, Result(command=ctx.command)))
 
 
 # --- explicit dependency setup ----------------------------------------------------------------
@@ -202,17 +204,20 @@ def run_android(ctx, identity):
 
 def cmd_android_setup(ctx):
     identity = ctx.identity()
-    outcome = android_deps.setup_working_copy(identity, ctx.state_root, ctx.parsed.get("source"),
-                                              ctx.parsed.get("ref"), ctx.log)
-    wc = android_deps.working_copy(identity)
-    ok, detail = android_deps.run_gate(wc, "copyMacRes.sh", ctx.environ, ctx.log)
-    outcome["compatible"] = ok
-    outcome["compatibility_detail"] = detail
-    result = Result(command="android setup", data=outcome)
-    facts = outcome["working_copy"]
-    result.text = "Support working copy: %s (%s @ %s)\nShared object cache: %s (%s)\nCompatibility gate: %s" % (
-        wc, facts["branch"] or "detached", (facts["head"] or "")[:12], outcome["cache"], outcome["cache_action"],
-        "passed" if ok else "FAILED - " + str(detail))
-    if not ok:
-        result.add_warning("DEPENDENCY_INCOMPATIBLE", "This support revision does not match the checkout: %s" % detail)
-    return result
+    with track(ctx, "android setup", identity, {"ref": ctx.parsed.get("ref"), "source": ctx.parsed.get("source")}) as op:
+        outcome = android_deps.setup_working_copy(identity, ctx.state_root, ctx.parsed.get("source"),
+                                                  ctx.parsed.get("ref"), ctx.log)
+        wc = android_deps.working_copy(identity)
+        ok, detail = android_deps.run_gate(wc, "copyMacRes.sh", ctx.environ, ctx.log)
+        outcome["compatible"] = ok
+        outcome["compatibility_detail"] = detail
+        op.detail(support_head=outcome["working_copy"]["head"], compatible=ok)
+        result = Result(command="android setup", data=outcome)
+        facts = outcome["working_copy"]
+        result.text = "Support working copy: %s (%s @ %s)\nShared object cache: %s (%s)\nCompatibility gate: %s" % (
+            wc, facts["branch"] or "detached", (facts["head"] or "")[:12], outcome["cache"], outcome["cache_action"],
+            "passed" if ok else "FAILED - " + str(detail))
+        if not ok:
+            result.add_warning("DEPENDENCY_INCOMPATIBLE",
+                               "This support revision does not match the checkout: %s" % detail)
+        return op.complete(result)

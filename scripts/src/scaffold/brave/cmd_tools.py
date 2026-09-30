@@ -17,6 +17,7 @@ from ..common import env as env_module
 from ..common import tools as tools_module
 from ..common.procs import run_streaming
 from ..common.results import Result, ScaffoldError, repair
+from .records import track
 
 
 @contextlib.contextmanager
@@ -103,23 +104,24 @@ def tools_setup(ctx):
             "DEPENDENCY_INCOMPATIBLE",
             "This checkout has no supported payload installer (%s); tool repair is not available for it." % installer,
             details={"checkout": str(identity.core)})
-    before, before_checks = tools_module.inspect_toolchain(identity, ctx.log)
     entries = [layout["node_entry_key"], layout["pnpm_entry_key"]]
-    ran = []
-    for entry in entries:
-        argv = [str(loaded["VPYTHON3"]), str(installer), entry]
-        code = run_streaming(argv, str(identity.core), loaded, ctx.log, json_mode=ctx.json_mode)
-        ran.append({"argv": argv, "exit": code})
-        if code != 0:
-            raise ScaffoldError("CHILD_FAILED", "The payload installer failed for %s." % entry,
-                                details={"argv": argv}, child_exit_code=code)
-    after, after_checks = tools_module.inspect_toolchain(identity, ctx.log)
-    result = Result(command="tools setup", data={"installer_runs": ran, "ready": after is not None,
-                                                  "tools": after.describe() if after else None},
-                    checks=[check.to_dict() for check in after_checks])
-    result.text = "Ran the checkout's payload installer for %d entries.\nTools ready: %s" % (
-        len(entries), "yes" if after else "no; see checks")
-    if after is None:
-        raise ScaffoldError("LOCAL_TOOL_MISSING", "Tools are still not ready after repair.",
-                            details={"checks": [c.to_dict() for c in after_checks if c.status != "pass"]})
-    return result
+    with track(ctx, "tools setup", identity, {"installer": str(installer), "entries": entries}) as op:
+        ran = []
+        for entry in entries:
+            argv = [str(loaded["VPYTHON3"]), str(installer), entry]
+            code = run_streaming(argv, str(identity.core), loaded, ctx.log, json_mode=ctx.json_mode)
+            ran.append({"argv": argv, "exit": code})
+            op.step("installer", entry=entry, exit=code)
+            if code != 0:
+                raise ScaffoldError("CHILD_FAILED", "The payload installer failed for %s." % entry,
+                                    details={"argv": argv}, child_exit_code=code)
+        after, after_checks = tools_module.inspect_toolchain(identity, ctx.log)
+        result = Result(command="tools setup", data={"installer_runs": ran, "ready": after is not None,
+                                                      "tools": after.describe() if after else None},
+                        checks=[check.to_dict() for check in after_checks])
+        result.text = "Ran the checkout's payload installer for %d entries.\nTools ready: %s" % (
+            len(entries), "yes" if after else "no; see checks")
+        if after is None:
+            raise ScaffoldError("LOCAL_TOOL_MISSING", "Tools are still not ready after repair.",
+                                details={"checks": [c.to_dict() for c in after_checks if c.status != "pass"]})
+        return op.complete(result)

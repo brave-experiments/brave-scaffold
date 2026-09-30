@@ -41,10 +41,15 @@ class CommandLog:
     enabled: bool = True
     stream: object = None
     records: list = field(default_factory=list)
+    listeners: list = field(default_factory=list)
 
     def record(self, argv, cwd):
+        """Note a command before it starts; listeners (such as an operation record) see the redacted form."""
         redacted = redact_argv(argv)
-        self.records.append({"argv": redacted, "cwd": os.path.abspath(cwd)})
+        entry = {"argv": redacted, "cwd": os.path.abspath(cwd)}
+        self.records.append(entry)
+        for listener in list(self.listeners):
+            listener(entry)
         if self.enabled:
             stream = self.stream or sys.stderr
             stream.write(format_command_block(argv, cwd) + "\n")

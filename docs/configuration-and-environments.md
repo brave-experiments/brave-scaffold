@@ -145,8 +145,19 @@ comes from `--checkout` or the current directory. Leaving the directory unloads 
 
 ## Operation records and state
 
-Builds, tests, syncs, and patch updates write a record before they change anything,
-and complete it afterwards. Records, per-output build history, patch receipts, and
+Builds, tests, syncs, patch updates, run and deploy, executed cleanup (`clean --execute`;
+a preview writes nothing), `tools setup`, and `android setup` write a record before they
+change anything and complete it afterwards. Each dispatched command is added to the record
+(redacted) before it starts, so a killed process still shows what was running. The record
+holds: operation ID and CLI version, timestamps, the checkout, the environment file with its
+SHA-256 (never its contents), Core and Chromium revisions with Core's uncommitted-file count,
+target, configuration and architecture, steps, redacted commands, child exit status, the error
+code and message on failure, artifacts, cleanup status after a cancellation, and where logs
+went (`logs.commands`, `logs.child_output`; child output goes to the terminal or, with
+`--json`, to stderr, and no per-operation log file is written). An expected failure or a
+caught SIGINT/SIGTERM finishes the record with the actual status (exit 5, 130, 143, ...) and
+the result carries the same `operation_id`; only a process that dies leaves it incomplete.
+Records, per-output build history, patch receipts, and
 the shared Android support cache live in `.bdev/` next to `brave-scaffold.toml`
 (ignored by Git), never in Core. The newest 100 completed operation records are
 kept; incomplete records and any record an output still refers to are never

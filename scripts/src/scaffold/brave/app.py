@@ -72,7 +72,8 @@ def run_command(command, parsed, handler, argv_environ=None, needs_config=True, 
     except ScaffoldError as error:
         result = error_result(command, error, context.selected.to_context() if context.selected else None)
     except Cancelled as cancelled:
-        result = Result(command=command, status="cancelled", exit_code=cancelled.exit_code)
+        result = Result(command=command, status="cancelled", exit_code=cancelled.exit_code,
+                        operation_id=cancelled.operation_id)
         result.error = {"code": "CANCELLED", "message": "The command was interrupted.", "details": {}, "repairs": []}
         if cancelled.cleanup_incomplete:
             result.error["details"]["cleanup_incomplete"] = True

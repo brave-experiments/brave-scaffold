@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import os
@@ -14,7 +15,10 @@ import time
 from pathlib import Path
 
 from ..common.config import atomic_write, scaffold_root
+from ..common.procs import run_capture
 from ..common.redaction import redact_report
+from ..common.results import Cancelled, ScaffoldError
+from . import freshness
 
 CLI_VERSION = "0.1.0"
 KEEP_OPERATIONS = 100
@@ -46,11 +50,11 @@ def _write(path, data):
 class Operation:
     """A durable record written before mutation and completed afterward.
 
-    An operation that dies without finishing keeps `state: "incomplete"`, so a
-    later inspection can report the interruption instead of claiming success.
+    An operation that dies without finishing keeps `state: "incomplete"`, so a later inspection can report
+    the interruption instead of claiming success. Every dispatched command is saved before it starts.
     """
 
-    def __init__(self, command, identity, details, root=None):
+    def __init__(self, command, identity, details, root=None, evidence=None):
         self.root = store_root(root)
         self.id = time.strftime("%Y%m%dT%H%M%S") + "-" + secrets.token_hex(3)
         self.path = self.root / "operations" / (self.id + ".json")
@@ -58,7 +62,8 @@ class Operation:
             "operation_id": self.id, "cli_version": CLI_VERSION, "command": command, "state": "incomplete",
             "started": now(), "finished": None, "checkout": str(identity.core),
             "chromium_src": str(identity.src), "details": details, "steps": [], "commands": [],
-            "artifacts": [], "status": None, "exit_code": None,
+            "artifacts": [], "status": None, "exit_code": None, "child_exit_code": None, "error": None,
+            "cleanup": None, **(evidence or {}),
         }
         self.save()
 
@@ -73,14 +78,80 @@ class Operation:
         self.data.update(fields)
         self.save()
 
-    def finish(self, status, exit_code, commands=None, artifacts=None):
+    def detail(self, **fields):
+        self.data["details"].update(fields)
+        self.save()
+
+    def command_dispatched(self, entry):
+        self.data["commands"].append(entry)
+        self.save()
+
+    def finish(self, status, exit_code, commands=None, artifacts=None, child_exit_code=None, error=None, cleanup=None):
         self.data.update(state="complete", finished=now(), status=status, exit_code=exit_code)
-        if commands is not None:
-            self.data["commands"] = commands
-        if artifacts is not None:
-            self.data["artifacts"] = artifacts
+        for name, value in (("commands", commands), ("artifacts", artifacts), ("child_exit_code", child_exit_code),
+                            ("error", error), ("cleanup", cleanup)):
+            if value is not None:
+                self.data[name] = value
         self.save()
         prune(self.root)
+
+    def complete(self, result):
+        """Finish from a command's result and stamp the operation ID on it."""
+        result.operation_id = self.id
+        self.finish(result.status, result.exit_code, artifacts=[dict(item) for item in result.artifacts],
+                    child_exit_code=result.child_exit_code, error=result.error and
+                    {"code": result.error["code"], "message": result.error["message"]})
+        return result
+
+
+def describe_start(ctx, identity):
+    """Evidence stored with every operation: environment identity (no values), source state, log destinations."""
+    evidence = {"logs": {"commands": "stderr" if ctx.log.enabled else "disabled",
+                         "child_output": "stderr" if ctx.json_mode else "terminal"}}
+    record = identity.record
+    if record is not None and record.direnv_dir is not None:
+        envrc = Path(os.path.realpath(record.direnv_dir)) / ".envrc"
+        try:
+            digest = hashlib.sha256(envrc.read_bytes()).hexdigest()
+        except OSError:
+            digest = None
+        evidence["environment"] = {"file": str(envrc), "sha256": digest, "validated": bool(getattr(ctx, "prepared", False)),
+                                   "selects": {"BRAVE_CORE_DIR": str(identity.core),
+                                               "BRAVE_SRC_ROOT": str(identity.src)}}
+    status = run_capture(["git", "-C", str(identity.core), "status", "--porcelain"], str(identity.core), None, ctx.log,
+                         timeout=120)
+    evidence["source"] = {
+        "core_head": freshness.resolve_head(identity.core), "chromium_head": freshness.resolve_head(identity.src),
+        "core_uncommitted_files": len(status.stdout.splitlines()) if status.returncode == 0 else None,
+        "chromium_uncommitted": "not computed here; the output record's fingerprint covers tracked changes"}
+    return evidence
+
+
+@contextlib.contextmanager
+def track(ctx, command, identity, details):
+    """The operation lifecycle: record before mutation, then finish with the actual outcome.
+
+    Expected failures and cancellations finish the record (with the operation ID attached to the error) and
+    are re-raised; a process that dies leaves the record incomplete. Call `op.complete(result)` on success.
+    """
+    op = Operation(command, identity, details, ctx.state_root, describe_start(ctx, identity))
+    ctx.log.listeners.append(op.command_dispatched)
+    try:
+        yield op
+    except ScaffoldError as error:
+        error.operation_id = op.id
+        op.finish("error", error.exit_code, child_exit_code=error.child_exit_code,
+                  error={"code": error.code, "message": error.message})
+        raise
+    except Cancelled as cancelled:
+        cancelled.operation_id = op.id
+        op.finish("cancelled", cancelled.exit_code, cleanup={"complete": not cancelled.cleanup_incomplete})
+        raise
+    except Exception as error:
+        op.finish("error", 1, error={"code": "INTERNAL_ERROR", "message": str(error)})
+        raise
+    finally:
+        ctx.log.listeners.remove(op.command_dispatched)
 
 
 def prune(root, keep=KEEP_OPERATIONS):
