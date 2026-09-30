@@ -135,6 +135,17 @@ class CaptureTests(GroupTestCase):
         self.assertTrue(result.timed_out)
         self.assertTrue(result.cleanup_incomplete, "output pipes were abandoned")
 
+    def test_a_probe_that_timed_out_or_was_cut_short_says_so_in_the_command_record(self):
+        log = procs.CommandLog(enabled=False)
+        with mock.patch.object(procs, "PIPE_DRAIN_SECONDS", 0.3):
+            procs.run_capture(["sh", "-c", "sleep 30 & echo started"], self.directory, None, log, timeout=1)
+            procs.run_capture([sys.executable, "-c", "print('x' * 5000)"], self.directory, None, log, max_bytes=10)
+            procs.run_capture(["true"], self.directory, None, log)
+        timed_out, cut, plain = log.records
+        self.assertEqual((timed_out.get("timed_out"), cut.get("truncated")), (True, True))
+        self.assertNotIn("timed_out", plain)
+        self.assertNotIn("truncated", plain)
+
 
 class BoundedCaptureTests(unittest.TestCase):
     def test_a_chatty_child_cannot_use_more_memory_than_the_limit(self):

@@ -54,7 +54,7 @@ class CommandLog:
         key = (tuple(str(part) for part in argv), os.path.abspath(cwd))
         if poll and key in self.polled:
             self.polled[key]["repeated"] = self.polled[key].get("repeated", 0) + 1
-            return
+            return None
         redacted = redact_argv(argv)
         entry = {"argv": redacted, "cwd": os.path.abspath(cwd)}
         if poll:
@@ -66,6 +66,7 @@ class CommandLog:
             stream = self.stream or sys.stderr
             stream.write(format_command_block(argv, cwd) + "\n")
             stream.flush()
+        return entry
 
     def finish_polls(self):
         """Say how often each polled command ran again after its first description."""
@@ -209,8 +210,7 @@ def run_capture(argv, cwd, env, log=None, timeout=60, max_bytes=1_000_000, poll=
     `truncated` is set when output was discarded; a caller that needs complete output as evidence must treat
     that as unknown, not as the whole answer.
     """
-    if log is not None:
-        log.record(argv, cwd, poll)
+    entry = log.record(argv, cwd, poll) if log is not None else None
     try:
         process = subprocess.Popen(list(argv), cwd=cwd, env=env, stdout=subprocess.PIPE,
                                    stderr=subprocess.PIPE, start_new_session=True)
@@ -236,6 +236,10 @@ def run_capture(argv, cwd, env, log=None, timeout=60, max_bytes=1_000_000, poll=
             process, signum=CANCEL_SIGNALS.get(cancelled.exit_code, signal.SIGTERM))
         reader.close()
         raise
+    if entry is not None:
+        for flag, value in (("timed_out", timed_out), ("cleanup_incomplete", incomplete), ("truncated", reader.dropped)):
+            if value:
+                entry[flag] = True
     result = ProcessResult(returncode=124 if timed_out else process.returncode, stdout=reader.text(process.stdout),
                            stderr=reader.text(process.stderr), timed_out=timed_out, cleanup_incomplete=incomplete,
                            truncated=reader.dropped)

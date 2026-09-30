@@ -25,7 +25,9 @@ look, and what the codes mean. Only delivered commands appear here.
   followed by a line saying how many more times it ran, and the operation record keeps the
   count. Probe output is read with a size limit: output beyond it is discarded while
   reading, and evidence that needs the whole output (Git status, the process listing)
-  is treated as unknown rather than as the complete answer.
+  is treated as unknown rather than as the complete answer. A logged command that timed
+out, had output discarded, or left pipes abandoned by a process outside its group says so
+in its command record (`timed_out`, `truncated`, `cleanup_incomplete`).
 - Nothing is repaired or approved automatically. Suggested next steps in errors
   are suggestions.
 
