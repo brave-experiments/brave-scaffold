@@ -34,7 +34,7 @@ look, and what the codes mean. Only delivered commands appear here.
 | `bdev shell` | Child shell in Core with the environment loaded | Whatever you do in the shell |
 | `bdev context` | Resolved checkout, selection source, environment, tools | None |
 | `bdev capabilities` | Supported, limited, unverified, unsupported combinations | None; needs no checkout |
-| `bdev doctor [scope]` | Named readiness checks (`mac`, `shell`, `signing`) | None |
+| `bdev doctor [scope]` | Named readiness checks (`mac`, `rbe`, `shell`, `signing`) | None |
 | `bdev clean [target]` | Preview generated build outputs of the selected checkout; `--execute` deletes them ([details](source-and-cleanup.md)) | Preview writes nothing; `--execute` deletes directories under `src/out` |
 | `bdev tools setup` | Explicit repair of checkout-local Node/package-manager payloads | Runs the checkout's payload installer inside the checkout |
 | `bdev vpython3 [options] [--] <args>` | Checkout-local Python | Whatever the program does |

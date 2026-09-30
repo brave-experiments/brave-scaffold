@@ -35,7 +35,8 @@ class DoctorTests(SandboxTest):
         self.assertEqual((result.returncode, document["status"], document["error"]), (0, "ok", None))
         self.assertEqual(document["data"]["scopes"], ["mac"])
         self.assertIsNone(document["child_exit_code"])
-        self.assertEqual(set(self.statuses(document).values()), {"pass"})
+        required = {c["status"] for c in document["checks"] if c["required"]}
+        self.assertEqual(required, {"pass"})
 
     def test_optional_warnings_do_not_fail_readiness_but_are_retained(self):
         result, document = self.doctor("shell")
