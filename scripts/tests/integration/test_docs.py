@@ -12,7 +12,7 @@ import tomllib
 import unittest
 from pathlib import Path
 
-from tests.integration.test_cli_contract import conforms
+from tests.schema_validation import Validator
 from tests.support import SCRIPTS
 
 ROOT = SCRIPTS.parent
@@ -54,7 +54,6 @@ class DocumentationTests(unittest.TestCase):
 
     def test_toml_and_json_examples_are_valid(self):
         from scaffold.common import config as config_module
-        schema = json.loads((SCRIPTS / "schemas" / "result-envelope.schema.json").read_text())
         checked = 0
         for document in DOCUMENTS:
             for language, body in FENCE.findall(document.read_text(encoding="utf-8")):
@@ -69,7 +68,7 @@ class DocumentationTests(unittest.TestCase):
                 elif language == "json":
                     value = json.loads(body)
                     if isinstance(value, dict) and "schema_version" in value:
-                        self.assertEqual(conforms(schema, value, schema), [], document.name)
+                        self.assertEqual(Validator().problems(value), [], document.name)
                     checked += 1
         self.assertGreaterEqual(checked, 2)
         example = (ROOT / "brave-scaffold.example.toml").read_text()

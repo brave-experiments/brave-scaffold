@@ -61,7 +61,7 @@ def read_bundle(path):
     if not os.access(binary, os.X_OK):
         raise ScaffoldError("ARTIFACT_MISMATCH", "The executable %s is missing or not executable." % binary,
                             details={"path": str(path)})
-    return {"path": str(path), "bundle_identifier": identifier, "executable": str(binary),
+    return {"path": str(path), "kind": "app", "bundle_identifier": identifier, "executable": str(binary),
             "name": info.get("CFBundleDisplayName") or info.get("CFBundleName") or path.stem,
             "version": info.get("CFBundleShortVersionString")}
 

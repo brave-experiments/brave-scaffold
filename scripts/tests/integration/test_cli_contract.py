@@ -8,6 +8,7 @@ import json
 import shlex
 import unittest
 
+from tests.schema_validation import Validator
 from tests.support import SandboxTest, tree_snapshot
 
 ENVELOPE_KEYS = ["schema_version", "status", "command", "operation_id", "context", "data", "checks", "warnings",
@@ -64,42 +65,8 @@ class EnvelopeTests(SandboxTest):
             parse_leading(bpm.SPEC, words[1:])
 
 
-def conforms(schema, value, root, path="$"):
-    """Small subset of JSON Schema: $ref, const, enum, type, required, properties, items, oneOf."""
-    problems = []
-    if "$ref" in schema:
-        node = root
-        for part in schema["$ref"].lstrip("#/").split("/"):
-            node = node[part]
-        return conforms(node, value, root, path)
-    if "oneOf" in schema:
-        if not any(not conforms(option, value, root, path) for option in schema["oneOf"]):
-            problems.append("%s matches no allowed shape" % path)
-        return problems
-    if "const" in schema and value != schema["const"]:
-        problems.append("%s must be %r" % (path, schema["const"]))
-    if "enum" in schema and value not in schema["enum"]:
-        problems.append("%s=%r not in %r" % (path, value, schema["enum"]))
-    if "type" in schema:
-        names = schema["type"] if isinstance(schema["type"], list) else [schema["type"]]
-        kinds = {"object": dict, "array": list, "string": str, "integer": int, "boolean": bool, "null": type(None)}
-        if not any(isinstance(value, kinds[name]) for name in names):
-            problems.append("%s has the wrong type" % path)
-    if isinstance(value, dict):
-        problems += ["%s.%s is missing" % (path, key) for key in schema.get("required", []) if key not in value]
-        for key, sub in schema.get("properties", {}).items():
-            if key in value:
-                problems += conforms(sub, value[key], root, "%s.%s" % (path, key))
-    if isinstance(value, list) and "items" in schema:
-        for index, item in enumerate(value):
-            problems += conforms(schema["items"], item, root, "%s[%d]" % (path, index))
-    return problems
-
-
 class SchemaTests(SandboxTest):
     def test_results_conform_to_the_published_envelope_schema(self):
-        from tests.support import SCRIPTS
-        schema = json.loads((SCRIPTS / "schemas" / "result-envelope.schema.json").read_text())
         core = self.sandbox.make_checkout("main")
         self.sandbox.write_config([("main", core, "environments/main")])
         config = str(self.sandbox.config)
@@ -110,7 +77,7 @@ class SchemaTests(SandboxTest):
                    self.sandbox.bdev_json("nonsense")[1]]
         for document in outputs:
             with self.subTest(command=document["command"]):
-                self.assertEqual(conforms(schema, document, schema), [])
+                self.assertEqual(Validator().problems(document), [])
         self.assertTrue(any(document["error"] and document["error"]["repairs"] for document in outputs))
         self.assertTrue(any(document["checks"] for document in outputs))
 

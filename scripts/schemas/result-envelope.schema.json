@@ -1,49 +1,737 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "bdev result envelope",
-  "description": "One document on stdout in JSON mode. Additive fields are compatible; removals or meaning changes need a new schema_version.",
+  "description": "One document on stdout in JSON mode. Additive fields are compatible; removals or meaning changes need a new schema_version. `data` is checked against command-data.schema.json by `command`.",
   "type": "object",
-  "required": ["schema_version", "status", "command", "operation_id", "context", "data", "checks", "warnings",
-               "error", "artifacts", "logs", "exit_code", "child_exit_code"],
+  "required": [
+    "schema_version",
+    "status",
+    "command",
+    "operation_id",
+    "context",
+    "data",
+    "checks",
+    "warnings",
+    "error",
+    "artifacts",
+    "logs",
+    "exit_code",
+    "child_exit_code"
+  ],
   "properties": {
-    "schema_version": {"const": 1},
-    "status": {"enum": ["ok", "error", "partial", "cancelled"]},
-    "command": {"type": "string"},
-    "operation_id": {"type": ["string", "null"]},
-    "context": {"type": "object"},
+    "schema_version": {
+      "const": 1
+    },
+    "status": {
+      "enum": [
+        "ok",
+        "error",
+        "partial",
+        "cancelled"
+      ]
+    },
+    "command": {
+      "type": "string"
+    },
+    "operation_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "context": {
+      "type": "object",
+      "required": [
+        "checkout",
+        "selection_source"
+      ]
+    },
     "data": {},
-    "checks": {"type": "array", "items": {"$ref": "#/$defs/check"}},
-    "warnings": {"type": "array", "items": {"$ref": "#/$defs/warning"}},
-    "error": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/error"}]},
-    "artifacts": {"type": "array"},
-    "logs": {"type": "array"},
-    "exit_code": {"type": "integer"},
-    "child_exit_code": {"type": ["integer", "null"]}
+    "checks": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/check"
+      }
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/warning"
+      }
+    },
+    "error": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/error"
+        }
+      ]
+    },
+    "artifacts": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/artifact"
+      }
+    },
+    "logs": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/log"
+      }
+    },
+    "exit_code": {
+      "type": "integer"
+    },
+    "child_exit_code": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    }
   },
   "$defs": {
     "check": {
       "type": "object",
-      "required": ["name", "status", "required", "summary", "scopes", "evidence", "affects", "repairs"],
+      "required": [
+        "name",
+        "status",
+        "required",
+        "summary",
+        "scopes",
+        "evidence",
+        "affects",
+        "repairs"
+      ],
       "properties": {
-        "status": {"enum": ["pass", "blocker", "warning", "unsupported", "not_checked"]},
-        "required": {"type": "boolean"}
+        "status": {
+          "enum": [
+            "pass",
+            "blocker",
+            "warning",
+            "unsupported",
+            "not_checked"
+          ]
+        },
+        "required": {
+          "type": "boolean"
+        }
       }
     },
-    "warning": {"type": "object", "required": ["code", "message"]},
+    "warning": {
+      "type": "object",
+      "required": [
+        "code",
+        "message"
+      ]
+    },
     "error": {
       "type": "object",
-      "required": ["code", "message", "details", "repairs"],
+      "required": [
+        "code",
+        "message",
+        "details",
+        "repairs"
+      ],
       "properties": {
-        "repairs": {"type": "array", "items": {"$ref": "#/$defs/repair"}}
+        "repairs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/repair"
+          }
+        },
+        "code": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "details": {
+          "type": "object"
+        }
       }
     },
     "repair": {
       "type": "object",
-      "required": ["argv", "cwd", "requires_user_action"],
+      "required": [
+        "argv",
+        "cwd",
+        "requires_user_action"
+      ],
       "properties": {
-        "argv": {"type": "array", "items": {"type": "string"}},
-        "requires_user_action": {"type": "boolean"}
+        "argv": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "requires_user_action": {
+          "type": "boolean"
+        }
+      }
+    },
+    "artifact": {
+      "type": "object",
+      "required": [
+        "path",
+        "kind",
+        "name",
+        "verified"
+      ],
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "app",
+            "apk"
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "target": {
+          "enum": [
+            "mac",
+            "android"
+          ]
+        },
+        "configuration": {
+          "type": "string"
+        },
+        "arch": {
+          "type": "string"
+        },
+        "output_dir": {
+          "type": "string"
+        },
+        "verified": {
+          "type": "boolean"
+        },
+        "freshness": {
+          "type": "string"
+        },
+        "bundle_identifier": {
+          "type": "string"
+        },
+        "package": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "package_verified": {
+          "type": "boolean"
+        }
+      }
+    },
+    "log": {
+      "type": "object",
+      "required": [
+        "kind",
+        "argv",
+        "cwd"
+      ],
+      "properties": {
+        "kind": {
+          "const": "command"
+        },
+        "argv": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "cwd": {
+          "type": "string"
+        }
       }
     }
-  }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "ok"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "error": {
+            "type": "null"
+          },
+          "exit_code": {
+            "const": 0
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "error"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "error": {
+            "type": "object"
+          },
+          "exit_code": {
+            "enum": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "partial"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "exit_code": {
+            "const": 6
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "cancelled"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "exit_code": {
+            "enum": [
+              130,
+              143
+            ]
+          },
+          "artifacts": {
+            "maxItems": 0
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "command": {
+            "const": "android setup"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "$ref": "command-data.schema.json#/$defs/android setup"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "command": {
+            "const": "bpm"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "$ref": "command-data.schema.json#/$defs/bpm"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "command": {
+            "const": "build"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "$ref": "command-data.schema.json#/$defs/build"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "command": {
+            "const": "build-run"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "$ref": "command-data.schema.json#/$defs/build"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "command": {
+            "const": "capabilities"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "$ref": "command-data.schema.json#/$defs/capabilities"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "command": {
+            "const": "checkout add"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "$ref": "command-data.schema.json#/$defs/checkout add"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "command": {
+            "const": "checkout list"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "$ref": "command-data.schema.json#/$defs/checkout list"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "command": {
+            "const": "clean"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "$ref": "command-data.schema.json#/$defs/clean"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "command": {
+            "const": "context"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "$ref": "command-data.schema.json#/$defs/context"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "command": {
+            "const": "deploy"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "$ref": "command-data.schema.json#/$defs/run"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "command": {
+            "const": "doctor"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "$ref": "command-data.schema.json#/$defs/doctor"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "command": {
+            "const": "drift"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "$ref": "command-data.schema.json#/$defs/drift"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "command": {
+            "const": "env check"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "$ref": "command-data.schema.json#/$defs/env check"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "command": {
+            "const": "env export"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "$ref": "command-data.schema.json#/$defs/env export"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "command": {
+            "const": "env init"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "$ref": "command-data.schema.json#/$defs/env init"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "command": {
+            "const": "patches update"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "$ref": "command-data.schema.json#/$defs/patches update"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "command": {
+            "const": "run"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "$ref": "command-data.schema.json#/$defs/run"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "command": {
+            "const": "setup"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "$ref": "command-data.schema.json#/$defs/setup"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "command": {
+            "const": "shell"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "$ref": "command-data.schema.json#/$defs/shell"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "command": {
+            "const": "sync"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "$ref": "command-data.schema.json#/$defs/sync"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "command": {
+            "const": "sync-build"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "$ref": "command-data.schema.json#/$defs/build"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "command": {
+            "const": "sync-build-run"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "$ref": "command-data.schema.json#/$defs/build"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "command": {
+            "const": "test"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "$ref": "command-data.schema.json#/$defs/test"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "command": {
+            "const": "tools setup"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "$ref": "command-data.schema.json#/$defs/tools setup"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "command": {
+            "const": "vpython3"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "$ref": "command-data.schema.json#/$defs/vpython3"
+          }
+        }
+      }
+    }
+  ]
 }

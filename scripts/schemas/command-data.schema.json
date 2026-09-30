@@ -1,0 +1,1329 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "bdev per-command result data",
+  "description": "Shapes of `data` for each delivered command, selected by `command` in the result envelope. Additive fields are compatible; removals or meaning changes need a new schema_version.",
+  "$defs": {
+    "step": {
+      "type": "object",
+      "required": [
+        "name",
+        "summary",
+        "status",
+        "reads",
+        "writes",
+        "argv",
+        "cwd",
+        "needs",
+        "on_failure",
+        "cleanup",
+        "detail"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "summary": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "planned",
+            "current",
+            "ready",
+            "blocked",
+            "resolved",
+            "unresolved"
+          ]
+        },
+        "reads": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "writes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "argv": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          ]
+        },
+        "cwd": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "needs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "on_failure": {
+          "type": "string"
+        },
+        "cleanup": {
+          "type": "string"
+        },
+        "detail": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "plan": {
+      "type": "object",
+      "required": [
+        "plan"
+      ],
+      "properties": {
+        "plan": {
+          "type": "object",
+          "required": [
+            "steps"
+          ],
+          "properties": {
+            "steps": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/step"
+              }
+            },
+            "effective": {
+              "type": "object"
+            }
+          }
+        }
+      }
+    },
+    "freshness": {
+      "type": "object",
+      "required": [
+        "status",
+        "evidence"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "current",
+            "stale",
+            "unknown"
+          ]
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "sync-result": {
+      "type": "object",
+      "required": [
+        "argv",
+        "revisions_before",
+        "revisions_after"
+      ],
+      "properties": {
+        "argv": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "revisions_before": {
+          "type": "object"
+        },
+        "revisions_after": {
+          "type": "object"
+        }
+      }
+    },
+    "run-result": {
+      "type": "object",
+      "required": [
+        "artifact",
+        "freshness"
+      ],
+      "properties": {
+        "artifact": {
+          "$ref": "#/$defs/artifactRef"
+        },
+        "freshness": {
+          "$ref": "#/$defs/freshness"
+        },
+        "stopped": {
+          "type": "array",
+          "items": {
+            "type": "integer"
+          }
+        },
+        "stop_steps": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "launched_pid": {},
+        "device": {
+          "type": "string"
+        },
+        "package": {
+          "type": "string"
+        },
+        "pid": {
+          "type": "string"
+        }
+      }
+    },
+    "artifactRef": {
+      "type": "object",
+      "required": [
+        "path",
+        "kind"
+      ],
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "app",
+            "apk"
+          ]
+        }
+      }
+    },
+    "build-result": {
+      "type": "object",
+      "required": [
+        "child_succeeded",
+        "artifact_status",
+        "argv",
+        "cwd",
+        "effective",
+        "patches_applied",
+        "verified_output",
+        "explanation"
+      ],
+      "properties": {
+        "child_succeeded": {
+          "const": true
+        },
+        "artifact_status": {
+          "enum": [
+            "verified",
+            "unresolved"
+          ]
+        },
+        "argv": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "cwd": {
+          "type": "string"
+        },
+        "effective": {
+          "type": "object",
+          "required": [
+            "target",
+            "configuration",
+            "arch",
+            "output_dir",
+            "sources"
+          ],
+          "properties": {
+            "target": {
+              "enum": [
+                "mac",
+                "android"
+              ]
+            },
+            "configuration": {
+              "type": "string"
+            },
+            "arch": {
+              "type": "string"
+            },
+            "output_dir": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "sources": {
+              "type": "object"
+            }
+          }
+        },
+        "patches_applied": {
+          "type": "boolean"
+        },
+        "verified_output": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "explanation": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "build": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/plan"
+        },
+        {
+          "type": "object",
+          "required": [
+            "build"
+          ],
+          "properties": {
+            "build": {
+              "$ref": "#/$defs/build-result"
+            },
+            "sync": {
+              "$ref": "#/$defs/sync-result"
+            },
+            "run": {
+              "$ref": "#/$defs/run-result"
+            }
+          }
+        }
+      ]
+    },
+    "test": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/plan"
+        },
+        {
+          "type": "object",
+          "required": [
+            "suite",
+            "argv",
+            "cwd"
+          ],
+          "properties": {
+            "suite": {
+              "type": "string"
+            },
+            "argv": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "cwd": {
+              "type": "string"
+            }
+          }
+        }
+      ]
+    },
+    "sync": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/plan"
+        },
+        {
+          "type": "object",
+          "required": [
+            "sync",
+            "targets"
+          ],
+          "properties": {
+            "sync": {
+              "$ref": "#/$defs/sync-result"
+            },
+            "targets": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "run": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/plan"
+        },
+        {
+          "type": "object",
+          "required": [
+            "run"
+          ],
+          "properties": {
+            "run": {
+              "$ref": "#/$defs/run-result"
+            }
+          }
+        }
+      ]
+    },
+    "clean": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "required": [
+            "mode",
+            "targets",
+            "configurations",
+            "arch",
+            "out_dir",
+            "total_kib",
+            "entries"
+          ],
+          "properties": {
+            "mode": {
+              "enum": [
+                "preview",
+                "execute"
+              ]
+            },
+            "targets": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "configurations": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "arch": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "out_dir": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "total_kib": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "entries": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "name",
+                  "path",
+                  "size_kib",
+                  "outcome",
+                  "detail"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "path": {
+                    "type": "string"
+                  },
+                  "size_kib": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "outcome": {
+                    "enum": [
+                      "planned",
+                      "deleted",
+                      "skipped",
+                      "failed"
+                    ]
+                  },
+                  "detail": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "drift": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "required": [
+            "drifted",
+            "metadata_complete",
+            "incomplete_reasons",
+            "patchinfo_files"
+          ],
+          "properties": {
+            "drifted": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "path",
+                  "reasons"
+                ],
+                "properties": {
+                  "path": {
+                    "type": "string"
+                  },
+                  "reasons": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            },
+            "metadata_complete": {
+              "type": "boolean"
+            },
+            "incomplete_reasons": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "patchinfo_files": {
+              "type": "integer"
+            }
+          }
+        }
+      ]
+    },
+    "patches update": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "required": [
+            "argv",
+            "changed_files"
+          ],
+          "properties": {
+            "argv": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "changed_files": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "android setup": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "required": [
+            "cache",
+            "cache_action",
+            "working_copy",
+            "created",
+            "compatible",
+            "compatibility_detail"
+          ],
+          "properties": {
+            "cache": {
+              "type": "string"
+            },
+            "cache_action": {
+              "enum": [
+                "cloned",
+                "fetched"
+              ]
+            },
+            "created": {
+              "type": "boolean"
+            },
+            "compatible": {
+              "type": "boolean"
+            },
+            "compatibility_detail": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "working_copy": {
+              "type": "object",
+              "required": [
+                "path",
+                "head",
+                "branch",
+                "dirty",
+                "unpushed_commits",
+                "origin"
+              ],
+              "properties": {
+                "path": {
+                  "type": "string"
+                },
+                "head": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "branch": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "dirty": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "unpushed_commits": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "origin": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "bpm": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "required": [
+            "argv",
+            "cwd"
+          ],
+          "properties": {
+            "argv": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "requested_arguments": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "cwd": {
+              "type": "string"
+            },
+            "tools": {
+              "type": "object"
+            }
+          }
+        }
+      ]
+    },
+    "vpython3": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "required": [
+            "argv",
+            "interpreter",
+            "cwd"
+          ],
+          "properties": {
+            "argv": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "interpreter": {
+              "type": "string"
+            },
+            "cwd": {
+              "type": "string"
+            }
+          }
+        }
+      ]
+    },
+    "tools setup": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "required": [
+            "installer_runs",
+            "ready"
+          ],
+          "properties": {
+            "installer_runs": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "argv",
+                  "exit"
+                ],
+                "properties": {
+                  "argv": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "exit": {
+                    "type": "integer"
+                  }
+                }
+              }
+            },
+            "ready": {
+              "type": "boolean"
+            },
+            "tools": {
+              "type": [
+                "object",
+                "null"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "setup": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "required": [
+            "scaffold_root",
+            "runtime",
+            "direnv",
+            "git",
+            "configuration",
+            "next_steps"
+          ],
+          "properties": {
+            "scaffold_root": {
+              "type": "string"
+            },
+            "runtime": {
+              "type": "object",
+              "required": [
+                "python",
+                "executable",
+                "expected"
+              ],
+              "properties": {
+                "python": {
+                  "type": "string"
+                },
+                "executable": {
+                  "type": "string"
+                },
+                "expected": {
+                  "type": "string"
+                }
+              }
+            },
+            "direnv": {
+              "type": "object",
+              "required": [
+                "path",
+                "version"
+              ],
+              "properties": {
+                "path": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "version": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              }
+            },
+            "git": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "configuration": {
+              "type": "object",
+              "required": [
+                "file",
+                "created"
+              ],
+              "properties": {
+                "file": {
+                  "type": "string"
+                },
+                "created": {
+                  "type": "boolean"
+                }
+              }
+            },
+            "next_steps": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "checkout add": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "required": [
+            "alias",
+            "core",
+            "outcome",
+            "configuration"
+          ],
+          "properties": {
+            "alias": {
+              "type": "string"
+            },
+            "core": {
+              "type": "string"
+            },
+            "outcome": {
+              "type": "string"
+            },
+            "configuration": {
+              "type": "string"
+            }
+          }
+        }
+      ]
+    },
+    "checkout list": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "required": [
+            "checkouts",
+            "configuration"
+          ],
+          "properties": {
+            "checkouts": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "alias",
+                  "core",
+                  "environment",
+                  "environment_state",
+                  "problem"
+                ],
+                "properties": {
+                  "alias": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "core": {
+                    "type": "string"
+                  },
+                  "environment": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "environment_state": {
+                    "type": "string"
+                  },
+                  "problem": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                }
+              }
+            },
+            "configuration": {
+              "type": "string"
+            }
+          }
+        }
+      ]
+    },
+    "context": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "required": [
+            "configuration",
+            "host_platform",
+            "checkout"
+          ],
+          "properties": {
+            "configuration": {
+              "type": "object",
+              "required": [
+                "file",
+                "exists"
+              ],
+              "properties": {
+                "file": {
+                  "type": "string"
+                },
+                "exists": {
+                  "type": "boolean"
+                }
+              }
+            },
+            "host_platform": {
+              "type": "string"
+            },
+            "checkout": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "type": "object",
+                  "required": [
+                    "core",
+                    "chromium_src",
+                    "workspace",
+                    "outer",
+                    "alias",
+                    "selection_source",
+                    "head"
+                  ],
+                  "properties": {
+                    "core": {
+                      "type": "string"
+                    },
+                    "chromium_src": {
+                      "type": "string"
+                    },
+                    "workspace": {
+                      "type": "string"
+                    },
+                    "outer": {
+                      "type": "string"
+                    },
+                    "alias": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "selection_source": {
+                      "type": "string"
+                    },
+                    "head": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  }
+                }
+              ]
+            },
+            "layout": {
+              "type": "object",
+              "required": [
+                "supported",
+                "linked_worktrees"
+              ],
+              "properties": {
+                "supported": {
+                  "type": "boolean"
+                },
+                "linked_worktrees": {
+                  "type": "array"
+                }
+              }
+            },
+            "environment": {
+              "type": "object"
+            },
+            "incomplete_operations": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "operation_id",
+                  "command",
+                  "started"
+                ],
+                "properties": {
+                  "operation_id": {
+                    "type": "string"
+                  },
+                  "command": {
+                    "type": "string"
+                  },
+                  "started": {
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            "tools": {
+              "type": "object",
+              "required": [
+                "ready",
+                "checks"
+              ],
+              "properties": {
+                "ready": {
+                  "type": "boolean"
+                },
+                "checks": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/check-record"
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "check-record": {
+      "type": "object",
+      "required": [
+        "name",
+        "status"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        }
+      }
+    },
+    "capabilities": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "required": [
+            "capabilities"
+          ],
+          "properties": {
+            "capabilities": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "host",
+                  "target",
+                  "operation",
+                  "configuration",
+                  "architecture",
+                  "status",
+                  "note"
+                ],
+                "properties": {
+                  "host": {
+                    "type": "string"
+                  },
+                  "target": {
+                    "type": "string"
+                  },
+                  "operation": {
+                    "type": "string"
+                  },
+                  "configuration": {
+                    "type": "string"
+                  },
+                  "architecture": {
+                    "type": "string"
+                  },
+                  "status": {
+                    "enum": [
+                      "supported",
+                      "limited",
+                      "unverified",
+                      "experimental",
+                      "unsupported"
+                    ]
+                  },
+                  "note": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "doctor": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "required": [
+            "scopes"
+          ],
+          "properties": {
+            "scopes": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "env init": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "required": [
+            "file",
+            "status",
+            "content",
+            "approval_command"
+          ],
+          "properties": {
+            "file": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string"
+            },
+            "content": {
+              "type": "string"
+            },
+            "approval_command": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "env export": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "required": [
+            "format",
+            "exports",
+            "text"
+          ],
+          "properties": {
+            "format": {
+              "type": "string"
+            },
+            "exports": {
+              "type": "object"
+            },
+            "text": {
+              "type": "string"
+            }
+          }
+        }
+      ]
+    },
+    "env check": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "required": [
+            "variables",
+            "tools"
+          ],
+          "properties": {
+            "variables": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "variable",
+                  "expected",
+                  "observed",
+                  "ok"
+                ],
+                "properties": {
+                  "variable": {
+                    "type": "string"
+                  },
+                  "expected": {
+                    "type": "string"
+                  },
+                  "observed": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "ok": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            },
+            "tools": {
+              "type": [
+                "object",
+                "null"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "shell": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "required": [
+            "shell",
+            "cwd",
+            "exit"
+          ],
+          "properties": {
+            "shell": {
+              "type": "string"
+            },
+            "cwd": {
+              "type": "string"
+            },
+            "exit": {
+              "type": "integer"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

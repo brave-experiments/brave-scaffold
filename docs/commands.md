@@ -142,6 +142,19 @@ Every command's JSON document has the same top-level fields, defined by
 `status` is `ok`, `error`, `partial`, or `cancelled`. Additive fields are
 compatible; removing a field or changing its meaning changes `schema_version`.
 
+The `data` of each command has its own published shape in
+[`scripts/schemas/command-data.schema.json`](../scripts/schemas/command-data.schema.json);
+the envelope schema selects it by `command` (`build`, `build-run`, `sync-build`, and
+`sync-build-run` share one shape, `run` and `deploy` another). `data` is `null` in error
+results, or a plan (`data.plan.steps`, see [Plans](#plans)) under `--plan`. The envelope
+schema also types `artifacts` (an application or an APK: `path`, `kind`, `name`, `verified`,
+plus build identity when the artifact was just built or verified, `freshness` when it was
+selected for `run`), `logs`, `checks`, and `error`, and ties `status` to `exit_code`: `ok` is
+exit `0` with `error` null, `error` is exit `1` to `5`, `partial` is `6`, and `cancelled`
+is `130` or `143` with no artifacts. An unresolved build output is `ok` with an
+`ARTIFACT_UNRESOLVED` warning and `artifacts: []` for `build` and `sync-build`, and an
+`ARTIFACT_UNRESOLVED` error for the combined run commands.
+
 `requires_user_action` says whether a repair step needs a person, such as
 approving an environment. `false` does not mean you may run it: agents still need
 authority for the action ([agent workflows](agent-workflows.md)).

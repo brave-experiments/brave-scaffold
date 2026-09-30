@@ -64,9 +64,11 @@ results with the evidence.
    environment with `common/env.load_environment`, and run processes through
    `common/procs` so they are logged and cancellable.
 3. Return a `Result`; raise `ScaffoldError` with a stable code and repairs.
-4. Add tests through the real launcher, including the failure paths. The suite
-   checks that help examples parse and that results conform to the envelope
-   schema.
+4. Add the command's `data` shape to `schemas/command-data.schema.json` and select it
+   in `schemas/result-envelope.schema.json`; a test fails for a command without one.
+   Add tests through the real launcher, including the failure paths: the suite
+   validates real results (success, unresolved output, error, cancellation, plans)
+   against the schemas and checks that help examples parse.
 5. Update `docs/commands.md`, the troubleshooting entry for new errors, and the
    capability table.
 6. For a doctor check, add it to a check group in `brave/doctor.py`; execution
