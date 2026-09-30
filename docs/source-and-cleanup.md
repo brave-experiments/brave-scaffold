@@ -5,6 +5,64 @@ checkout's repositories. Generated outputs are the build directories under
 `<chromium-src>/out`. They are separate: cleaning removes outputs only and never
 touches source.
 
+## Sync sources
+
+```sh
+bdev sync                       # macOS
+bdev sync android --plan        # show the command; runs nothing
+bdev sync mac,android --force   # extra arguments go to the sync script
+```
+
+`bdev sync [<targets>]` runs Core's `sync` script with the checkout-local tools.
+Extra arguments go to that script only (in `sync-build`, only to the build phase).
+Standalone `sync` reads `-C` as the script's own option, never as an output
+directory. Mobile targets build `--target_os` from the union of the checkout's
+existing `.gclient` values and the requested mobile target; the host platform is
+never written there.
+
+Before syncing, the command stops with `PREPARATION_CONFLICT` if Core has
+uncommitted changes or Chromium files show local edits that patch application could
+overwrite. It never stashes, resets, or switches branches. The operation record
+notes Core and Chromium revisions before and after. Sync changes source and
+dependencies inside the checkout; it is the requested work, not an installation
+side effect.
+
+## Patch preparation
+
+Builds and tests apply Core patches only when the materialized Chromium files no
+longer match the patch metadata, and only when that cannot lose local work. Each
+patched file's checksum is compared with its metadata and with the state recorded
+the last time patches were applied here. A file that differs from both, or that
+differs with no earlier record, may hold local edits: the command stops with
+`PREPARATION_CONFLICT`, lists the files, and suggests `bdev drift --diff`. Missing
+or unreadable metadata is treated as uncertain, not clean.
+
+Resolve a conflict yourself: keep wanted edits with `bdev patches update` or
+restore the files, then run `bpm run apply_patches` if you want stale files
+replaced. The receipts live beside your configuration in `.bdev/`, never in Core.
+
+## Inspect drift
+
+```sh
+bdev drift          # which patched Chromium files differ from their metadata
+bdev drift --diff   # include each file's Git diff
+```
+
+Read-only. Reasons are `source changed after patch applied`, `source file missing`,
+`patch file changed`, and `patch file removed`. Patches without metadata or
+unreadable metadata make the evidence incomplete, and the result says so instead of
+reporting a clean tree.
+
+## Update patches
+
+```sh
+bdev patches update
+```
+
+Runs `bpm run update_patches` to regenerate patch files from local Chromium edits,
+then lists the changed files in Core for review. It never commits or discards
+anything.
+
 ## Clean generated build output
 
 Prerequisites: a registered or enclosing checkout. Stop any build first; only one

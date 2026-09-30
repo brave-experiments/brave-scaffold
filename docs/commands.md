@@ -35,13 +35,33 @@ look, and what the codes mean. Only delivered commands appear here.
 | `bdev context` | Resolved checkout, selection source, environment, tools | None |
 | `bdev capabilities` | Supported, limited, unverified, unsupported combinations | None; needs no checkout |
 | `bdev doctor [scope]` | Named readiness checks (`mac`, `rbe`, `shell`, `signing`) | None |
+| `bdev build [target]` | Prepare, compile, and verify the output ([macOS](macos.md)) | Writes build output; may apply patches |
+| `bdev test [target] <suite>` | Compile if needed and run one suite ([macOS](macos.md)) | Writes build output; runs tests |
+| `bdev run [target]` | Restart the browser with an existing output; never builds | Quits and relaunches the application |
+| `bdev build-run` (`br`), `sync-build` (`sb`), `sync-build-run` (`sbr`) | Combined workflows; extras go to the build phase | Effects of each phase |
+| `bdev sync [targets]` | Core source sync ([details](source-and-cleanup.md)) | Changes sources and dependencies |
+| `bdev drift [--diff]` | Compare patched Chromium files with patch metadata | None |
+| `bdev patches update` | Regenerate patch files from local Chromium edits | Rewrites patch files; commits nothing |
 | `bdev clean [target]` | Preview generated build outputs of the selected checkout; `--execute` deletes them ([details](source-and-cleanup.md)) | Preview writes nothing; `--execute` deletes directories under `src/out` |
 | `bdev tools setup` | Explicit repair of checkout-local Node/package-manager payloads | Runs the checkout's payload installer inside the checkout |
 | `bdev vpython3 [options] [--] <args>` | Checkout-local Python | Whatever the program does |
 | `bpm [options] <package args>` | Checkout's package manager | Whatever the package command does |
 
-Building, testing, running, syncing, cleaning, drift inspection, and patch
-updates are not available yet.
+Android build, install, and restart are not available yet.
+
+### Forwarding to package commands
+
+`build`, `test`, `sync`, `sync-build`, `sync-build-run`, `build-run`, and
+`patches update` run a package script. They use only their documented
+positionals and scaffold options; every other argument goes unchanged to that
+script, after the generated ones, in the same order. Unknown options and extra
+positionals are not errors. A value after an unknown option is never read as the
+target. Use `--` to forward a token that is also a scaffold option
+(`bdev build -- --json`). The first `--` is consumed; later ones are forwarded.
+Combined commands send the tail to their build phase only; `sync` receives none
+of it. Commands that run no package script (`context`, `doctor`, `run`, `clean`,
+`drift`) reject extra arguments. The effective command and directory are logged
+and recorded so the destination is clear.
 
 ## Direct tools
 
@@ -136,8 +156,9 @@ authority for the action ([agent workflows](agent-workflows.md)).
 a Git linked worktree or an unavailable platform), `ENVIRONMENT_REQUIRED`,
 `ENVIRONMENT_UNAPPROVED`, `ENVIRONMENT_LOAD_FAILED`, `CHECKOUT_ENV_CONFLICT`,
 `LOCAL_TOOL_MISSING`, `DEPENDENCY_INCOMPATIBLE`, `READINESS_BLOCKED`,
-`READINESS_INCOMPLETE`, `CHILD_FAILED`, `CANCELLED`, and `INTERNAL_ERROR`.
-Codes for artifacts, devices, and preparation appear when those commands ship.
+`READINESS_INCOMPLETE`, `PREPARATION_CONFLICT`, `OWNERSHIP_CONFLICT`, `ARTIFACT_MISSING`,
+`ARTIFACT_MISMATCH`, `ARTIFACT_UNRESOLVED`, `ARTIFACT_AMBIGUOUS`, `LAUNCH_FAILED`,
+`CHILD_FAILED`, `CANCELLED`, and `INTERNAL_ERROR`.
 
 ## Doctor
 

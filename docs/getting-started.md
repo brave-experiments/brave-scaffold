@@ -75,6 +75,8 @@ scripts/bpm --checkout main run --help      # checkout-local package manager
 From inside the checkout, omit `--checkout`: the current directory identifies it.
 Outside a checkout, name one with `--checkout`.
 
+To build and run the browser, continue with [macOS](macos.md).
+
 If a command fails, its error names the problem and a next step. See
 [troubleshooting](troubleshooting.md) and [commands](commands.md).
 

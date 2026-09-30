@@ -1,5 +1,104 @@
 # macOS
 
+Existing-checkout workflows for Brave macOS on an arm64 Mac: Debug builds, test
+suites, and restarting the browser. Each command delegates to Core's own package
+scripts through the checkout-local Node and package manager; nothing here changes
+how Core builds. Verified support is listed by `bdev capabilities`; other
+configurations and architectures are accepted but only `limited` or `unverified`.
+
+Prerequisites: a registered checkout with an approved environment
+([getting started](getting-started.md)), `bdev doctor mac --checkout <name>`
+passing, and, for the default remote compilation, RBE/Siso configuration (see
+[readiness](#readiness-and-rbesiso-prerequisites)). Use one operator per checkout;
+stop other builds first.
+
+## Build
+
+```sh
+bdev build                      # Debug arm64 with RBE/Siso
+bdev build --offline            # compile locally instead
+bdev build --plan               # show the steps; runs nothing
+bdev build -C Custom            # forwarded: output goes to <src>/out/Custom
+```
+
+`bdev build` checks readiness, applies Core patches only when they are out of date
+and no local edits are at risk ([source and cleanup](source-and-cleanup.md)), runs
+`bpm run build` with generated arguments, then verifies the application bundle in
+the resolved output directory and records it. It never cleans, installs, or
+launches anything.
+
+Generated arguments, in order: `--target_os=mac --target_arch=arm64 -C Debug_arm64
+Debug`, then `--use_remoteexec=true` (or `--offline`), plus `--channel=release` for
+Release and `--force_gn_gen` after `--force-gn` or a patch application. Everything
+else on the command line is forwarded unchanged after them, so new options of the
+package command work without any change here; use `--` to forward a token that is
+also a scaffold option (`bdev build -- --json`).
+
+Forwarded options that decide what is built are also read for planning, output
+selection, and records: `--target_os`, `--target_arch`, `-C`, a `Debug`/`Release`
+build-configuration word, `--channel`, `--target`, `--offline`, and
+`--use_remoteexec`. A forwarded value replaces the generated one, so the child sees
+one choice; a repeated option follows the package command's parser (the last one
+wins). If a forwarded value contradicts an explicit scaffold selector, such as
+`--configuration release` with a forwarded `Debug`, the command stops before any
+change with both values and an example. A relative `-C` names a directory beneath
+Chromium's `src/out`, not Core: `-C Custom` selects `<src>/out/Custom`.
+
+### Build results
+
+| Outcome | Result |
+| --- | --- |
+| Child exits nonzero | `CHILD_FAILED`, exit 5, `child_exit_code` set |
+| Child succeeds and the application is found in the resolved output | `ok`, the application listed in `artifacts` |
+| Child succeeds but the output cannot be identified (for example `--target brave_unit_tests` builds no application) | `build`, `sync-build`: `ok` with an `ARTIFACT_UNRESOLVED` warning and no artifact. `build-run`, `sync-build-run`: `ARTIFACT_UNRESOLVED`, exit 5, nothing stopped or launched |
+| Output identified but missing or unusable | `ARTIFACT_MISSING` or `ARTIFACT_MISMATCH`, exit 5 |
+
+Nothing falls back to another artifact.
+
+## Test
+
+```sh
+bdev test brave_unit_tests
+bdev test mac brave_browser_tests --filter 'Example.*'
+bdev test brave_browser_tests -- --gtest_repeat=2
+```
+
+The suite is required and comes first; `mac` is optional and only recognized
+before the suite. `--filter` narrows tests inside the suite and never supplies a
+missing suite. Other arguments go to `bpm run test` after the generated ones.
+Android tests are not available; asking for them (or omitting the target while
+`defaults.platform` is `android`) fails with `UNSUPPORTED_CAPABILITY` before
+anything is loaded or built.
+
+## Run and restart
+
+```sh
+bdev run                        # restart with the default Debug output
+bdev run --artifact ./out/Custom/'Brave Browser Development.app'
+bdev build-run                  # build, then run exactly what was built (alias: br)
+```
+
+`run` never builds. It selects the application by checkout, target, configuration,
+and architecture; if more than one valid application matches, pass `--artifact`.
+Then it quits every running instance of the same application (matched by bundle
+identifier, including one from another checkout), waits for exit, escalating from a
+graceful quit to termination to a forced kill, launches the selected bundle, and
+confirms its process appeared. Other applications and unrelated processes are left
+alone, profiles and app data are kept, and a failed preflight leaves the running
+browser untouched.
+
+An older or independently built output may run. Structured results carry
+`freshness` (`current`, `stale`, or `unknown`) with evidence, and a warning says
+when the output may not include the latest code: `STALE_BUILD`, or
+`UNKNOWN_FRESHNESS` ("Build freshness is unknown; this output may not include the
+latest code."). After a failed, cancelled, or interrupted rebuild the earlier
+record is marked as needing revalidation, so freshness is reported as unknown even
+if an older application is still usable; a later successful build clears it.
+
+`sync-build` and `sync-build-run` (aliases `sb`, `sbr`) run the sync phase first and
+send extra arguments to the build phase only. See
+[source and cleanup](source-and-cleanup.md) for sync.
+
 ## Readiness and RBE/Siso prerequisites
 
 `bdev doctor mac` and `bdev doctor rbe` report these checks without changing

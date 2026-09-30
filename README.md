@@ -18,12 +18,14 @@ checkout writes; those are the requested work, not scaffold installation changes
 Two commands, `bdev` and `bpm`, both under `scripts/`:
 
 - `bdev` inspects checkouts, generates and checks their external direnv
-  environments, reports readiness, and runs the checkout-local Python.
+  environments, reports readiness, syncs sources, builds, tests, runs, and cleans
+  Brave macOS (Debug arm64), inspects patch drift, and runs the checkout-local
+  Python.
 - `bpm` runs the checkout's own package manager with its own Node.js, never a
   global one.
 
-Building, testing, running, syncing, and cleaning are not available yet. The
-`bdev capabilities` command lists what is supported and what has been verified.
+Android build and deploy are not available yet. `bdev capabilities` lists what
+is supported and what has been verified on a real checkout.
 
 The initial platform scope is macOS arm64 hosts with existing Brave macOS and
 Android checkouts. Fresh checkout creation, iOS, and guarded push are not part of
@@ -37,6 +39,7 @@ it.
 3. Generate its environment: `scripts/bdev env init --checkout main`
 4. Review the printed file, then approve it yourself with `direnv allow <dir>`.
 5. Check readiness: `scripts/bdev doctor mac --checkout main`
+6. Build and run: `scripts/bdev build-run --checkout main` ([macOS](docs/macos.md))
 
 Nothing requires a `PATH` change, a shell hook, or an edit inside Brave Core.
 
@@ -45,6 +48,8 @@ Nothing requires a `PATH` change, a shell hook, or an edit inside Brave Core.
 | Task | Guide |
 | --- | --- |
 | Install and run a first command | [Getting started](docs/getting-started.md) |
+| Build, test, and run on macOS | [macOS](docs/macos.md) |
+| Sync sources, patches, and cleanup | [Source and cleanup](docs/source-and-cleanup.md) |
 | Configure checkouts and environments | [Configuration and environments](docs/configuration-and-environments.md) |
 | Look up commands, options, results, exit codes | [Commands](docs/commands.md) |
 | Sign commits | [Commit signing](docs/signing.md) |

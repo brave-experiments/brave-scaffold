@@ -106,8 +106,61 @@ your terminal (stderr in JSON mode).
 *Meaning:* `brave-scaffold.toml` has an unknown field, wrong type, or a duplicate.
 The message names the field and shows a valid example.
 
+## `PREPARATION_CONFLICT`
+
+*Meaning:* preparing sources could overwrite local work: patch application would
+touch a Chromium file that differs from both the patch metadata and the last
+recorded state (or has no record), or a sync found uncommitted Core changes. The
+files are listed. Nothing was changed.
+
+*Next:* review with `bdev drift --diff`. Keep wanted edits with
+`bdev patches update`, or restore the files yourself; then repeat the command.
+The scaffold never stashes, resets, or switches branches.
+
+## `SELECTOR_CONFLICT`
+
+*Meaning:* an explicit scaffold choice disagrees with a forwarded argument (for
+example `--configuration release` and a forwarded `Debug`), or an option was given
+twice with different values. Both values and an example are shown; nothing ran.
+
+## `ARTIFACT_MISSING`, `ARTIFACT_MISMATCH`, `ARTIFACT_AMBIGUOUS`
+
+*Meaning:* `run` found no application for the checkout, target, configuration and
+architecture (`MISSING`), found one that is not a usable Brave application
+(`MISMATCH`), or found several (`AMBIGUOUS`). `run` never builds.
+
+*Next:* `bdev build` or `bdev build-run`; or choose with `--artifact <path>`. After
+a build, `MISSING` or `MISMATCH` means the build succeeded but its expected output
+is absent or unusable; inspect the output directory named in the message.
+
+## `ARTIFACT_UNRESOLVED`
+
+*Meaning:* the package build exited zero but the scaffold cannot tell which
+application it produced (for example the forwarded arguments build a test target).
+For `build`, this is a warning. For `build-run` and `sync-build-run` it is an error
+and nothing was stopped, installed, or launched.
+
+*Next:* run the application you built with `bdev run --artifact <path>`.
+
+## `LAUNCH_FAILED`
+
+*Meaning:* an existing instance would not exit, or the selected application did not
+start. The error says which and lists the steps taken. Other processes are never
+touched.
+
+## Stale or unknown build freshness
+
+`bdev run` may start an older output. `STALE_BUILD` means tracked inputs changed
+since the recorded build. `UNKNOWN_FRESHNESS` means there is no record, or an
+earlier rebuild of this output failed, was cancelled, or was interrupted, so its
+contents may be partly overwritten. Rebuild with `bdev build` to refresh the
+record; nothing rebuilds or deletes for you.
+
 ## Interrupted operations
 
 Interrupting a command (Ctrl-C or SIGTERM) forwards the signal to its child
 process group, waits briefly, then ends it, and reports `cancelled` with exit
-`130` or `143`. Inspect the checkout before retrying anything that modifies it.
+`130` or `143`. An interrupted build leaves its output marked as needing
+revalidation; a command killed outright leaves an operation record still marked
+incomplete in `.bdev/operations/` beside your configuration. Inspect the checkout
+before retrying anything that modifies it.
