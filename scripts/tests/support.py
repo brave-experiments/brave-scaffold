@@ -6,9 +6,12 @@
 
 from __future__ import annotations
 
+import atexit
 import json
 import os
+import secrets
 import shutil
+import signal
 import stat
 import subprocess
 import sys
@@ -66,7 +69,8 @@ if os.path.exists(stale):
 """
 APP_HELPERS = """
 import plistlib, shutil, stat
-def make_app(directory, name="Brave Browser Development", bundle_id="com.brave.ScaffoldTest", program=None):
+def make_app(directory, name="Brave Browser Development", bundle_id=None, program=None):
+    bundle_id = bundle_id or os.environ.get("FAKE_BUNDLE_ID", "com.brave.ScaffoldTest")
     program = program or os.environ["FAKE_SLEEPER"]
     app = os.path.join(directory, name + ".app")
     os.makedirs(os.path.join(app, "Contents", "MacOS"), exist_ok=True)
@@ -140,6 +144,7 @@ int main(int argc, char **argv) {
 def _build_sleeper():
     """A local executable to stand in for a browser process. Copies of system binaries are killed."""
     directory = tempfile.mkdtemp(prefix="scaffold-sleeper-")
+    atexit.register(shutil.rmtree, directory, ignore_errors=True)
     source = os.path.join(directory, "sleeper.c")
     with open(source, "w") as stream:
         stream.write(SLEEPER_SOURCE)
@@ -169,15 +174,16 @@ class Sandbox:
         self.config = self.root / "config" / "brave-scaffold.toml"
         self.checkouts = {}
         self.processes = []
+        self.bundle_id = "com.brave.ScaffoldTest." + secrets.token_hex(4)
         write_executable(self.bin / "xcode-select", "#!/bin/sh\necho /fake/Xcode/Developer\n")
         write_executable(self.bin / "xcrun", "#!/bin/sh\necho 15.0\n")
         write_executable(self.bin / "osascript", FAKE_OSASCRIPT)
         write_executable(self.bin / "open", FAKE_OPEN)
 
-    def start_app(self, directory, bundle_id="com.brave.ScaffoldTest", name="Brave Browser Development",
+    def start_app(self, directory, bundle_id=None, name="Brave Browser Development",
                   program=None, arguments=("300",)):
         """A running instance of a fake application bundle; returns (bundle path, Popen)."""
-        app = make_app(str(directory), name=name, bundle_id=bundle_id, program=program)
+        app = make_app(str(directory), name=name, bundle_id=bundle_id or self.bundle_id, program=program)
         process = subprocess.Popen([os.path.join(app, "Contents", "MacOS", name), *arguments],
                                    start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         self.processes.append(process)
@@ -185,17 +191,28 @@ class Sandbox:
             stream.write(" %d" % process.pid)
         return app, process
 
+    def stray_pids(self):
+        """Processes whose command line mentions this sandbox: fake apps, fake package commands, helpers."""
+        listing = subprocess.run(["ps", "-axo", "pid=,command="], capture_output=True, text=True).stdout
+        return [int(line.split(None, 1)[0]) for line in listing.splitlines()
+                if str(self.root) in line and int(line.split(None, 1)[0]) != os.getpid()]
+
     def cleanup(self):
         for process in self.processes:
             if process.poll() is None:
                 process.kill()
             process.wait()
+        for pid in self.stray_pids():
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
         shutil.rmtree(self.root, ignore_errors=True)
 
     def env(self, **extra):
         env = {"PATH": "%s:/usr/bin:/bin:/opt/homebrew/bin" % self.bin, "HOME": str(self.home),
                "XDG_DATA_HOME": str(self.data), "XDG_CONFIG_HOME": str(self.root / "xdg"),
-               "FAKE_RECORD": str(self.record), "FAKE_APP_PIDS": str(self.root / "app-pids"), "FAKE_SLEEPER": os.environ["FAKE_SLEEPER"],
+               "FAKE_BUNDLE_ID": self.bundle_id, "FAKE_RECORD": str(self.record), "FAKE_APP_PIDS": str(self.root / "app-pids"), "FAKE_SLEEPER": os.environ["FAKE_SLEEPER"],
                "LANG": "en_US.UTF-8"}
         env.update(extra)
         return env
