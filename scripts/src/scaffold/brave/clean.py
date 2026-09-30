@@ -7,7 +7,8 @@
 from __future__ import annotations
 
 import os
-import shutil
+import secrets
+import stat
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -26,6 +27,8 @@ class Entry:
     size_kib: int | None = None
     outcome: str = "planned"
     detail: str | None = None
+    identity: tuple | None = None
+    parent_identity: tuple | None = None
 
 
 def _with_arch(name, base, arch):
@@ -89,8 +92,14 @@ def format_kib(kib):
         value /= 1024
 
 
+def _identity(status):
+    return (status.st_dev, status.st_ino)
+
+
 def plan_cleanup(out_dir, targets, configs, arch, sizes):
+    """Matching directories, each with the identity of the directory that was approved."""
     entries = []
+    parent = _identity(os.stat(out_dir))
     for child in sorted(out_dir.iterdir()):
         if not any(matches(child.name, t, c, arch) for t in targets for c in configs):
             continue
@@ -98,28 +107,92 @@ def plan_cleanup(out_dir, targets, configs, arch, sizes):
         reason = check_entry(child, out_dir)
         if reason:
             entry.outcome, entry.detail = "skipped", reason
-        elif sizes:
-            entry.size_kib = disk_usage_kib(child)
+        else:
+            entry.identity, entry.parent_identity = _identity(os.lstat(child)), parent
+            if sizes:
+                entry.size_kib = disk_usage_kib(child)
         entries.append(entry)
     return entries
 
 
-def execute_plan(entries, out_dir, before_delete=None):
-    """Delete each still-valid entry, revalidating immediately before removing it."""
-    for entry in entries:
-        if entry.outcome != "planned":
+def _remove_contents(directory_fd):
+    """Delete everything below an open directory through descriptors; links are removed, never followed."""
+    with os.scandir(directory_fd) as scanner:
+        children = [(item.name, item.is_dir(follow_symlinks=False)) for item in scanner]
+    for name, is_directory in children:
+        if not is_directory:
+            os.unlink(name, dir_fd=directory_fd)
             continue
-        if before_delete:
-            before_delete(entry)
-        reason = check_entry(out_dir / entry.name, out_dir)
-        if reason or Path(os.path.realpath(out_dir / entry.name)) != entry.path:
-            entry.outcome, entry.detail = "skipped", reason or "changed after the plan was made"
-            continue
+        child_fd = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=directory_fd)
         try:
-            shutil.rmtree(out_dir / entry.name)
-            entry.outcome = "deleted"
+            _remove_contents(child_fd)
+        finally:
+            os.close(child_fd)
+        os.rmdir(name, dir_fd=directory_fd)
+
+
+def _delete_approved(out_fd, entry, during_delete=None):
+    """Delete exactly the directory that was approved; return (outcome, detail).
+
+    The name is checked against the planned identity, then the directory is held open and moved
+    to a private name inside src/out. If the moved entry is not the approved one, it is put back and
+    nothing is deleted, so a replacement is never reopened by name.
+    """
+    try:
+        status = os.lstat(entry.name, dir_fd=out_fd)
+    except FileNotFoundError:
+        return "skipped", "no longer exists"
+    if stat.S_ISLNK(status.st_mode):
+        return "skipped", "is a symlink"
+    if not stat.S_ISDIR(status.st_mode):
+        return "skipped", "is no longer a directory"
+    if _identity(status) != entry.identity:
+        return "skipped", "changed after the plan was made"
+    held = os.open(entry.name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=out_fd)
+    try:
+        if _identity(os.fstat(held)) != entry.identity:
+            return "skipped", "changed after the plan was made"
+        try:
+            os.stat(".git", dir_fd=held, follow_symlinks=False)
+            return "skipped", "contains a .git entry"
+        except FileNotFoundError:
+            pass
+        if during_delete:
+            during_delete(entry)
+        private = ".scaffold-deleting-%s-%s" % (entry.name, secrets.token_hex(4))
+        os.rename(entry.name, private, src_dir_fd=out_fd, dst_dir_fd=out_fd)
+        if _identity(os.lstat(private, dir_fd=out_fd)) != entry.identity:
+            os.rename(private, entry.name, src_dir_fd=out_fd, dst_dir_fd=out_fd)
+            return "skipped", "changed while it was being deleted"
+        try:
+            _remove_contents(held)
+            os.rmdir(private, dir_fd=out_fd)
         except OSError as error:
-            entry.outcome, entry.detail = "failed", str(error)
+            return "failed", "%s; what is left of the directory is %s in src/out" % (error, private)
+        return "deleted", None
+    finally:
+        os.close(held)
+
+
+def execute_plan(entries, out_dir, before_delete=None, during_delete=None):
+    """Delete each entry that is still the approved directory inside the approved src/out."""
+    out_fd = os.open(out_dir, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        for entry in entries:
+            if entry.outcome != "planned":
+                continue
+            if before_delete:
+                before_delete(entry)
+            if _identity(os.fstat(out_fd)) != entry.parent_identity or _identity(os.stat(out_dir)) != \
+                    entry.parent_identity:
+                entry.outcome, entry.detail = "skipped", "src/out was replaced after the plan was made"
+                continue
+            try:
+                entry.outcome, entry.detail = _delete_approved(out_fd, entry, during_delete)
+            except OSError as error:
+                entry.outcome, entry.detail = "failed", str(error)
+    finally:
+        os.close(out_fd)
 
 
 def run_clean(ctx):

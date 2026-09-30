@@ -100,9 +100,16 @@ Preview (nothing is deleted) in /work/browser/_bad_scm/workspace/src/out
 Run again with --execute to delete the directories marked 'planned'.
 ```
 
-`--execute` deletes only that plan. Each directory is checked again immediately
-before removal; an entry that became a symlink, moved outside `src/out`, or holds
-a `.git` entry is skipped and reported, and a symlink is never followed. If some
+`--execute` deletes only that plan. The plan records the identity (device and inode)
+of `src/out` and of each listed directory. Each directory is checked again
+immediately before removal: an entry that became a symlink, is a different directory
+now living at the same path, or holds a `.git` entry is skipped and reported, and so
+is every entry if `src/out` itself was replaced. The approved directory is held open
+and renamed to a private `.scaffold-deleting-*` name inside `src/out` before its
+contents are removed through open handles, so a replacement is never reopened by name
+and a symlink is never followed. If the renamed entry turns out not to be the approved
+one, it is renamed back and nothing is deleted. A deletion that fails part way reports
+the private name of what remains. If some
 directories are skipped or fail, the result is `partial` with exit code 6 and each
 entry carries its outcome (`deleted`, `skipped`, `failed`) and reason.
 `--no-size` skips size calculation.

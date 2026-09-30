@@ -133,21 +133,77 @@ class RevalidationTests(SandboxTest):
         self.assertEqual(entries[0].outcome, "skipped")
         self.assertTrue((outside / "keep").exists())
 
-    def test_moved_original_is_left_alone_when_the_name_is_reused(self):
+    def plan(self):
         out = self.sandbox.root / "src" / "out"
         (out / "Debug_arm64").mkdir(parents=True)
-        entries = clean.plan_cleanup(out, ["mac"], ["debug"], None, False)
+        (out / "Debug_arm64" / "original").write_text("approved")
+        return out, clean.plan_cleanup(out, ["mac"], ["debug"], None, False)
+
+    def substitute(self, out, name):
+        """Move the approved directory away and put a different ordinary directory at the same path."""
         moved = self.sandbox.root / "moved"
+        os.rename(out / name, moved)
+        (out / name).mkdir()
+        (out / name / "replacement").write_text("not approved")
+        return moved
 
-        def swap(entry):
-            os.rename(out / entry.name, moved)
-            (out / entry.name).mkdir()
-            (out / entry.name).joinpath("new").write_text("x")
+    def test_a_different_directory_at_the_planned_path_is_never_deleted(self):
+        out, entries = self.plan()
+        moved = []
+        clean.execute_plan(entries, out, before_delete=lambda entry: moved.append(self.substitute(out, entry.name)))
+        self.assertEqual((entries[0].outcome, entries[0].detail), ("skipped", "changed after the plan was made"))
+        self.assertEqual((out / "Debug_arm64" / "replacement").read_text(), "not approved")
+        self.assertEqual((moved[0] / "original").read_text(), "approved")
 
-        clean.execute_plan(entries, out, before_delete=swap)
+    def test_substitution_during_execution_is_detected_and_the_replacement_is_kept(self):
+        out, entries = self.plan()
+        moved = []
+        clean.execute_plan(entries, out, during_delete=lambda entry: moved.append(self.substitute(out, entry.name)))
+        self.assertEqual(entries[0].outcome, "skipped")
+        self.assertEqual((out / "Debug_arm64" / "replacement").read_text(), "not approved")
+        self.assertEqual((moved[0] / "original").read_text(), "approved")
+        self.assertEqual(sorted(p.name for p in out.iterdir()), ["Debug_arm64"], "nothing is left half-renamed")
+
+    def test_an_out_directory_replaced_after_planning_is_refused(self):
+        out, entries = self.plan()
+        elsewhere = self.sandbox.root / "old-out"
+
+        def swap_out(entry):
+            os.rename(out, elsewhere)
+            (out / "Debug_arm64").mkdir(parents=True)
+            (out / "Debug_arm64" / "replacement").write_text("not approved")
+
+        clean.execute_plan(entries, out, before_delete=swap_out)
+        self.assertEqual(entries[0].outcome, "skipped")
+        self.assertTrue((out / "Debug_arm64" / "replacement").exists())
+        self.assertTrue((elsewhere / "Debug_arm64" / "original").exists())
+
+    def test_a_deletion_that_cannot_finish_says_where_the_remainder_is(self):
+        out, entries = self.plan()
+        locked = out / "Debug_arm64" / "locked"
+        locked.mkdir()
+        (locked / "file").write_text("x")
+        locked.chmod(0o500)
+        self.addCleanup(lambda: [p.chmod(0o700) for p in out.rglob("locked")])
+        clean.execute_plan(entries, out)
+        self.assertEqual(entries[0].outcome, "failed")
+        remainder = [p.name for p in out.iterdir()]
+        self.assertEqual(len(remainder), 1)
+        self.assertTrue(remainder[0].startswith(".scaffold-deleting-Debug_arm64-"))
+        self.assertIn(remainder[0], entries[0].detail)
+
+    def test_links_inside_an_approved_directory_are_removed_not_followed(self):
+        out, entries = self.plan()
+        outside = self.sandbox.root / "outside"
+        outside.mkdir()
+        (outside / "keep").write_text("x")
+        (out / "Debug_arm64" / "link").symlink_to(outside)
+        (out / "Debug_arm64" / "nested" / "deeper").mkdir(parents=True)
+        (out / "Debug_arm64" / "nested" / "deeper" / "file").write_text("x")
+        clean.execute_plan(entries, out)
         self.assertEqual(entries[0].outcome, "deleted")
-        self.assertTrue(moved.exists())
-
+        self.assertEqual(list(out.iterdir()), [])
+        self.assertTrue((outside / "keep").exists())
 
 if __name__ == "__main__":
     unittest.main()
