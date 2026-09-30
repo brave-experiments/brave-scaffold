@@ -6,7 +6,11 @@
 
 A step names what an operation reads and writes, the command it dispatches, what it needs first, what happens
 when it fails, and what cleanup exists. Plans show them before anything runs; execution records the same
-description for the steps that change something, so the two cannot drift apart.
+description for the steps that change something. Sharing the description is not what keeps them in agreement:
+plans and execution take their write sets, effective choices, and command arguments from the same inventories
+and functions, and tests compare the planned and dispatched commands. A decision that depends on an earlier
+phase (a sync, or a preparation step that changes files) is `unresolved` or listed as a conditional argument
+until that phase has run.
 """
 
 from __future__ import annotations
@@ -18,6 +22,7 @@ from ..common.checks import BLOCKER, NOT_CHECKED, WARNING, readiness_error
 from ..common.redaction import redact_argv
 
 NO_CLEANUP = "None; the scaffold does not roll back or clean up after a failure."
+TEXT_WRITES = 5  # the readable plan names this many written files; the structured plan lists every one
 
 
 @dataclass
@@ -33,6 +38,7 @@ class Step:
     on_failure: str = ""
     cleanup: str = ""
     detail: str | None = None
+    conditional_arguments: list = field(default_factory=list)  # added to argv only if an earlier step changes files
 
     def to_dict(self):
         return asdict(self)
@@ -50,6 +56,11 @@ def render_plan(command, steps):
         line = "  %d. %s [%s] %s" % (index, step.name, step.status, step.summary)
         if step.detail:
             line += " - " + step.detail
+        if len(step.writes) > TEXT_WRITES:
+            line += " - writes %d file(s), for example %s (all are in the JSON plan)" % (
+                len(step.writes), ", ".join(step.writes[:TEXT_WRITES]))
+        if step.conditional_arguments:
+            line += " - adds %s if an earlier step changes files" % " ".join(step.conditional_arguments)
         lines.append(line)
     return "\n".join(lines)
 
@@ -83,33 +94,43 @@ def readiness_step(checks, note=""):
                 on_failure="Nothing is prepared; each blocker names an explicit repair.", detail=detail)
 
 
-def patches_step(identity, plan, argv):
-    """Core patch preparation; `plan` is a patch plan or the error that stopped planning."""
+def patches_step(identity, plan, argv, after_sync=False):
+    """Core patch preparation; `plan` is a patch plan or the error that stopped planning.
+
+    After a sync the plan describes only today's state, so the step is unresolved: it is decided again once
+    the sync has changed the checkout.
+    """
+    summary = "Apply Core patches only when needed and only when no local work is at risk."
     if isinstance(plan, Exception):
-        return Step("patch-preparation", "Apply Core patches only when needed and only when no local work is at risk.",
-                    "blocked", needs=["readiness"], detail=getattr(plan, "message", str(plan)))
+        return Step("patch-preparation", summary, "blocked", needs=["readiness"],
+                    detail=getattr(plan, "message", str(plan)))
     status = {"current": "current", "apply": "planned", "conflict": "blocked"}[plan.action]
     detail = plan.reason
     if plan.action == "conflict":
         detail += ": " + ", ".join(item["path"] for item in plan.conflicts[:10])
-    return Step("patch-preparation", "Apply Core patches only when needed and only when no local work is at risk.",
-                status, reads=[str(identity.core / "patches"), "patched Chromium files"],
-                writes=sorted(plan.report.files)[:50] if plan.action == "apply" else [],
-                argv=argv if plan.action == "apply" else None, cwd=str(identity.core) if plan.action == "apply" else None,
+    applying = plan.action == "apply"
+    if after_sync:
+        status, detail = "unresolved", "Decided again after the sync; from today's state: %s" % detail
+    writes = [*(str(identity.src / path) for path in plan.writes), *plan.metadata_writes] if applying else []
+    return Step("patch-preparation", summary, status,
+                reads=[str(identity.core / "patches"), "patched Chromium files"], writes=writes,
+                argv=argv if applying else None, cwd=str(identity.core) if applying else None,
                 needs=["readiness"], detail=detail,
                 on_failure="Stops before the build; files it had already patched stay patched.", cleanup=NO_CLEANUP)
 
 
 def sync_step(identity, arguments, argv, needs=()):
+    from . import sync_scope
+    repositories = [str(path) for path in sync_scope.sync_repositories(identity).repositories]
     return Step("sync", "Sync sources and dependencies with Core's own sync command.", "planned",
-                reads=[str(identity.workspace / ".gclient")], writes=["Chromium and Core sources and dependencies",
-                                                                        str(identity.workspace / ".gclient")],
+                reads=[str(identity.workspace / ".gclient")],
+                writes=[str(identity.workspace / ".gclient"), *repositories],
                 argv=argv, cwd=str(identity.core), needs=list(needs),
                 on_failure="Stops before any later phase; a partial sync stays as it is.", cleanup=NO_CLEANUP,
                 detail="arguments: " + " ".join(redact_argv(arguments)))
 
 
-def build_step(identity, effective, subcommand, arguments, argv, needs):
+def build_step(identity, effective, subcommand, arguments, argv, needs, conditional_arguments=()):
     return Step(subcommand, "Run Core's %s command for %s %s %s." % (
         subcommand, effective.target, effective.configuration, effective.arch), "planned",
         reads=[str(identity.core), "patched Chromium sources"], writes=[str(effective.output_dir)],
@@ -117,7 +138,8 @@ def build_step(identity, effective, subcommand, arguments, argv, needs):
         on_failure="The output is marked as needing revalidation; the previous build record is kept as history, "
                    "and the output cannot be restored to its earlier state.",
         cleanup=NO_CLEANUP + " Cleaning output is a separate, explicit command.",
-        detail=None if argv else "arguments: " + " ".join(redact_argv(arguments)) + " (the final command needs local tools)")
+        detail=None if argv else "arguments: " + " ".join(redact_argv(arguments)) + " (the final command needs local tools)",
+        conditional_arguments=list(conditional_arguments))
 
 
 def verify_step(effective, needs):

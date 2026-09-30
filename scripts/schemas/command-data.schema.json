@@ -16,7 +16,8 @@
         "needs",
         "on_failure",
         "cleanup",
-        "detail"
+        "detail",
+        "conditional_arguments"
       ],
       "properties": {
         "name": {
@@ -83,6 +84,13 @@
             "string",
             "null"
           ]
+        },
+        "conditional_arguments": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Arguments added to argv only if an earlier step changes files."
         }
       }
     },

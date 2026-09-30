@@ -195,7 +195,7 @@ a Git linked worktree or an unavailable platform), `ENVIRONMENT_REQUIRED`,
 `--plan` (on `build`, `test`, `sync`, the combined commands, `run`, and `deploy`) shows the
 whole operation and changes nothing. The plan is `data.plan.steps`; every step has the same
 fields: `name`, `summary`, `status`, `reads`, `writes`, `argv`, `cwd`, `needs` (earlier
-steps), `on_failure`, `cleanup`, and `detail`. `status` is `ready` or `blocked` for
+steps), `on_failure`, `cleanup`, `detail`, and `conditional_arguments`. `status` is `ready` or `blocked` for
 prerequisites (environment approval, checkout-local tools, readiness), `current` or
 `planned` for work, `resolved` or `unresolved` for choices (the artifact, the device), and
 `blocked` when a step cannot run as things stand, with the reason in `detail`. A plan
@@ -204,8 +204,14 @@ environment (execution uses the approved one) and is not a promise that executio
 succeeds. Steps include Core patch preparation, Android support preparation (with the files
 it would write), the GN overrides, the build command with its output directory, output
 verification, device selection, and the restart (stop running instances, install, launch).
-`argv` is `null` when the final command needs tools that are not available yet. The
-operation record of a real run carries the same descriptions for the steps that change
+`argv` is `null` when the final command needs tools that are not available yet.
+`writes` is the complete list of files a step can write (for patch preparation: every
+target of each patch Core would apply, the metadata files it rewrites, and the version
+file; for a sync: every repository it can reset); the readable text names a few and a
+count. Decisions that depend on an earlier phase are not guessed: after a sync the patch
+step is `unresolved`, and `conditional_arguments` lists what the build command adds only if
+preparation or a sync changes files (`--force_gn_gen`), while an explicit `--force-gn`
+is already in `argv`. The operation record of a real run carries the same descriptions for the steps that change
 something, so a plan can be compared with what was dispatched.
 
 ## Doctor

@@ -174,10 +174,13 @@ def _android():
 # --- build phase ---------------------------------------------------------------------
 
 
+FORCE_GN_ARGUMENT = "--force_gn_gen"
+
+
 def build_arguments(effective, subcommand, script_args, force_gn):
     arguments = ["run", subcommand, *script_args, *effective.generated]
     if force_gn:
-        arguments.append("--force_gn_gen")
+        arguments.append(FORCE_GN_ARGUMENT)
     return [*arguments, *effective.forwarded]
 
 
@@ -345,16 +348,22 @@ def build_plan_steps(ctx, identity, effective, subcommand="build", script_args=(
         patch_plan = patches.plan_patch_preparation(identity, ctx.log, ctx.state_root)
     except ScaffoldError as error:
         patch_plan = error
-    patch_step = step_module.patches_step(identity, patch_plan, package(["run", "apply_patches"]))
+    patch_step = step_module.patches_step(identity, patch_plan, package(["run", "apply_patches"]),
+                                          after_sync=sync_args is not None)
     patch_step.needs = [last]
     steps.append(patch_step)
     last = "patch-preparation"
+    changes_files = sync_args is not None or getattr(patch_plan, "action", None) == "apply"
     android = effective.target == "android"
     if android:
-        last = plan_android_preparation(ctx, identity, effective, steps)
-    arguments = build_arguments(effective, subcommand, script_args, False)
+        last, refreshes = plan_android_preparation(ctx, identity, effective, steps)
+        changes_files = changes_files or refreshes
+    explicit = subcommand == "build" and bool(ctx.parsed.get("force_gn"))
+    arguments = build_arguments(effective, subcommand, script_args, explicit)
+    conditional = [FORCE_GN_ARGUMENT] if subcommand == "build" and changes_files and not explicit else []
     needs = [last, *(["sync"] if sync_args is not None else [])]
-    steps.append(step_module.build_step(identity, effective, subcommand, arguments, package(arguments), needs))
+    steps.append(step_module.build_step(identity, effective, subcommand, arguments, package(arguments), needs,
+                                        conditional))
     if subcommand == "build":
         steps.append(step_module.verify_step(effective, [subcommand]))
     if run_after:
@@ -366,14 +375,14 @@ def plan_android_preparation(ctx, identity, effective, steps):
     try:
         support_plan = android_deps.plan_preparation(ctx, identity, ctx.log)
         wc = android_deps.working_copy(identity)
-        writes = android_deps.planned_writes(identity, wc, support_plan.scripts, ctx.log) \
+        writes = [str(identity.src / key) for key in android_deps.planned_writes(identity, wc, support_plan.scripts, ctx.log)] \
             if support_plan.action == "refresh" else []
     except ScaffoldError as error:
         support_plan, writes = error, []
     steps.append(step_module.support_step(identity, support_plan, writes))
     args_gn = effective.output_dir / "args.gn"
     steps.append(step_module.gn_step(effective, args_gn, effective.chosen_gn_keys))
-    return "gn-overrides"
+    return "gn-overrides", getattr(support_plan, "action", None) == "refresh"
 
 
 def plan_restart_after_build(ctx, effective, android, device_choice):

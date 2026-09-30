@@ -100,7 +100,8 @@ def prepare_support(ctx, execution, op, effective):
     ctx = execution.context(ctx)
     plan = android_deps.plan_preparation(ctx, identity, ctx.log)
     wc = android_deps.working_copy(identity)
-    writes = android_deps.planned_writes(identity, wc, plan.scripts, ctx.log) if plan.action == "refresh" else []
+    writes = [str(identity.src / key) for key in android_deps.planned_writes(identity, wc, plan.scripts, ctx.log)] \
+        if plan.action == "refresh" else []
     described = step_module.support_step(identity, plan, writes).record()
     op.step("android-support-plan", action=plan.action, reason=plan.reason, working_copy=plan.evidence.get("working_copy"),
             **described)

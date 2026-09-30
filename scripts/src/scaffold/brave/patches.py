@@ -205,6 +205,7 @@ class PatchPlan:
     conflicts: list = field(default_factory=list)
     receipt_used: bool = False
     writes: list = field(default_factory=list)  # every source-relative path applying the stale patches can write
+    metadata_writes: list = field(default_factory=list)  # absolute paths of the metadata files Core rewrites
 
 
 def plan_patch_preparation(identity, log=None, root=None):
@@ -234,6 +235,7 @@ def plan_patch_preparation(identity, log=None, root=None):
     if conflicts:
         return PatchPlan("conflict", "Applying patches could overwrite local Chromium edits.", report, trees,
                          conflicts, receipt is not None, writes)
+    writes = sorted({*writes, *CORE_WRITTEN})
     reasons = []
     if report.files:
         reasons.append("%d patched file(s) differ from the metadata" % len(report.files))
@@ -244,7 +246,8 @@ def plan_patch_preparation(identity, log=None, root=None):
     if report.incomplete:
         reasons.append("metadata incomplete: " + "; ".join(report.incomplete[:2]))
     return PatchPlan("apply", "; ".join(reasons) or "patch state unverified", report, trees, [],
-                     receipt is not None, writes)
+                     receipt is not None, writes,
+                     sorted(str(entry.info) for entry in stale if entry.has_patch))
 
 
 def write_set_conflicts(identity, stale, known, extra, log):

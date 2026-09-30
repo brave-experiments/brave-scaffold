@@ -8,10 +8,16 @@ import json
 import unittest
 
 from tests.integration.test_android import AndroidTestCase
-from tests.integration.test_build import SKIP, BuildTestCase
+from tests.integration.test_build import BUILD_HOOK, SKIP, BuildTestCase
 from tests.support import tree_snapshot
 
-STEP_FIELDS = {"name", "summary", "status", "reads", "writes", "argv", "cwd", "needs", "on_failure", "cleanup", "detail"}
+BUILD_HOOK_AFTER_APPLY = '''
+if "apply_patches" in argv:
+    raise SystemExit(0)
+''' + BUILD_HOOK
+
+STEP_FIELDS = {"name", "summary", "status", "reads", "writes", "argv", "cwd", "needs", "on_failure", "cleanup", "detail",
+               "conditional_arguments"}
 
 
 def by_name(document):
@@ -60,6 +66,68 @@ class MacPlanTests(BuildTestCase):
         step = next(item for item in record["steps"] if item["name"] == "build")
         self.assertEqual(step["writes"], [str(self.src / "out" / "Debug_arm64")])
         self.assertEqual(step["argv"], planned)
+
+    def add_unrecorded_patches(self, count):
+        """Patches without metadata that target clean tracked files."""
+        targets = ["planned/file_%03d.cc" % index for index in range(count)]
+        (self.src / "planned").mkdir(exist_ok=True)
+        for target in targets:
+            (self.src / target).write_text("upstream\n")
+        self.sandbox.commit_all("main")
+        for target in targets:
+            (self.core / "patches" / target.replace("/", "-")).with_suffix(".patch").write_text(
+                "diff --git a/%s b/%s\n--- a/%s\n+++ b/%s\n@@ -1 +1 @@\n-upstream\n+patched\n" % ((target,) * 4))
+        return [str(self.src / target) for target in targets]
+
+    def test_a_new_patch_lists_the_files_it_will_write(self):
+        (target,) = self.add_unrecorded_patches(1)
+        step = by_name(self.plan("build"))["patch-preparation"]
+        self.assertEqual(step["status"], "planned")
+        self.assertIn(target, step["writes"])
+        self.assertIn(str(self.src / "chrome" / "VERSION"), step["writes"], "Core's patch step also updates the version")
+
+    def test_more_than_fifty_affected_paths_are_all_listed_and_the_text_summarises(self):
+        targets = self.add_unrecorded_patches(60)
+        document = self.plan("build")
+        step = by_name(document)["patch-preparation"]
+        self.assertTrue(set(targets) <= set(step["writes"]))
+        result = self.sandbox.bdev("--config", self.config, "--checkout", "main", "build", "--plan", env=self.env())
+        self.assertIn("writes 121 file", result.stdout)  # 60 targets, 60 metadata files, the version file
+        self.assertLess(result.stdout.count("planned/file_"), 60)
+
+    def test_an_explicit_force_gn_is_in_the_planned_command_and_matches_dispatch(self):
+        planned = by_name(self.plan("build", "--force-gn"))["build"]
+        self.assertIn("--force_gn_gen", planned["argv"])
+        self.assertEqual(planned["conditional_arguments"], [])
+        result, document = self.document("build", "--force-gn")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.node_calls()[-1]["argv"][1:], planned["argv"][2:])
+
+    def test_regeneration_that_preparation_may_cause_is_conditional_and_then_dispatched(self):
+        plain = by_name(self.plan("build"))["build"]
+        self.assertNotIn("--force_gn_gen", plain["argv"])
+        self.assertEqual(plain["conditional_arguments"], [])
+        self.add_unrecorded_patches(1)
+        self.hook = self.sandbox.hook(BUILD_HOOK_AFTER_APPLY)
+        planned = by_name(self.plan("build"))["build"]
+        self.assertEqual(planned["conditional_arguments"], ["--force_gn_gen"])
+        self.assertNotIn("--force_gn_gen", planned["argv"])
+        result, document = self.document("build")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.node_calls()[-1]["argv"][1:], planned["argv"][2:] + ["--force_gn_gen"])
+
+    def test_decisions_that_depend_on_a_sync_are_unresolved_until_it_ran(self):
+        self.add_unrecorded_patches(1)
+        steps = by_name(self.plan("sync-build"))
+        self.assertEqual(steps["patch-preparation"]["status"], "unresolved")
+        self.assertIn("after the sync", steps["patch-preparation"]["detail"])
+        self.assertEqual(steps["build"]["conditional_arguments"], ["--force_gn_gen"])
+
+    def test_the_sync_plan_lists_the_repositories_a_sync_can_reset(self):
+        self.sandbox.add_dependency("main")
+        step = by_name(self.plan("sync"))["sync"]
+        self.assertIn(str(self.src / "v8"), step["writes"])
+        self.assertIn(str(self.src), step["writes"])
 
     def records(self):
         directory = self.sandbox.config.parent / ".bdev" / "operations"
