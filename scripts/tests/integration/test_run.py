@@ -155,6 +155,34 @@ class RunTests(BuildTestCase):
         result, document = self.run_app()
         self.assertEqual(document["data"]["run"]["freshness"]["status"], "current", "restoring the file restores it")
 
+    def test_an_edit_in_a_dependency_repository_makes_the_output_stale(self):
+        repo = self.sandbox.add_dependency("main")
+        freshness = self.freshness_after(lambda: (repo / "test.cc").write_text("edited after the build\n"))
+        self.assertEqual(freshness["status"], "stale")
+        self.assertIn("dependency_changes", " ".join(freshness["evidence"]))
+        (repo / "test.cc").write_text("upstream\n")
+        self.assertEqual(self.run_app()[1]["data"]["run"]["freshness"]["status"], "current")
+
+    def test_a_moved_dependency_revision_makes_the_output_stale(self):
+        repo = self.sandbox.add_dependency("main")
+
+        def commit():
+            (repo / "test.cc").write_text("next revision\n")
+            subprocess.run(["git", "-C", str(repo), "-c", "user.name=T", "-c", "user.email=t@example.com",
+                            "-c", "commit.gpgsign=false", "commit", "-q", "-am", "roll"], check=True)
+        freshness = self.freshness_after(commit)
+        self.assertEqual(freshness["status"], "stale")
+        self.assertIn("dependency_heads", " ".join(freshness["evidence"]))
+
+    def test_dependencies_that_cannot_be_inspected_make_freshness_unknown_not_current(self):
+        repo = self.sandbox.add_dependency("main")
+        freshness = self.freshness_after(lambda: (repo / ".git" / "HEAD").write_text("garbage\n"))
+        self.assertEqual(freshness["status"], "unknown")
+        (repo / ".git" / "HEAD").write_text("ref: refs/heads/master\n")
+        (self.src.parent / ".gclient_entries").write_text("entries = not python\n")
+        self.assertEqual(self.run_app()[1]["data"]["run"]["freshness"]["status"], "unknown",
+                         "without the dependency list the dependencies are unchecked")
+
     def test_files_included_by_the_env_file_are_tracked(self):
         (self.core / ".env").write_text((self.core / ".env").read_text() + "include_env=extra/build.env\n")
         (self.core / "extra").mkdir()

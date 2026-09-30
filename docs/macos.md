@@ -105,15 +105,19 @@ clears it (a passing `bdev test` run proves nothing about the application).
 
 A successful build records these inputs, and a later `run` compares them: Core's and
 Chromium's HEAD, Core's uncommitted state, the tracked Chromium files that differ from
-HEAD (name, size, and modification time; no file is hashed), the stat signatures of
-patched files, and Core's `.env` together with every file it pulls in with
-`include_env`. For Android outputs it also compares the support working copy's
-revision and uncommitted state and the copied resources. Any difference is `stale`.
-An input that cannot be computed (for example Git does not answer within 90 seconds),
-or a record written before an input was compared, makes the result `unknown`. A match
-is reported as `current` with the limits stated in its evidence: untracked Chromium
-files and edits inside repositories nested in the Chromium checkout (such as `v8`) are
-not tracked, and nothing hashes the whole tree.
+HEAD (name, size, and modification time; no file is hashed), the HEAD and tracked
+changes of every dependency repository gclient manages (`v8` and the rest, read from
+gclient's entries files), the stat signatures of patched files, and Core's `.env`
+together with every file it pulls in with `include_env`. For Android outputs it also
+compares the support working copy's revision and uncommitted state and the copied
+resources. Any difference is `stale`. An input that cannot be computed (Git does not
+answer within its time bound, a dependency repository cannot be inspected, or the
+dependency list is unreadable), or a record written before an input was compared,
+makes the result `unknown`. A match is reported as `current` with the limits stated in
+its evidence: untracked files are not tracked, and nothing hashes the whole tree.
+Checking every dependency repository runs one Git status per repository; the
+terminal shows the first command and a count, and the operation record keeps all of
+them.
 
 `sync-build` and `sync-build-run` (aliases `sb`, `sbr`) run the sync phase first and
 send extra arguments to the build phase only. See

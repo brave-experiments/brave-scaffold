@@ -298,6 +298,25 @@ class Sandbox:
             patch.with_suffix(".patchinfo").write_text(json.dumps(info))
         return patch
 
+    def add_dependency(self, name, relative="v8", listed=True):
+        """A separate Git repository inside Chromium's source root that gclient manages; returns its path."""
+        core = self.checkouts[name]
+        src = core.parent
+        repo = src.joinpath(*relative.split("/"))
+        repo.mkdir(parents=True)
+        options = ["-c", "user.name=Test", "-c", "user.email=t@example.com", "-c", "commit.gpgsign=false"]
+        subprocess.run(["git", "init", "-q", str(repo)], check=True)
+        (repo / "test.cc").write_text("upstream\n")
+        subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True)
+        subprocess.run(["git", "-C", str(repo), *options, "commit", "-q", "-m", "dependency"], check=True)
+        exclude = src / ".git" / "info" / "exclude"
+        exclude.write_text(exclude.read_text() + "/%s/\n" % relative.split("/")[0])
+        if listed:
+            entries = src.parent / ".gclient_entries"
+            entries.write_text(entries.read_text().replace(
+                "}\n", "  'src/%s': 'https://example.invalid/%s.git@abc',\n}\n" % (relative, relative.replace("/", "-"))))
+        return repo
+
     def commit_all(self, name):
         """Commit Core and Chromium contents so Git-based inputs are clean."""
         core = self.checkouts[name]

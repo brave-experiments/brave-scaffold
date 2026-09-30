@@ -13,6 +13,7 @@ from pathlib import Path
 
 from ..common.procs import run_capture
 from ..common.redaction import redact_argv
+from ..common.results import ScaffoldError
 from . import gitstate
 
 EVIDENCE_BYTES = 64 << 20
@@ -60,6 +61,34 @@ def tracked_changes_state(repo, log=None, timeout=90):
     return digest.hexdigest()
 
 
+def dependency_state(identity, log=None):
+    """(revisions, changes) digests over the dependency repositories gclient manages, or (None, None).
+
+    Covers each repository's HEAD and its tracked changes with each changed file's size and modification time.
+    None when the repository list is unreadable or any repository cannot be inspected completely, so
+    unchecked dependencies make freshness unknown instead of current.
+    """
+    from . import sync_scope
+    scope = sync_scope.sync_repositories(identity)
+    if not scope.complete:
+        return None, None
+    heads, changes = hashlib.sha256(), hashlib.sha256()
+    with gitstate.sweep(log, "revision and tracked changes of each dependency repository"):
+        for repo in sorted(item for item in scope.repositories if item not in (identity.src, identity.core)):
+            head = gitstate.head_commit(repo, log)
+            try:
+                changed = gitstate.tracked_changes(repo, log)
+            except ScaffoldError:
+                return None, None
+            if head is None:
+                return None, None
+            label = os.path.relpath(repo, identity.src)
+            heads.update(("%s=%s\n" % (label, head)).encode())
+            for name in sorted(changed):
+                changes.update(("%s/%s=%s\n" % (label, name, _file_signature(repo / name))).encode())
+    return heads.hexdigest(), changes.hexdigest()
+
+
 INCLUDE_ENV = re.compile(r"^include_env=([^#]+)(?:#.*)?$")
 
 
@@ -99,11 +128,14 @@ def compute(identity, patched_paths, effective_args, log=None, extra=None):
     patched = hashlib.sha256()
     for repo_path in sorted(patched_paths):
         patched.update(("%s=%s\n" % (repo_path, _file_signature(identity.src / repo_path))).encode())
+    dependency_heads, dependency_changes = dependency_state(identity, log)
     return {
         "core_head": resolve_head(identity.core, log),
         "chromium_head": resolve_head(identity.src, log),
         "core_worktree": worktree_state(identity.core, log),
         "chromium_worktree": tracked_changes_state(identity.src, log),
+        "dependency_heads": dependency_heads,
+        "dependency_changes": dependency_changes,
         "patched_files": patched.hexdigest() if patched_paths else None,
         "env_file": env_files_fingerprint(identity.core),
         "build_arguments": hashlib.sha256("\0".join(redact_argv(effective_args)).encode()).hexdigest(),
@@ -111,10 +143,10 @@ def compute(identity, patched_paths, effective_args, log=None, extra=None):
     }
 
 
-TRACKED = ("core_head", "chromium_head", "core_worktree", "chromium_worktree", "patched_files", "env_file",
+TRACKED = ("core_head", "chromium_head", "core_worktree", "chromium_worktree", "dependency_heads",
+           "dependency_changes", "patched_files", "env_file",
            "support_head", "support_worktree", "support_resources")
-NOT_TRACKED = ("untracked Chromium files and edits inside repositories nested in the Chromium checkout "
-               "(such as v8) are not tracked")
+NOT_TRACKED = "untracked files are not tracked, and neither are files the build reads from outside the checkout"
 
 
 def assess(recorded, current, output_state):

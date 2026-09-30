@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import os
 import selectors
 import shlex
@@ -44,6 +45,23 @@ class CommandLog:
     records: list = field(default_factory=list)
     listeners: list = field(default_factory=list)
     polled: dict = field(default_factory=dict)
+    sweeping: dict | None = None
+
+    @contextlib.contextmanager
+    def sweep(self, description):
+        """Show the first command of a sweep over many similar targets, then how many more ran.
+
+        Every command is still recorded and reported to listeners; only the terminal blocks are summarised.
+        """
+        outer, self.sweeping = self.sweeping, {"description": description, "more": 0}
+        try:
+            yield
+        finally:
+            done, self.sweeping = self.sweeping, outer
+            if self.enabled and done["more"]:
+                stream = self.stream or sys.stderr
+                stream.write("(%d more commands like the one above ran: %s)\n" % (done["more"], done["description"]))
+                stream.flush()
 
     def record(self, argv, cwd, poll=False):
         """Note a command before it starts; listeners (such as an operation record) see the redacted form.
@@ -62,7 +80,11 @@ class CommandLog:
         self.records.append(entry)
         for listener in list(self.listeners):
             listener(entry)
-        if self.enabled:
+        if self.sweeping is not None and self.sweeping.get("shown"):
+            self.sweeping["more"] += 1
+        elif self.enabled:
+            if self.sweeping is not None:
+                self.sweeping["shown"] = True
             stream = self.stream or sys.stderr
             stream.write(format_command_block(argv, cwd) + "\n")
             stream.flush()

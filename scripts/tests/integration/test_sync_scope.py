@@ -26,20 +26,7 @@ class SyncScopeTests(BuildTestCase):
         self.sandbox.commit_all("main")
 
     def add_dependency(self, name="v8", listed=True):
-        """A separate Git repository inside Chromium's source root that gclient manages."""
-        repo = self.src / name
-        repo.mkdir(parents=True)
-        git(repo, "init", "-q")
-        (repo / "test.cc").write_text("upstream\n")
-        git(repo, "add", "-A")
-        git(repo, "commit", "-q", "-m", "dependency")
-        exclude = self.src / ".git" / "info" / "exclude"
-        exclude.write_text(exclude.read_text() + "/%s/\n" % name)
-        if listed:
-            entries = self.workspace / ".gclient_entries"
-            entries.write_text(entries.read_text().replace(
-                "}\n", "  'src/%s': 'https://example.invalid/%s.git@abc',\n}\n" % (name, name)))
-        return repo
+        return self.sandbox.add_dependency("main", name, listed)
 
     def assert_sync_stops(self, *paths):
         result, document = self.document("sync", "--force")

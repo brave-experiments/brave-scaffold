@@ -46,6 +46,18 @@ class AssessTests(unittest.TestCase):
         self.assertEqual(result["status"], "unknown")
         self.assertIn("chromium_worktree", " ".join(result["evidence"]))
 
+    def test_dependency_evidence_is_compared_and_missing_evidence_is_unknown(self):
+        recorded = {**CURRENT, "dependency_heads": "h", "dependency_changes": "c"}
+        self.assertEqual(freshness.assess(dict(recorded), dict(recorded), State())["status"], "current")
+        for key in ("dependency_heads", "dependency_changes"):
+            with self.subTest(key=key):
+                self.assertEqual(freshness.assess(dict(recorded), {**recorded, key: "moved"}, State())["status"],
+                                 "stale")
+                self.assertEqual(freshness.assess(dict(recorded), {**recorded, key: None}, State())["status"],
+                                 "unknown")
+        self.assertEqual(freshness.assess(dict(CURRENT), dict(recorded), State())["status"], "unknown",
+                         "a record from before dependencies were compared says nothing about them")
+
     def test_inputs_that_do_not_apply_are_not_compared(self):
         without = {key: value for key, value in CURRENT.items() if key != "chromium_worktree"}
         self.assertEqual(freshness.assess(dict(without), dict(without), State())["status"], "current")

@@ -171,6 +171,24 @@ class BoundedCaptureTests(unittest.TestCase):
         self.assertEqual((len(result.stdout), len(result.stderr), result.truncated), (100, 100, True))
 
 
+class SweepLoggingTests(unittest.TestCase):
+    def test_a_sweep_shows_the_first_block_and_counts_the_rest_but_records_every_command(self):
+        import io
+        stream = io.StringIO()
+        log = procs.CommandLog(stream=stream)
+        seen = []
+        log.listeners.append(seen.append)
+        with log.sweep("status of each repository"):
+            for name in ("a", "b", "c"):
+                log.record(["git", "-C", "/repo/" + name, "status"], "/repo/" + name)
+        log.record(["git", "log"], "/repo")
+        text = stream.getvalue()
+        self.assertEqual(text.count("Command:"), 2, "the first of the sweep and the command after it")
+        self.assertIn("(2 more commands like the one above ran: status of each repository)", text)
+        self.assertEqual(len(log.records), 4)
+        self.assertEqual(len(seen), 4, "listeners such as the operation record see every command")
+
+
 class TruncatedEvidenceTests(unittest.TestCase):
     """Partial command output is never treated as complete safety evidence."""
 
