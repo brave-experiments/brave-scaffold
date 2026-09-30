@@ -12,4 +12,5 @@ belongs under `docs/`, and operational skill source belongs under `skills/`.
 
 Read [AGENTS.md](AGENTS.md) before contributing. `CLAUDE.md` links to the same
 instructions. Project skill discovery uses `.agents/skills/`; `.claude/skills`
-links to that directory. No project skills are installed yet.
+links to that directory. The `testing-preflight` skill helps choose tests that
+catch meaningful faults without adding redundant checks.
