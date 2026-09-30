@@ -47,10 +47,10 @@ operations.
 it. `.agents/skills/` is the project discovery directory; keep `.claude/skills`
 as a relative symlink to it. Edit shared instructions once.
 
-Place operational skill source under `skills/` and expose selected skills through
-relative links in `.agents/skills/`. Do not replace user-owned entries. These
-links configure this repository only; they do not permit writes inside Core or
-prove that a client can discover skills from an external environment.
+Place operational skill source directly in `.agents/skills/`. Do not replace
+user-owned entries. These skills configure this repository only; they do not
+permit writes inside Core or prove that a client can discover skills from an
+external environment.
 
 ## Changes and verification
 

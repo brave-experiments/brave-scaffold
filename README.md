@@ -17,7 +17,7 @@ This repository currently contains project guidance and agent discovery setup.
 Build and setup commands are not implemented yet.
 
 Tooling source, launchers, and tests belong under `scripts/`. Shared documentation
-belongs under `docs/`, and operational skill source belongs under `skills/`.
+belongs under `docs/`, and operational skill source belongs under `.agents/skills/`.
 
 Read [AGENTS.md](AGENTS.md) before contributing. `CLAUDE.md` links to the same
 instructions. Project skill discovery uses `.agents/skills/`; `.claude/skills`
