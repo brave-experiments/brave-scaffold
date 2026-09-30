@@ -27,3 +27,5 @@ and instructions.
 See [configuration and environments](docs/configuration-and-environments.md) for
 the configuration template and local checkout mappings. Configuration files can
 be prepared now; command execution and environment setup are not available yet.
+
+Licensed under the [Mozilla Public License 2.0](LICENSE).

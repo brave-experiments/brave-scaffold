@@ -64,6 +64,35 @@ implementation handoff notes, predecessor paths, or development-history narrativ
 in this repository. External specifications may guide work without being copied,
 linked, or committed here.
 
+## Copyright and license
+
+This project uses the Mozilla Public License 2.0 in `LICENSE`.
+
+Add the following header to new first-party source files, tests, scripts, and
+comment-capable configuration or executable templates. Use the file's comment
+syntax and its creation year (2026 for files created this year):
+
+```python
+# Copyright (c) 2026 The Brave Authors. All rights reserved.
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this file,
+# You can obtain one at https://mozilla.org/MPL/2.0/.
+```
+
+Keep a required shebang first and any required encoding declaration in its valid
+position, then the header before imports or executable code. Preserve existing
+copyright years, ownership, and license notices in reused or modified files; do
+not replace third-party notices with a Brave header or relicense material merely
+by copying it. Required attribution takes precedence over the rule against
+research-history references.
+
+Do not add headers to JSON or other formats without comments, generated files,
+lockfiles, binary assets, empty marker files, symlinks, or verbatim license texts.
+Ordinary Markdown prose need not repeat the source header; the root license
+applies, and any existing notices must remain. For formats where a required
+notice cannot appear inline, retain it in the appropriate accompanying notice
+file. Review header coverage and retained notices before committing new files.
+
 ## Git workflow
 
 Inspect status and stage only the current change. All commits must follow
