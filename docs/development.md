@@ -51,6 +51,27 @@ direnv data directory, and run the real launchers and a real `direnv`. Fixtures
 live in `scripts/tests/support.py`. In a sandbox only, tests approve
 environments with `direnv allow`; nothing approves a real environment.
 
+### What the fast suite needs
+
+- **A macOS host.** Restart, launch, and application tests use fake `.app` bundles, `ps`,
+  `open`, and `osascript`; the integration classes skip elsewhere.
+- **`direnv`** on `PATH`. Tests run a real `direnv` with a private data directory; without
+  it they skip.
+- **A C compiler (`cc`, from the Xcode command line tools).** Fake applications run a small
+  executable the suite compiles once, because copies of system binaries are killed on
+  macOS. Without a compiler the fake applications cannot stay running and the restart
+  tests fail.
+- **Process inspection.** `ps` must be allowed; a sandbox that denies it fails the restart
+  tests.
+- **Git, and `git-lfs`** for the large-file tests (they skip without it). No network access
+  is needed.
+- **Python 3.14+** as the scaffold runtime.
+
+The full suite takes about six minutes. Each test sandbox stops every process that
+mentions its directory when it finishes, so a run leaves nothing behind. `test_doc_examples`
+runs the command examples from the guides in fixtures; a new example in a guide must be
+added to its table (or listed with the reason it cannot run) or a coverage test fails.
+
 Real-checkout acceptance runs are opt-in, use an explicitly selected checkout,
 and need the user's authorization for the operations involved
 ([agent workflows](agent-workflows.md)). Record the checkout, operations, and
