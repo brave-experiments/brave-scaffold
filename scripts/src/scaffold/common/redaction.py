@@ -47,6 +47,10 @@ def redact_argv(argv):
     return result
 
 
+class Arguments(list):
+    """A command line or part of one; a report always redacts it as arguments, whatever field holds it."""
+
+
 def _holds_arguments(key):
     return key == "arguments" or key == "argv" or str(key).endswith(("_argv", "_arguments"))
 
@@ -54,13 +58,15 @@ def _holds_arguments(key):
 def redact_report(value, key=None):
     """A copy of a result or record structure that is safe to show or store.
 
-    Lists stored under argument-like keys (`argv`, `arguments`, `*_argv`, `*_arguments`) are redacted as
-    command lines; every other string only loses credentials embedded in URLs.
+    `Arguments` values, and lists stored under argument-like keys (`argv`, `arguments`, `*_argv`,
+    `*_arguments`), are redacted as command lines; every other string only loses credentials embedded
+    in URLs. Diagnostics that echo user arguments should use `Arguments` so a field name is not the
+    only protection.
     """
     if isinstance(value, dict):
         return {name: redact_report(item, name) for name, item in value.items()}
     if isinstance(value, (list, tuple)):
-        if _holds_arguments(key) and all(isinstance(item, str) for item in value):
+        if (isinstance(value, Arguments) or _holds_arguments(key)) and all(isinstance(item, str) for item in value):
             return redact_argv(value)
         return [redact_report(item, key) for item in value]
     if isinstance(value, str):

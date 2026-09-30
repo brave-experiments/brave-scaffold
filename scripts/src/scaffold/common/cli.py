@@ -9,6 +9,7 @@ from __future__ import annotations
 import difflib
 from dataclasses import dataclass, field
 
+from .redaction import Arguments, redact_argv
 from .results import ScaffoldError
 
 
@@ -111,7 +112,7 @@ def parse_tokens(spec, tokens):
         if token == "--":
             if tokens[index + 1:] and not spec.forward:
                 raise _input_error("%s does not take arguments after '--'; nothing was run." % spec.name, spec,
-                                   ignored=tokens[index + 1:])
+                                   ignored=Arguments(tokens[index + 1:]))
             parsed.delimiter = True
             parsed.forwarded.extend(tokens[index + 1:])
             break
@@ -150,7 +151,7 @@ def parse_tokens(spec, tokens):
             prefix_closed = True
             parsed.forwarded.append(token)
         else:
-            raise _input_error("Unexpected argument %r." % token, spec)
+            raise _input_error("Unexpected argument %r." % redact_argv([token])[0], spec)
         index += 1
     return parsed
 

@@ -7,7 +7,7 @@
 import unittest
 
 import tests.support  # noqa: F401
-from scaffold.common.redaction import redact_argv, redact_report
+from scaffold.common.redaction import Arguments, redact_argv, redact_report
 from scaffold.common.results import Result
 
 
@@ -23,6 +23,11 @@ class RedactionTests(unittest.TestCase):
         self.assertEqual(redact_report(report), {"data": {
             "argv": ["--token=***"], "steps": [{"package_arguments": ["--secret", "***"]}],
             "files": ["--token=not-a-command-line"], "note": "see https://u:***@host/"}})
+
+    def test_arguments_are_redacted_whatever_field_holds_them(self):
+        report = {"error": {"details": {"any_field_name": Arguments(["--token", "a", "--name=b"])}}}
+        self.assertEqual(redact_report(report), {"error": {"details": {
+            "any_field_name": ["--token", "***", "--name=b"]}}})
 
     def test_a_result_is_redacted_as_a_copy(self):
         result = Result(command="x", data={"argv": ["--token=a"]}, text="see https://u:p@host/")

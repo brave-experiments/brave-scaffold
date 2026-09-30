@@ -11,7 +11,7 @@ import time
 import unittest
 
 from tests.integration.test_build import SKIP, BuildTestCase
-from tests.support import SCRIPTS
+from tests.support import SCRIPTS, SandboxTest
 
 SECRET = "s3cr3t-value-xyz"
 SECRET_ARGS = ["--token=" + SECRET, "--password", SECRET + "-2", "https://user:%s-3@example.com/path" % SECRET]
@@ -87,6 +87,41 @@ class SecretRedactionTests(BuildTestCase):
         stdout, stderr = process.communicate(timeout=30)
         self.assertEqual(json.loads(stdout)["status"], "cancelled")
         self.assert_secret_free(stdout, stderr)
+
+
+class RejectedArgumentTests(SandboxTest):
+    """Arguments a parser rejects are echoed for recovery, but never with a secret value."""
+
+    REJECTED = (
+        ["--token", SECRET],
+        ["--token=" + SECRET],
+        ["--password", SECRET, "--api-key=" + SECRET],
+        [SECRET_ARGS[3]],
+    )
+
+    def setUp(self):
+        super().setUp()
+        self.sandbox.write_config([])
+
+    def run_rejected(self, command, tail, *flags):
+        return self.sandbox.bdev(*flags, "--config", str(self.sandbox.config), *command, "--", *tail)
+
+    def test_rejected_arguments_after_the_delimiter_hide_secrets_in_json_and_text(self):
+        for command in (["capabilities"], ["context"], ["doctor", "shell"], ["clean"]):
+            for tail in self.REJECTED:
+                with self.subTest(command=command, tail=tail):
+                    for flags in (("--json",), ()):
+                        result = self.run_rejected(command, tail, *flags)
+                        self.assertEqual(result.returncode, 2, result.stderr)
+                        self.assertNotIn(SECRET, result.stdout + result.stderr)
+                        self.assertNotIn(SECRET, "".join(
+                            path.read_text() for path in self.sandbox.config.parent.parent.rglob(".bdev/**/*")
+                            if path.is_file()))
+
+    def test_rejected_arguments_stay_visible_when_they_are_not_secret(self):
+        result = self.run_rejected(["capabilities"], ["--token", SECRET, "--name=visible"], "--json")
+        ignored = json.loads(result.stdout)["error"]["details"]["ignored"]
+        self.assertEqual(ignored, ["--token", "***", "--name=visible"])
 
 
 if __name__ == "__main__":

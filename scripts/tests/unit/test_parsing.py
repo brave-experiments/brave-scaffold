@@ -63,6 +63,11 @@ class ForwardingParserTests(unittest.TestCase):
         with self.assertRaises(ScaffoldError):
             parse_tokens(STRICT, ["extra"])
 
+    def test_a_rejected_positional_is_echoed_without_a_secret_assignment(self):
+        with self.assertRaises(ScaffoldError) as caught:
+            parse_tokens(STRICT, ["API_TOKEN=hunter2"])
+        self.assertNotIn("hunter2", caught.exception.message)
+
     def test_values_are_kept_exactly(self):
         tokens = ["", "a b", "-5", "café", "$(x)", "--key=v w"]
         parsed = parse_tokens(FORWARDING, ["mac", "--", *tokens])
