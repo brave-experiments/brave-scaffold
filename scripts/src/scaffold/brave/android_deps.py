@@ -23,6 +23,7 @@ from pathlib import Path
 from ..common.config import atomic_write
 from ..common.procs import run_capture, run_streaming
 from ..common.results import ScaffoldError, repair
+from . import gitstate
 from .records import checkout_key, store_root
 
 METADATA = Path(__file__).with_name("android_support.toml")
@@ -30,7 +31,10 @@ WORKING_COPY_NAME = "brave-android-mac-support"
 SENTINELS = ("release", "cr_build_revision", "source.properties", "sysroot/NOTICE", "NOTICE")
 MAX_COMPARED_BYTES = 1 << 20
 MACHO_MAGICS = (b"\xcf\xfa\xed\xfe", b"\xca\xfe\xba\xbe", b"\xfe\xed\xfa\xcf")
-PATCH_TARGET = re.compile(r"^diff --git a/(\S+) b/\S+", re.MULTILINE)
+DIFF_GIT_LINE = re.compile(r"^diff --git (\S+) (\S+)$")
+RENAME_LINE = re.compile(r"^(?:rename|copy) (?:from|to) (\S+)$")
+PATCH_REFERENCE = re.compile(r"patches/([A-Za-z0-9_.-]+\.patch)")
+SOURCE_FILE_REFERENCE = re.compile(r"\$\{?src_root\}?/([A-Za-z0-9_./+-]*[A-Za-z0-9_+-]\.[A-Za-z0-9]+)")
 RESOURCE_LINE = re.compile(r'^\s*patch_dependency\s+"[^"]*"\s+"([^"]+)"\s+"[^"]*"\s+"(res/[^"]+)"', re.MULTILINE)
 
 
@@ -290,11 +294,85 @@ def inputs_dirty(wc, log=None):
     return status.stdout.splitlines() if status.returncode == 0 else ["status unavailable"]
 
 
-def patch_targets(wc):
+class UnknownPatchFormat(ValueError):
+    pass
+
+
+def _strip_prefix(name):
+    """Drop the first path component, as `git apply` does by default, whatever the prefix is called."""
+    if name.startswith('"') or "/" not in name:
+        raise UnknownPatchFormat("unsupported path %r" % name)
+    return name.split("/", 1)[1]
+
+
+def parse_patch_targets(text):
+    """Repository-relative files a patch writes. Raises UnknownPatchFormat instead of guessing."""
     targets = set()
-    for patch in sorted((Path(wc) / "patches").glob("*.patch")):
-        targets.update(PATCH_TARGET.findall(patch.read_text(encoding="utf-8", errors="replace")))
-    return sorted(targets)
+    for line in text.splitlines():
+        if line.startswith(("--- ", "+++ ")):
+            name = line[4:].split("\t")[0].strip()
+            if name and name != "/dev/null":
+                targets.add(_strip_prefix(name))
+        elif line.startswith("diff --git "):
+            match = DIFF_GIT_LINE.match(line)
+            if match is None:
+                raise UnknownPatchFormat("unsupported header %r" % line)
+            targets.update(_strip_prefix(name) for name in match.groups())
+        elif RENAME_LINE.match(line):
+            targets.add(RENAME_LINE.match(line).group(1))
+    if not targets:
+        raise UnknownPatchFormat("no file headers")
+    return targets
+
+
+def _script_text(wc, name):
+    try:
+        return (Path(wc) / name).read_text(encoding="utf-8")
+    except OSError:
+        return ""
+
+
+def applied_patches(wc):
+    """Patch files the apply script names; every patch in the directory when it names none."""
+    named = sorted({name for name in PATCH_REFERENCE.findall(_script_text(wc, "applyPatches.sh"))
+                    if (Path(wc) / "patches" / name).is_file()})
+    return named or sorted(path.name for path in (Path(wc) / "patches").glob("*.patch"))
+
+
+def directly_edited_files(wc):
+    """Files the apply script mentions under the source root outside its patches (for example a sed edit)."""
+    return sorted(set(SOURCE_FILE_REFERENCE.findall(_script_text(wc, "applyPatches.sh"))))
+
+
+def write_inventory(identity, wc, log=None):
+    """Every source file support preparation may write, by owning repository: {key: (repo, path)}.
+
+    Patch paths are relative to the repository each patch is applied in, so the owner is the repository
+    that tracks the path (or, for an untracked file, holds it). Keys are paths relative to the Chromium
+    source root. Problems list patches or files whose format or owner cannot be established; preparation
+    must not run while any remain.
+    """
+    files, problems, wanted = {}, [], {}
+    for name in applied_patches(wc):
+        try:
+            for relative in parse_patch_targets((Path(wc) / "patches" / name).read_text(encoding="utf-8")):
+                wanted.setdefault(relative, name)
+        except (UnknownPatchFormat, OSError, UnicodeDecodeError) as error:
+            problems.append({"path": "patches/" + name, "reason": "patch format not recognised (%s)" % error})
+    for relative in directly_edited_files(wc):
+        wanted.setdefault(relative, "applyPatches.sh")
+    repositories = gitstate.nested_repositories(identity.src)
+    tracked = {repo: gitstate.tracked_paths(repo, wanted, log) for repo in repositories}
+    for relative, origin in sorted(wanted.items()):
+        holders = [repo for repo in repositories if relative in tracked[repo]]
+        holders = holders or [repo for repo in repositories if (repo / relative).exists()]
+        if len(holders) > 1:
+            problems.append({"path": relative, "reason": "%s writes it, but it belongs to more than one "
+                             "repository (%s)" % (origin, ", ".join(str(repo) for repo in holders))})
+            continue
+        repo = holders[0] if holders else identity.src
+        files[os.path.relpath(repo / relative, identity.src)] = (repo, relative)
+    return files, problems
 
 
 def _sha(path):
@@ -304,13 +382,72 @@ def _sha(path):
         return None
 
 
+def _stat_signature(path):
+    status = os.lstat(path)
+    return [status.st_size, status.st_mtime_ns]
+
+
+def resource_signature(origin, copied):
+    """Size and modification time of each destination file the copy of `origin` would overwrite."""
+    origin, copied = Path(origin), Path(copied)
+    if origin.is_dir() and not origin.is_symlink():
+        names = []
+        for current, directories, files in os.walk(origin):
+            names += [Path(current, name) for name in files]
+            names += [Path(current, name) for name in directories if Path(current, name).is_symlink()]
+        relatives = sorted(os.path.relpath(name, origin) for name in names)
+    else:
+        relatives = [""]
+    return {relative: _stat_signature(copied / relative) for relative in relatives
+            if os.path.lexists(copied / relative)}
+
+
+def resource_destinations(identity, wc):
+    """(destination path relative to the source root, source path, destination path) for each resource."""
+    found = []
+    for destination, source in resource_manifest(wc) or []:
+        origin = Path(wc) / source
+        copied = identity.src / destination / origin.name
+        found.append((os.path.relpath(copied, identity.src), origin, copied))
+    return found
+
+
 class SupportPlan:
-    def __init__(self, action, reason, evidence=None, conflicts=None):
-        self.action, self.reason, self.evidence, self.conflicts = action, reason, evidence or {}, conflicts or []
+    """What preparation must do. `scripts` are the support scripts to run, in order."""
+
+    def __init__(self, action, reason, evidence=None, conflicts=None, scripts=()):
+        self.action, self.reason, self.evidence = action, reason, evidence or {}
+        self.conflicts, self.scripts = conflicts or [], tuple(scripts)
+
+
+def protected_work(identity, wc, receipt, scripts, log=None):
+    """Local work that running `scripts` could overwrite, and problems that block deciding."""
+    conflicts = []
+    if "applyPatches.sh" in scripts:
+        files, conflicts = write_inventory(identity, wc, log)
+        known = (receipt or {}).get("targets", {})
+        for repo in {repo for repo, _ in files.values()}:
+            paths = {relative: key for key, (owner, relative) in files.items() if owner == repo}
+            for relative in sorted(gitstate.changed_paths(repo, paths, log) & set(paths)):
+                key = paths[relative]
+                if known.get(key) != _sha(repo / relative):
+                    conflicts.append({"path": key, "reason": "has local edits that applying support patches "
+                                      "could overwrite"})
+    if "copyMacRes.sh" in scripts:
+        recorded = (receipt or {}).get("resources", {})
+        for key, origin, copied in resource_destinations(identity, wc):
+            previous = recorded.get(key)
+            if previous is None or not origin.exists():
+                continue
+            for relative, signature in resource_signature(origin, copied).items():
+                if previous.get(relative) != signature:
+                    conflicts.append({"path": os.path.join(key, relative), "reason": "changed since the last "
+                                      "support refresh and would be replaced by the support resource"})
+    return conflicts
 
 
 def plan_preparation(ctx, identity, log=None):
-    """Decide whether support patches and resources need refreshing and whether that is safe."""
+    """Decide which support scripts must run and whether running them could lose local work."""
     wc = working_copy(identity)
     facts = inspect_working_copy(wc, log)
     if facts is None:
@@ -323,7 +460,7 @@ def plan_preparation(ctx, identity, log=None):
     dirty = inputs_dirty(wc, log)
     patched_ok, _ = run_gate(wc, "applyPatches.sh", ctx.environ, log)
     current, why = resources_current(identity, wc)
-    recorded = receipt and receipt.get("inputs") == input_state(wc, log)
+    recorded = bool(receipt) and receipt.get("inputs") == input_state(wc, log)
     if patched_ok and current and recorded and not dirty:
         return SupportPlan("current", "Support patches and resources are current.", evidence)
     reasons = []
@@ -335,17 +472,11 @@ def plan_preparation(ctx, identity, log=None):
         reasons.append(why)
     if not recorded:
         reasons.append("no matching record of a refresh for this checkout")
-    conflicts = []
-    if not patched_ok:
-        known = (receipt or {}).get("targets", {})
-        for target in patch_targets(wc):
-            status = _git(identity.src, ["status", "--porcelain", "--", target], log)
-            if status.stdout.strip() and known.get(target) != _sha(identity.src / target):
-                conflicts.append({"path": target, "reason": "has local edits that applying support patches could "
-                                  "overwrite"})
-    if conflicts:
-        return SupportPlan("conflict", "; ".join(reasons), evidence, conflicts)
-    return SupportPlan("refresh", "; ".join(reasons), evidence)
+    settled = recorded and not dirty
+    scripts = [name for name, done in (("applyPatches.sh", patched_ok), ("copyMacRes.sh", current))
+               if not (done and settled)]
+    conflicts = protected_work(identity, wc, receipt, scripts, log)
+    return SupportPlan("conflict" if conflicts else "refresh", "; ".join(reasons), evidence, conflicts, scripts)
 
 
 def _read_state(identity, state_root):
@@ -355,40 +486,48 @@ def _read_state(identity, state_root):
         return None
 
 
-def record_state(identity, state_root, log=None):
+def record_state(identity, state_root, plan, log=None):
+    """Remember what the scripts just run wrote, so later edits can be told apart from support's own changes."""
     wc = working_copy(identity)
-    if inputs_dirty(wc, log):
-        return False
-    current, _ = resources_current(identity, wc)
-    if not current:
-        return False
+    previous = _read_state(identity, state_root) or {}
+    targets, resources = dict(previous.get("targets", {})), dict(previous.get("resources", {}))
+    if "applyPatches.sh" in plan.scripts:
+        files, _ = write_inventory(identity, wc, log)
+        targets = {key: _sha(repo / relative) for key, (repo, relative) in files.items()}
+    if "copyMacRes.sh" in plan.scripts:
+        resources = {key: resource_signature(origin, copied) for key, origin, copied in
+                     resource_destinations(identity, wc)}
+    complete = not inputs_dirty(wc, log) and resources_current(identity, wc)[0]
     atomic_write(state_path(identity, state_root), json.dumps({
-        "inputs": input_state(wc, log),
-        "targets": {target: _sha(identity.src / target) for target in patch_targets(wc)}}, indent=1, sort_keys=True))
-    return True
+        "inputs": input_state(wc, log) if complete else None, "targets": targets, "resources": resources},
+        indent=1, sort_keys=True))
+    return complete
 
 
-def refresh(ctx, identity, loaded, log=None):
-    """Apply support patches and copy resources, then record the result. Mutates the checkout."""
+def refresh(ctx, identity, loaded, plan, log=None):
+    """Run the support scripts the plan names, then record the result. Mutates the checkout."""
     wc = working_copy(identity)
     steps = []
-    for script in ("applyPatches.sh", "copyMacRes.sh"):
+    for script in plan.scripts:
         argv = ["bash", "./" + script]
         code = run_streaming(argv, str(wc), loaded, ctx.log, json_mode=ctx.json_mode)
         steps.append({"argv": argv, "cwd": str(wc), "exit": code})
         if code != 0:
             raise ScaffoldError("CHILD_FAILED", "%s failed (exit %d)." % (script, code),
                                 details={"argv": argv, "cwd": str(wc)}, child_exit_code=code)
-    recorded = record_state(identity, ctx.state_root, log)
+    recorded = record_state(identity, ctx.state_root, plan, log)
     return {"steps": steps, "recorded": recorded}
 
 
 def conflict_error(plan, identity):
     return ScaffoldError(
         "PREPARATION_CONFLICT",
-        "Applying Android support patches could overwrite local edits in %d file(s); nothing was changed."
-        % len(plan.conflicts), details={"files": plan.conflicts[:50], "checkout": str(identity.core)},
-        repairs=[repair(["bdev", "drift", "--diff", "--checkout", str(identity.core)])])
+        "Android support preparation could overwrite local work or cannot tell what it writes (%d item(s)); "
+        "nothing was changed." % len(plan.conflicts),
+        details={"files": plan.conflicts[:50], "total": len(plan.conflicts), "checkout": str(identity.core)},
+        repairs=[repair(["bdev", "drift", "--diff", "--checkout", str(identity.core)],
+                        note="Review the listed files. Keep wanted edits elsewhere, then restore the listed "
+                             "files (or remove a resource that is only a stale copy) and repeat.")])
 
 
 # --- GN overrides ----------------------------------------------------------------------------

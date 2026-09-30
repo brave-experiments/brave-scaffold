@@ -37,6 +37,49 @@ if [ -f ../src/base/BUILD.gn ] && ! grep -q "support edit" ../src/base/BUILD.gn;
 fi
 """
 
+REALISTIC_APPLY_SCRIPT = """#!/bin/bash
+cd "$(dirname "$0")"
+verify=false
+[ "${1:-}" = "-v" ] && verify=true
+src_root=$(cd ../src && pwd -P)
+handle_patch() {
+  local repo=$2 patch=$3 file
+  if $verify; then git -C "$repo" apply --reverse --check "$patch" >/dev/null 2>&1; return $?; fi
+  while read -r file; do
+    git -C "$repo" checkout -- "$file" || return 1
+  done < <(sed -n 's|^--- [^/]*/||p' "$patch" | grep -v '^dev/null' | sort -u)
+  git -C "$repo" apply "$patch"
+}
+android_host_assert() {
+  local build_config="$src_root/build/config/BUILDCONFIG.gn"
+  local assertion='assert(host_os == "linux")'
+  grep -Fq "$assertion" "$build_config" || return 0
+  $verify && return 1
+  sed -i '' "/$assertion/d" "$build_config"
+}
+failures=0
+handle_patch "fork" "$src_root" "$PWD/patches/build-config-fork.patch" || failures=1
+handle_patch "a" "$src_root" "$PWD/patches/support-a-prefix.patch" || failures=1
+android_host_assert || failures=1
+handle_patch "nested" "$src_root/v8" "$PWD/patches/v8-nested.patch" || failures=1
+exit $failures
+"""
+
+REALISTIC_PATCHES = {
+    "build-config-fork.patch": (
+        "diff --git forkSrcPrefix/build/config/support_fork.gni forkDstPrefix/build/config/support_fork.gni\n"
+        "--- forkSrcPrefix/build/config/support_fork.gni\n+++ forkDstPrefix/build/config/support_fork.gni\n"
+        "@@ -1 +1 @@\n-original fork\n+patched fork\n"),
+    "support-a-prefix.patch": (
+        "diff --git a/support/target_a.cc b/support/target_a.cc\n"
+        "--- a/support/target_a.cc\n+++ b/support/target_a.cc\n"
+        "@@ -1,5 +1,5 @@\n line1\n-line2\n+patched line2\n line3\n line4\n line5\n"),
+    "v8-nested.patch": (
+        "diff --git forkSrcPrefix/gni/snapshot.gni forkDstPrefix/gni/snapshot.gni\n"
+        "--- forkSrcPrefix/gni/snapshot.gni\n+++ forkDstPrefix/gni/snapshot.gni\n"
+        "@@ -1 +1 @@\n-v8 original\n+v8 patched\n"),
+}
+
 FAKE_ADB = """#!%(python)s
 import json, os, sys
 args = sys.argv[1:]
@@ -58,18 +101,26 @@ elif "pidof" in args:
 """
 
 
-def make_support_repo(root: Path, versions: dict) -> Path:
-    """A support repository with one tagged commit per {tag: supported Chromium major}. Returns its path."""
+def make_support_repo(root: Path, versions: dict, realistic: bool = False) -> Path:
+    """A support repository with one tagged commit per {tag: supported Chromium major}. Returns its path.
+
+    A realistic repository applies real patches with upstream-style headers, including one in a nested
+    repository, and edits a build file directly.
+    """
     repo = Path(root) / "support-source"
     repo.mkdir(parents=True)
     subprocess.run(["git", "init", "-q", "-b", "main", str(repo)], check=True)
     for tag, major in versions.items():
         (repo / "SUPPORTS_CHROMIUM").write_text(str(major))
         write_executable(repo / "copyMacRes.sh", COPY_SCRIPT)
-        write_executable(repo / "applyPatches.sh", APPLY_SCRIPT)
+        write_executable(repo / "applyPatches.sh", REALISTIC_APPLY_SCRIPT if realistic else APPLY_SCRIPT)
         (repo / "patches").mkdir(exist_ok=True)
-        (repo / "patches" / "marker").write_text("patched-for-%s\n" % tag)
-        (repo / "patches" / "support.patch").write_text("diff --git a/base/support_target.cc b/base/support_target.cc\n")
+        if realistic:
+            for name, text in REALISTIC_PATCHES.items():
+                (repo / "patches" / name).write_text(text)
+        else:
+            (repo / "patches" / "marker").write_text("patched-for-%s\n" % tag)
+            (repo / "patches" / "support.patch").write_text("diff --git a/base/support_target.cc b/base/support_target.cc\n")
         (repo / "res" / "jdk" / "current").mkdir(parents=True, exist_ok=True)
         (repo / "res" / "jdk" / "current" / "release").write_text("JAVA_VERSION=25 %s\n" % tag)
         subprocess.run([*GIT, "-C", str(repo), "add", "-A"], check=True)

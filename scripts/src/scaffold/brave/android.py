@@ -99,9 +99,9 @@ def prepare_support(ctx, identity, prepared, op, effective):
         raise android_deps.conflict_error(plan, identity)
     refreshed = False
     if plan.action == "refresh":
-        op.step("android-support-refresh", reason=plan.reason,
+        op.step("android-support-refresh", reason=plan.reason, scripts=list(plan.scripts),
                 writes=["src third_party resources and patched files listed by the support scripts"])
-        android_deps.refresh(ctx, identity, prepared.loaded, ctx.log)
+        android_deps.refresh(ctx, identity, prepared.loaded, plan, ctx.log)
         refreshed = True
     return refreshed
 

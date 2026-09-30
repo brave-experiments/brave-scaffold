@@ -55,15 +55,31 @@ successfully, or that the gate covers every incompatibility. Sources live in
 
 ### What preparation changes
 
-Before compiling, a build compares the working copy with the checkout and refreshes
-only when needed: support patches not applied (`applyPatches.sh -v` fails),
-resources not copied or stale, or no record of a refresh for this checkout
-(`.bdev/state/`). A refresh runs the support repository's `applyPatches.sh` and
-`copyMacRes.sh`, which change Chromium files and copy resources into the checkout's
-`third_party` directories (the paths its `copyMacRes.sh` declares), and then
-regenerates GN files. If support patches would overwrite Chromium files that have
-local edits, the build stops with `PREPARATION_CONFLICT` before changing anything.
-Inputs you edited in the working copy are applied as they are.
+Before compiling, a build compares the working copy with the checkout and runs only
+the support scripts that are needed: `applyPatches.sh` when support patches are not
+applied (`applyPatches.sh -v` fails) or the working copy's inputs changed, and
+`copyMacRes.sh` when resources are not copied or stale. Either runs when there is no
+record of a refresh for this checkout (`.bdev/state/`). The scripts change Chromium
+files (in the source root and in nested repositories such as `v8`) and copy resources
+into the checkout's `third_party` directories (the paths `copyMacRes.sh` declares);
+GN files are then regenerated.
+
+Before running a script, the build lists what it can write: every file named by the
+patches the script applies (any header prefix), the files the script edits directly,
+and the destination of each copied resource. It stops with `PREPARATION_CONFLICT`,
+changing nothing, when
+
+- one of those files has unstaged, staged, or untracked changes that differ from what
+  the last refresh wrote;
+- a copied resource file changed since the last refresh (the first copy onto files
+  that Chromium supplied is expected and is not blocked);
+- a patch has a format the scaffold cannot read, or a file could belong to more than
+  one repository.
+
+Restore or move the listed files, then repeat. Edits made outside the files the
+scripts touch are never affected. Inputs you edited in the working copy are applied
+as they are. The scaffold finds direct edits by the `$src_root/<file>` paths in
+`applyPatches.sh`; a write it does not mention there cannot be predicted.
 
 The build also keeps a marked block of GN overrides (no component build, no
 secondary ABI, `use_mold=false`, remote execution) in the output's `args.gn`.
