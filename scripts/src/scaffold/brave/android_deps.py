@@ -97,6 +97,8 @@ def setup_working_copy(identity, state_root, source, ref, log=None):
         raise ScaffoldError("CHILD_FAILED", "Updating the shared object cache failed: %s" % fetched.stderr.strip()[-500:],
                             details={"cache": str(cache)}, child_exit_code=fetched.returncode)
     wc = working_copy(identity)
+    if (wc / ".git").exists() and lfs_pointers(wc, log):
+        materialize_lfs(wc, source, cache.parent / "android-support-lfs", log)
     facts = inspect_working_copy(wc, log)
     if wc.exists() and facts is None:
         raise ScaffoldError("OWNERSHIP_CONFLICT",
@@ -162,22 +164,57 @@ def _seed_lfs_store(source, store):
             shutil.copy2(path, target)
 
 
+def uses_lfs(wc):
+    try:
+        return "filter=lfs" in (Path(wc) / ".gitattributes").read_text(encoding="utf-8")
+    except OSError:
+        return False
+
+
+def lfs_pointers(wc, log=None):
+    """Large files that are still pointers in the working copy. Read-only; never fetches.
+
+    Raises when git-lfs cannot list them: an unknown state is not treated as materialized.
+    """
+    if not uses_lfs(wc):
+        return []
+    listing = _git(wc, ["lfs", "ls-files"], log)
+    if listing.returncode != 0:
+        raise ScaffoldError("LOCAL_TOOL_MISSING", "git-lfs could not list the support repository's large files: %s" %
+                            (listing.stderr.strip()[-300:] or "exit %d" % listing.returncode),
+                            details={"path": str(wc)}, repairs=[repair(["brew", "install", "git-lfs"],
+                                                                       requires_user_action=True)])
+    pointers = []
+    for line in listing.stdout.splitlines():
+        parts = line.split(None, 2)
+        if len(parts) == 3 and parts[1] == "-":
+            pointers.append(parts[2])
+    return pointers
+
+
 def materialize_lfs(wc, source, store, log=None):
-    """Write the working copy's large files from the shared store, fetching only what is missing."""
+    """Make every large file real content: use the shared store, fetch what it lacks, then verify.
+
+    `git lfs checkout` succeeds while leaving a pointer for content that is not local, so success is judged
+    by listing the files that are still pointers. Fetching uses the network and is only for explicit setup.
+    """
     store.mkdir(parents=True, exist_ok=True)
     if os.path.isdir(str(source)):
         _seed_lfs_store(source, store)
     _git(wc, ["config", "lfs.storage", str(store)], log)
-    checkout = _git(wc, ["lfs", "checkout"], log, timeout=1800)
-    if checkout.returncode != 0:
-        pull = _git(wc, ["lfs", "pull"], log, timeout=3600)
-        if pull.returncode != 0:
-            raise ScaffoldError(
-                "CHILD_FAILED", "Fetching the support repository's large files failed: %s" %
-                (pull.stderr.strip() or checkout.stderr.strip())[-400:],
-                details={"path": str(wc)}, child_exit_code=pull.returncode,
-                repairs=[repair(["git", "-C", str(wc), "lfs", "pull"],
-                                note="Uses the network and your Git credentials; run it after fixing access.")])
+    _git(wc, ["lfs", "install", "--local"], log)
+    _git(wc, ["lfs", "checkout"], log, timeout=1800)
+    if not lfs_pointers(wc, log):
+        return
+    pull = _git(wc, ["lfs", "pull"], log, timeout=3600)
+    remaining = lfs_pointers(wc, log)
+    if pull.returncode != 0 or remaining:
+        raise ScaffoldError(
+            "CHILD_FAILED", "%d large file(s) in the support working copy are still pointers after fetching: %s" % (
+                len(remaining), (pull.stderr.strip() or "the content is not available from the remote")[-300:]),
+            details={"path": str(wc), "pointers": remaining[:20]}, child_exit_code=pull.returncode or 0,
+            repairs=[repair(["git", "-C", str(wc), "lfs", "pull"],
+                            note="Uses the network and your Git credentials; run it after fixing access.")])
 
 
 def _checkout(wc, ref, log):
@@ -467,6 +504,15 @@ def plan_preparation(ctx, identity, log=None):
     ok, detail = run_gate(wc, "copyMacRes.sh", ctx.environ, log)
     if not ok:
         raise incompatible(identity, wc, detail, facts)
+    pointers = lfs_pointers(wc, log)
+    if pointers:
+        raise ScaffoldError(
+            "DEPENDENCY_INCOMPATIBLE",
+            "%d large file(s) in the support working copy are not materialized (still pointers), so its resources "
+            "cannot be copied. Nothing was fetched." % len(pointers),
+            details={"working_copy": str(wc), "pointers": pointers[:20]},
+            repairs=[repair(["bdev", "android", "setup", "--checkout", str(identity.core)],
+                            note="Explicit preparation: fetches the missing large files (network).")])
     evidence = {"working_copy": facts, "version_gate": "passed"}
     receipt = _read_state(identity, ctx.state_root)
     dirty = inputs_dirty(wc, log)

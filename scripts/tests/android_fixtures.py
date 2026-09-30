@@ -115,7 +115,7 @@ def install_fake_aapt2(src):
     write_executable(Path(src) / "third_party" / "android_build_tools" / "aapt2" / "cipd" / "aapt2", FAKE_AAPT2)
 
 
-def make_support_repo(root: Path, versions: dict, realistic: bool = False) -> Path:
+def make_support_repo(root: Path, versions: dict, realistic: bool = False, lfs: bool = False) -> Path:
     """A support repository with one tagged commit per {tag: supported Chromium major}. Returns its path.
 
     A realistic repository applies real patches with upstream-style headers, including one in a nested
@@ -124,6 +124,10 @@ def make_support_repo(root: Path, versions: dict, realistic: bool = False) -> Pa
     repo = Path(root) / "support-source"
     repo.mkdir(parents=True)
     subprocess.run(["git", "init", "-q", "-b", "main", str(repo)], check=True)
+    if lfs:
+        subprocess.run(["git", "-C", str(repo), "lfs", "install", "--local"], check=True, capture_output=True)
+        subprocess.run(["git", "-C", str(repo), "lfs", "track", "res/jdk/current/large.bin"], check=True,
+                       capture_output=True)
     for tag, major in versions.items():
         (repo / "SUPPORTS_CHROMIUM").write_text(str(major))
         write_executable(repo / "copyMacRes.sh", COPY_SCRIPT)
@@ -137,6 +141,8 @@ def make_support_repo(root: Path, versions: dict, realistic: bool = False) -> Pa
             (repo / "patches" / "support.patch").write_text("diff --git a/base/support_target.cc b/base/support_target.cc\n")
         (repo / "res" / "jdk" / "current").mkdir(parents=True, exist_ok=True)
         (repo / "res" / "jdk" / "current" / "release").write_text("JAVA_VERSION=25 %s\n" % tag)
+        if lfs:
+            (repo / "res" / "jdk" / "current" / "large.bin").write_bytes(b"large-file-content-" * 100)
         subprocess.run([*GIT, "-C", str(repo), "add", "-A"], check=True)
         subprocess.run([*GIT, "-C", str(repo), "commit", "-q", "-m", tag], check=True)
         subprocess.run([*GIT, "-C", str(repo), "tag", tag], check=True)

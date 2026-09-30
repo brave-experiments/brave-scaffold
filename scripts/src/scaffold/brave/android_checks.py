@@ -13,8 +13,8 @@ from ..common.procs import run_capture
 from ..common.results import ScaffoldError, repair
 from . import adb, android_deps, cmd_build, rbe_checks
 
-UNCHECKED_NAMES = ("android-gclient-target", "android-support-working-copy", "android-support-compatibility",
-                   "android-support-currency")
+UNCHECKED_NAMES = ("android-gclient-target", "android-support-working-copy", "android-support-lfs",
+                   "android-support-compatibility", "android-support-currency")
 
 
 def machine_checks(ctx, scope):
@@ -80,6 +80,19 @@ def support_checks(ctx, scope):
         facts["branch"] or "detached", (facts["head"] or "")[:12],
         " (local changes present)" if facts["dirty"] else ""), scope, affects=("android build",),
         working_copy=facts)]
+    try:
+        pointers = android_deps.lfs_pointers(wc, ctx.log)
+        checks.append(make_check(
+            "android-support-lfs", PASS if not pointers else BLOCKER,
+            "The support repository's large files are materialized." if not pointers else
+            "%d large file(s) are still pointers, so resources cannot be copied (for example %s)." % (
+                len(pointers), pointers[0]), scope, affects=("android build",), pointers=pointers[:20],
+            repairs=[] if not pointers else [repair(
+                ["bdev", "android", "setup", "--checkout", str(identity.core)],
+                note="Explicit preparation: fetches the missing large files (network).")]))
+    except ScaffoldError as error:
+        checks.append(make_check("android-support-lfs", BLOCKER, error.message, scope, affects=("android build",),
+                                 repairs=error.repairs))
     ok, detail = android_deps.run_gate(wc, "copyMacRes.sh", ctx.environ, ctx.log)
     checks.append(make_check("android-support-compatibility", PASS if ok else BLOCKER,
                              "The support revision's version gates accept this checkout." if ok else

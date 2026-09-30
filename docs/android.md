@@ -33,6 +33,14 @@ Git LFS objects beside it. Working copies are local clones of the cache, so obje
 are hardlinked on the same filesystem, and their large files are written from the
 shared store. A local `--source` seeds both without using the network.
 
+`bdev android setup` is also the only command that fetches large files. It writes what
+the shared store holds, fetches whatever is missing from the source, and then lists the
+large files that are still pointers: if any remain, it fails with `CHILD_FAILED` (a
+plain `git lfs checkout` reports success while leaving pointers), and it verifies an
+existing working copy the same way when you run it again after an interruption. `bdev
+doctor android` (`android-support-lfs`) and builds only look: pointers are a blocker
+or `DEPENDENCY_INCOMPATIBLE` that names `bdev android setup`, and nothing is fetched.
+
 ```sh
 bdev android setup                     # clone at the default ref
 bdev android setup --ref <tag-or-sha>  # use a revision for this checkout only
