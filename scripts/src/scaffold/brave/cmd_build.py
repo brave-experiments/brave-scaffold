@@ -19,7 +19,7 @@ from ..common.platforms import RECOGNIZED_TARGETS, effective_target, normalize_t
 from ..common.procs import run_capture, run_streaming
 from ..common.redaction import redact_argv
 from ..common.results import Cancelled, Result, ScaffoldError, repair
-from . import android_deps, buildopts, freshness, macos, patches, steps as step_module
+from . import android_deps, buildopts, freshness, macos, patches, steps as step_module, sync_scope
 from .cmd_tools import local_shims
 from .records import OutputState, output_states, track
 
@@ -181,7 +181,8 @@ def prepare_patches(ctx, identity, prepared, op):
                             "Patches were applied but %d file(s) still differ from their metadata." % len(after.files),
                             details={"files": sorted(after.files)[:50]},
                             repairs=[repair(["bdev", "drift", "--diff", "--checkout", str(identity.core)])])
-    patches.write_receipt(identity, plan.trees, patches.snapshot_files(identity, after), ctx.state_root, {})
+    patches.write_receipt(identity, plan.trees, patches.snapshot_files(identity, after), ctx.state_root,
+                          patches.core_output(identity))
     return True, plan
 
 
@@ -709,22 +710,27 @@ def sync_arguments(ctx, target, forwarded, identity=None):
     return [*arguments, *forwarded]
 
 
-def local_work_conflicts(ctx, identity):
-    """Evidence of local work that a source sync could overwrite."""
-    status = run_capture(["git", "-C", str(identity.core), "status", "--porcelain"], str(identity.core), None,
-                         ctx.log, timeout=120)
-    conflicts = []
-    if status.returncode == 0 and status.stdout.strip():
-        conflicts.append({"path": str(identity.core), "reason": "Core has %d uncommitted change(s)" %
-                          len(status.stdout.splitlines())})
+def local_work_conflicts(ctx, identity, adopt=False):
+    """Evidence of local work that a source sync could reset or overwrite.
+
+    Covers every repository the sync can reset, and the files applying patches afterwards would replace.
+    Changes that are the recorded output of patch or support preparation are not local work.
+    """
     plan = patches.plan_patch_preparation(identity, ctx.log, ctx.state_root)
+    report = plan.report
+    expected = {identity.src / path for path in report.patched_paths if path not in report.files}
+    expected |= android_deps.recorded_results(identity, ctx.state_root)
+    expected |= patches.core_written_paths(identity, ctx.state_root)
+    conflicts = sync_scope.local_work(identity, sync_scope.sync_repositories(identity), expected,
+                                      sync_scope.read_baseline(identity, ctx.state_root), ctx.state_root, ctx.log,
+                                      adopt)
     if plan.action == "conflict":
         conflicts.extend(plan.conflicts)
     return conflicts
 
 
 def do_sync_phase(ctx, identity, prepared, op, target, forwarded):
-    conflicts = local_work_conflicts(ctx, identity)
+    conflicts = local_work_conflicts(ctx, identity, bool(ctx.parsed.get("adopt_local_changes")))
     if conflicts:
         raise ScaffoldError("PREPARATION_CONFLICT",
                             "Sync could overwrite local work in %d place(s); nothing was changed." % len(conflicts),
@@ -742,6 +748,10 @@ def do_sync_phase(ctx, identity, prepared, op, target, forwarded):
     after = {"core_head": freshness.resolve_head(identity.core, ctx.log),
              "chromium_head": freshness.resolve_head(identity.src, ctx.log)}
     op.step("sync-complete", after=after)
+    try:
+        sync_scope.checkpoint(identity, ctx.state_root, ctx.log)
+    except ScaffoldError as error:
+        op.step("sync-checkpoint", outcome="not recorded", reason=error.message)
     return {"argv": argv, "revisions_before": before, "revisions_after": after}
 
 
@@ -796,11 +806,12 @@ def cmd_drift(ctx):
                                            "incomplete_reasons": report.incomplete,
                                            "patchinfo_files": report.patchinfo_count})
     lines = ["Checked %d patch metadata file(s); %d drifted file(s)." % (report.patchinfo_count, len(files))]
-    for entry in files:
+    for entry, drifted in zip(files, (item for _, item in sorted(report.files.items()))):
         lines.append("  %s (%s) %s" % (entry["path"], ", ".join(entry["reasons"]), entry["numstat"]))
         if ctx.parsed.get("diff"):
-            diff = run_capture(["git", "-C", str(identity.src), "diff", "--", entry["path"]], str(identity.src), None,
-                               ctx.log, timeout=120)
+            repository = drifted.repository or identity.src
+            diff = run_capture(["git", "-C", str(repository), "diff", "--", drifted.relative or entry["path"]],
+                               str(repository), None, ctx.log, timeout=120)
             lines.extend("      " + line for line in (diff.stdout.splitlines() or ["(no git diff)"]))
     if not report.complete:
         lines.append("Evidence is incomplete, so this is not a clean result:")

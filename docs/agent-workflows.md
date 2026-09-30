@@ -21,6 +21,9 @@ the scope, or human approval is expressly required.
 | Deferred features, changed scope, weaker safeguards | Needs a separate user decision |
 | Pushing or publishing | Needs explicit authorization; permission to commit locally does not include it |
 
+`bdev sync --adopt-local-changes` declares existing tracked changes to be Core's output rather than the
+user's work, so a later sync may reset them. It needs the user's approval after they have seen the listed files.
+
 A suggested repair in a result, or a passing `doctor`, grants nothing. `requires_user_action` says only whether a step needs a person; `false`
 does not mean it is permitted. For an unresolved checkout, list candidates with
 `bdev checkout list`; never pick one yourself.

@@ -20,9 +20,28 @@ directory. Mobile targets build `--target_os` from the union of the checkout's
 existing `.gclient` values and the requested mobile target; the host platform is
 never written there.
 
-Before syncing, the command stops with `PREPARATION_CONFLICT` if Core has
-uncommitted changes or Chromium files show local edits that patch application could
-overwrite. It never stashes, resets, or switches branches. The operation record
+Before syncing, the command checks every repository the sync can reset. Core's sync runs gclient
+with `--reset`, which discards edits to tracked files in Chromium and in each dependency repository
+gclient manages. The command reads those repositories from gclient's own records
+(`.gclient_entries` in the workspace and `.brave_gclient_entries` in Core) and stops with
+`PREPARATION_CONFLICT` when
+
+- Core has any uncommitted change, untracked files included;
+- a tracked file in Chromium or in a dependency repository differs from `HEAD`, unless it still holds
+  exactly what patch or Android support preparation last wrote there, or what Core's tools had left
+  when the last sync finished;
+- patch application after the sync could overwrite local Chromium edits (see below);
+- either records file is missing or unreadable, or Git cannot inspect a repository completely.
+
+Core's own tools change many tracked Chromium files besides patch targets (translations, images,
+the version file). After each successful sync the command records the tracked changes present, so those
+files count as Core's output until they change again. A checkout that was synced before the scaffold
+existed has no such record; the first sync then lists every such file. Review the list (`git status`
+in the named repository, `bdev drift`) and, only if none of it is your work, repeat with
+`--adopt-local-changes` to record it. An agent must not pass that option without your approval.
+
+Untracked files in dependency repositories are not listed because a reset does not remove them. The
+command never stashes, resets, or switches branches. The operation record
 notes Core and Chromium revisions before and after. Sync changes source and
 dependencies inside the checkout; it is the requested work, not an installation
 side effect.

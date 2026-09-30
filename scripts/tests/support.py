@@ -164,6 +164,18 @@ except (OSError, subprocess.CalledProcessError):
 exec(APP_HELPERS)
 
 
+GCLIENT_ENTRIES = """entries = {
+  'src': 'https://example.invalid/chromium/src.git',
+  'src/brave': 'https://example.invalid/brave-core.git',
+  'src/base/tracing/test/data:test_data/example.gz-1': 'gs://example/test_data/example.gz-1',
+}
+"""
+BRAVE_GCLIENT_ENTRIES = """entries = {
+  '.': 'https://example.invalid/brave-core.git',
+}
+"""
+
+
 class Sandbox:
     """A temp directory holding a scaffold configuration, checkouts, and fake PATH tools."""
 
@@ -244,6 +256,9 @@ class Sandbox:
         if declaration:
             package["devEngines"] = {"runtime": {"name": "node", "version": ">=24.16.0 <25.0.0"},
                                      "packageManager": {"name": manager, "version": ">=11.11.0"}}
+        workspace = src.parent
+        (workspace / ".gclient_entries").write_text(GCLIENT_ENTRIES)
+        (core / ".brave_gclient_entries").write_text(BRAVE_GCLIENT_ENTRIES)
         (core / "package.json").write_text(json.dumps(package))
         (core / "script").mkdir()
         write_executable(core / "vendor" / "depot_tools" / "vpython3", FAKE_VPYTHON)

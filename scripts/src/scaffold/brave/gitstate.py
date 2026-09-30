@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from ..common.procs import run_capture
@@ -20,15 +21,22 @@ def _git(repo, args, log, timeout=120):
                        max_bytes=EVIDENCE_BYTES)
 
 
-def changed_paths(repo, paths, log=None):
-    """The given repository-relative paths that differ from HEAD in the index or worktree, or are untracked.
+def _require_root(repo, log):
+    """Stop unless Git treats `repo` itself as a repository, not an enclosing one.
 
-    Renames report both names. Raises when Git cannot answer: an unknown state is never treated as clean.
+    A damaged repository directory makes Git fall through to the repository around it, whose answer would
+    describe the wrong files.
     """
-    paths = list(paths)
-    if not paths:
-        return set()
-    result = _git(repo, ["status", "--porcelain", "-z", "--untracked-files=all", "--", *paths], log)
+    top = _git(repo, ["rev-parse", "--show-toplevel"], log, timeout=30)
+    if top.returncode != 0 or os.path.realpath(top.stdout.strip()) != os.path.realpath(repo):
+        raise ScaffoldError("PREPARATION_CONFLICT",
+                            "%s is not readable as a Git repository, so its local changes could not be inspected; "
+                            "nothing was changed." % repo, details={"repository": str(repo)})
+
+
+def _status(repo, pathspec, untracked, log):
+    _require_root(repo, log)
+    result = _git(repo, ["status", "--porcelain", "-z", "--untracked-files=" + untracked, *pathspec], log, timeout=600)
     if result.returncode != 0 or result.truncated:
         raise ScaffoldError("PREPARATION_CONFLICT",
                             "Local changes in %s could not be inspected (%s), so nothing was changed." % (
@@ -42,6 +50,28 @@ def changed_paths(repo, paths, log=None):
         if entry[0] in "RC" or entry[1] in "RC":
             changed.add(next(entries, ""))
     return changed
+
+
+def changed_paths(repo, paths, log=None):
+    """The given repository-relative paths that differ from HEAD in the index or worktree, or are untracked.
+
+    Renames report both names. Raises when Git cannot answer: an unknown state is never treated as clean.
+    """
+    paths = list(paths)
+    return _status(repo, ["--", *paths], "all", log) if paths else set()
+
+
+def local_changes(repo, log=None):
+    """Every path with local work in the repository: tracked changes and untracked files."""
+    return _status(repo, [], "all", log)
+
+
+def tracked_changes(repo, log=None):
+    """Every tracked file of the repository whose index or worktree content differs from HEAD.
+
+    Untracked files are not listed. Raises when Git cannot answer completely.
+    """
+    return _status(repo, [], "no", log)
 
 
 def tracked_paths(repo, paths, log=None):
@@ -78,3 +108,4 @@ def nested_repositories(root):
     children = sorted(child for child in root.iterdir() if child.is_dir() and not child.is_symlink()
                       and (child / ".git").exists())
     return [root, *children]
+
