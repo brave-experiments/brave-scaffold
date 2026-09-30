@@ -170,6 +170,24 @@ a Git linked worktree or an unavailable platform), `ENVIRONMENT_REQUIRED`,
 `ARTIFACT_MISMATCH`, `ARTIFACT_UNRESOLVED`, `ARTIFACT_AMBIGUOUS`, `LAUNCH_FAILED`,
 `CHILD_FAILED`, `CANCELLED`, and `INTERNAL_ERROR`.
 
+## Plans
+
+`--plan` (on `build`, `test`, `sync`, the combined commands, `run`, and `deploy`) shows the
+whole operation and changes nothing. The plan is `data.plan.steps`; every step has the same
+fields: `name`, `summary`, `status`, `reads`, `writes`, `argv`, `cwd`, `needs` (earlier
+steps), `on_failure`, `cleanup`, and `detail`. `status` is `ready` or `blocked` for
+prerequisites (environment approval, checkout-local tools, readiness), `current` or
+`planned` for work, `resolved` or `unresolved` for choices (the artifact, the device), and
+`blocked` when a step cannot run as things stand, with the reason in `detail`. A plan
+reports unresolved prerequisites instead of failing; it judges them with your calling
+environment (execution uses the approved one) and is not a promise that execution
+succeeds. Steps include Core patch preparation, Android support preparation (with the files
+it would write), the GN overrides, the build command with its output directory, output
+verification, device selection, and the restart (stop running instances, install, launch).
+`argv` is `null` when the final command needs tools that are not available yet. The
+operation record of a real run carries the same descriptions for the steps that change
+something, so a plan can be compared with what was dispatched.
+
 ## Doctor
 
 `bdev doctor [mac|shell|signing]` runs named checks, each `pass`, `blocker`, `warning`,

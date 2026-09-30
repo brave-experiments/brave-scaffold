@@ -429,6 +429,16 @@ def freshness_inputs(identity, log=None):
             "support_resources": digest.hexdigest()}
 
 
+def planned_writes(identity, wc, scripts, log=None):
+    """Source-relative paths the given support scripts would write (read-only)."""
+    writes = []
+    if "applyPatches.sh" in scripts:
+        writes += sorted(write_inventory(identity, wc, log)[0])
+    if "copyMacRes.sh" in scripts:
+        writes += [key for key, _, _ in resource_destinations(identity, wc)]
+    return writes
+
+
 class SupportPlan:
     """What preparation must do. `scripts` are the support scripts to run, in order."""
 

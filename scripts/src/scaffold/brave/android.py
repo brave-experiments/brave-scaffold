@@ -13,7 +13,7 @@ from pathlib import Path
 from ..common.platforms import host_architecture, host_platform
 from ..common.procs import run_capture
 from ..common.results import Result, ScaffoldError, repair
-from . import adb, android_deps
+from . import adb, android_deps, steps as step_module
 from .records import OutputState, output_states, track
 
 PACKAGE_PREFIX = "com.brave."
@@ -97,14 +97,16 @@ def build_environment(ctx):
 def prepare_support(ctx, identity, prepared, op, effective):
     """Refresh support patches/resources when needed; returns True when the checkout was changed."""
     plan = android_deps.plan_preparation(ctx, identity, ctx.log)
-    op.step("android-support-plan", action=plan.action, reason=plan.reason,
-            working_copy=plan.evidence.get("working_copy"))
+    wc = android_deps.working_copy(identity)
+    writes = android_deps.planned_writes(identity, wc, plan.scripts, ctx.log) if plan.action == "refresh" else []
+    described = step_module.support_step(identity, plan, writes).record()
+    op.step("android-support-plan", action=plan.action, reason=plan.reason, working_copy=plan.evidence.get("working_copy"),
+            **described)
     if plan.action == "conflict":
         raise android_deps.conflict_error(plan, identity)
     refreshed = False
     if plan.action == "refresh":
-        op.step("android-support-refresh", reason=plan.reason, scripts=list(plan.scripts),
-                writes=["src third_party resources and patched files listed by the support scripts"])
+        op.step("android-support-refresh", scripts=list(plan.scripts), **described)
         android_deps.refresh(ctx, identity, prepared.loaded, plan, ctx.log)
         refreshed = True
     return refreshed
@@ -162,7 +164,7 @@ def select_apk(ctx, identity, configuration, arch):
     return candidates[0]
 
 
-def restart_apk(ctx, identity, artifact, result, device=None):
+def restart_apk(ctx, identity, artifact, result, device=None, op=None):
     """Install the APK on the selected device and restart its package there."""
     from . import cmd_build
     if not artifact["package_verified"]:
@@ -172,6 +174,11 @@ def restart_apk(ctx, identity, artifact, result, device=None):
             repairs=[repair(["bdev", "tools", "setup", "--checkout", str(identity.core)], requires_user_action=False,
                             note="Explicit repair of checkout-local tools; run it only if aapt2 is missing.")])
     adapter, device, source = device or preflight_device(ctx)
+    if op is not None:
+        for step in (step_module.install_apk_step(device["id"], artifact["path"]),
+                     step_module.stop_package_step(device["id"], artifact["package"]),
+                     step_module.launch_package_step(device["id"], artifact["package"])):
+            op.step(step.name, **step.record())
     output_dir = artifact.get("output_dir") or str(Path(artifact["path"]).parent.parent)
     assessment = cmd_build.artifact_freshness(ctx, identity, output_dir, android=True)
     cmd_build.add_freshness_warning(result, assessment)
@@ -185,18 +192,34 @@ def restart_apk(ctx, identity, artifact, result, device=None):
     return result
 
 
+def run_plan(ctx, identity, artifact):
+    """What installing and restarting the selected APK would do, changing nothing."""
+    from . import cmd_build
+    package = artifact["package"] or "<package from the APK>"
+    steps = [cmd_build.environment_plan_step(ctx, identity),
+             step_module.Step("select-artifact", "Use the selected APK; run never builds.", "resolved",
+                              reads=[artifact["path"]], needs=["environment"], detail=artifact["path"])]
+    try:
+        _, device, source = preflight_device(ctx)
+        steps.append(step_module.select_device_step({"id": device["id"], "source": source}))
+        steps += [step_module.install_apk_step(device["id"], artifact["path"]),
+                  step_module.stop_package_step(device["id"], package),
+                  step_module.launch_package_step(device["id"], package)]
+    except ScaffoldError as error:
+        steps.append(step_module.select_device_step(error=error))
+    result = Result(command=ctx.command, data={"plan": {"artifact": artifact, "steps": [s.to_dict() for s in steps]}})
+    result.text = step_module.render_plan(ctx.command, steps)
+    return result
+
+
 def run_android(ctx, identity):
     configuration = (ctx.parsed.get("configuration") or "debug").capitalize()
     artifact = select_apk(ctx, identity, configuration, "arm64")
     if ctx.parsed.get("plan"):
-        result = Result(command=ctx.command, data={"plan": {"artifact": artifact, "steps": [
-            "select one device", "install over the existing app (data is kept)", "stop this package on that device",
-            "launch and verify the process"]}})
-        result.text = "Plan for %s (nothing was run): install %s" % (ctx.command, artifact["path"])
-        return result
+        return run_plan(ctx, identity, artifact)
     with track(ctx, ctx.command, identity, {"target": "android", "artifact": artifact["path"]}) as op:
         op.step("run", artifact=artifact["path"])
-        return op.complete(restart_apk(ctx, identity, artifact, Result(command=ctx.command)))
+        return op.complete(restart_apk(ctx, identity, artifact, Result(command=ctx.command), None, op))
 
 
 # --- explicit dependency setup ----------------------------------------------------------------
