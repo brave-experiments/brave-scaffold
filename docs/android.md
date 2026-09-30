@@ -75,22 +75,42 @@ files (in the source root and in nested repositories such as `v8`) and copy reso
 into the checkout's `third_party` directories (the paths `copyMacRes.sh` declares);
 GN files are then regenerated.
 
-Before running a script, the build lists what it can write: every file named by the
-patches the script applies (any header prefix), the files the script edits directly,
-and the destination of each copied resource. It stops with `PREPARATION_CONFLICT`,
-changing nothing, when
+Before running a script, the build lists what it can write and checks each item. The
+scaffold supports one script layout and reads it directly:
 
-- one of those files has unstaged, staged, or untracked changes that differ from what
-  the last refresh wrote;
-- a copied resource file changed since the last refresh (the first copy onto files
-  that Chromium supplied is expected and is not blocked);
-- a patch has a format the scaffold cannot read, or a file could belong to more than
-  one repository.
+- `applyPatches.sh` applies each patch with `handle_patch "<label>" "<repository>" "<patch>"`,
+  where the repository is `$src_root` or `$src_root/<directory>` and the patch is a
+  `patches/<name>.patch` file (given directly or through a variable assigned to one in the
+  script). The repository named in each call owns that patch's files, at any depth. A call
+  in any other form stops the build, because the files it writes cannot be known. A script
+  with no such calls falls back to every patch it names, each owned by the repository that
+  tracks the path.
+- Files the script edits directly are the `$src_root/<file>` paths written in it; the
+  deepest repository containing the file owns each one.
+- `copyMacRes.sh` declares each resource with `patch_dependency "<name>" "<destination>"
+  "<gate>" "res/<source>" "<readme>"`. Every file under a declared destination that the copy
+  would create or replace is checked.
+
+The build stops with `PREPARATION_CONFLICT`, changing nothing, and names the files, when
+
+- a patch target or directly edited file has unstaged, staged, or untracked changes that
+  differ from what the last refresh wrote;
+- a copied resource file changed since the last refresh, or exists with no record of where
+  it came from. A file with no record is replaced only when it is identical to the support
+  resource (a macOS binary counts as identical to its re-signed copy) or a repository
+  tracks it and Git shows no change, meaning Chromium supplied it. Anything else, for
+  example a fetched dependency you changed, or a receipt that predates resource records,
+  stops the build; move the listed files aside (sync restores fetched dependencies) or
+  restore them, then repeat;
+- a patch has a format the scaffold cannot read, a patch call is not in the supported form,
+  or the repositories gclient manages cannot be listed.
 
 Restore or move the listed files, then repeat. Edits made outside the files the
 scripts touch are never affected. Inputs you edited in the working copy are applied
-as they are. The scaffold finds direct edits by the `$src_root/<file>` paths in
-`applyPatches.sh`; a write it does not mention there cannot be predicted.
+as they are. Because the scripts are shell code, the build also compares the tracked
+changes in every repository before and after they run. A change outside the declared
+files is reported as `PREPARATION_CONFLICT`, and the refresh is not recorded as done; nothing
+is reverted, so review it with `git status`.
 
 The build also keeps a marked block of GN overrides (no component build, no
 secondary ABI, `use_mold=false`, `android_static_analysis="off"`, remote execution)

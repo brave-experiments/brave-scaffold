@@ -83,20 +83,31 @@ def _label(identity, path):
         else str(path)
 
 
-def snapshot(identity, scope, log=None):
-    """{repository label: {path: checksum}} of the tracked changes in every repository except Core.
+def snapshot(identity, scope, log=None, include_core=False):
+    """{repository label: {path: checksum}} of the tracked changes in every repository (Core only on request).
 
     A deleted file has a checksum of None. Raises when Git cannot inspect a repository completely.
     """
     found = {}
     for repository in scope.repositories:
-        if repository == identity.core:
+        if repository == identity.core and not include_core:
             continue
         files = {relative: sha256_or_none(repository / relative)
                  for relative in gitstate.tracked_changes(repository, log)}
         if files:
             found[_label(identity, repository)] = files
     return found
+
+
+def changed_between(identity, before, after):
+    """Absolute paths whose tracked-change state differs between two snapshots."""
+    changed = set()
+    for label in before.keys() | after.keys():
+        base = identity.src if label == "." else identity.src / label
+        old, new = before.get(label, {}), after.get(label, {})
+        changed |= {base / relative for relative in old.keys() | new.keys()
+                    if old.get(relative, "clean") != new.get(relative, "clean")}
+    return changed
 
 
 def baseline_path(identity, root=None):

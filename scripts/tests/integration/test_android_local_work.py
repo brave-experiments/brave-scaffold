@@ -4,6 +4,7 @@
 # You can obtain one at https://mozilla.org/MPL/2.0/.
 """Android support refresh must not overwrite local work, whatever triggers it."""
 
+import json
 import subprocess
 import unittest
 
@@ -140,6 +141,112 @@ class SupportRefreshLocalWorkTests(AndroidTestCase):
         result, document = self.document("build", "android")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual((self.src / "support" / "target_a.cc").read_text().splitlines()[1], "second line2")
+
+
+@unittest.skipIf(SKIP, "needs direnv on a macOS host")
+class ResourceOwnershipTests(AndroidTestCase):
+    """A support resource replaces an existing file only when that file is known not to hold local work."""
+
+    RELEASE = "third_party/jdk/current/release"
+
+    def setUp(self):
+        super().setUp()
+        self.assertEqual(self.setup_support().returncode, 0)
+        self.release = self.src / "third_party" / "jdk" / "current" / "release"
+        self.release.parent.mkdir(parents=True)
+
+    def commit(self):
+        self.sandbox.commit_all("main")
+
+    def build(self):
+        self.sandbox.record.unlink(missing_ok=True)
+        return self.document("build", "android")
+
+    def assert_blocked(self, path, content):
+        result, document = self.build()
+        self.assertEqual((result.returncode, document["error"]["code"]), (4, "PREPARATION_CONFLICT"), result.stderr)
+        self.assertIn(self.RELEASE, [item["path"] for item in document["error"]["details"]["files"]])
+        self.assertEqual(path.read_text(), content)
+        self.assertEqual([r for r in self.node_calls() if "build" in r["argv"]], [], "nothing built")
+
+    def state_file(self):
+        (path,) = self.sandbox.config.parent.rglob("android-support.json")
+        return path
+
+    def test_a_tracked_unmodified_dependency_file_is_replaced_on_first_adoption(self):
+        self.release.write_text("JAVA_VERSION=24 chromium supplied\n")
+        self.commit()
+        result, _ = self.build()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.release.read_text(), "JAVA_VERSION=25 v155\n")
+
+    def test_a_tracked_dependency_file_with_local_edits_is_kept_on_first_adoption(self):
+        self.release.write_text("JAVA_VERSION=24 chromium supplied\n")
+        self.commit()
+        self.release.write_text("local dependency experiment\n")
+        self.assert_blocked(self.release, "local dependency experiment\n")
+
+    def test_an_existing_untracked_file_of_unknown_origin_is_kept(self):
+        self.release.write_text("something someone put here\n")
+        self.assert_blocked(self.release, "something someone put here\n")
+
+    def test_an_existing_copy_identical_to_the_support_resource_is_adopted(self):
+        self.release.write_text("JAVA_VERSION=25 v155\n")
+        result, _ = self.build()
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_an_absent_destination_is_simply_created(self):
+        result, _ = self.build()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.release.read_text(), "JAVA_VERSION=25 v155\n")
+
+    def test_edits_to_a_copied_resource_survive_a_receipt_without_resource_history(self):
+        self.assertEqual(self.build()[0].returncode, 0)
+        self.release.write_text("JAVA_VERSION=25 hand edited\n")
+        receipt = json.loads(self.state_file().read_text())
+        self.assertTrue(receipt["targets"] is not None)
+        del receipt["resources"]
+        self.state_file().write_text(json.dumps(receipt))
+        self.assert_blocked(self.release, "JAVA_VERSION=25 hand edited\n")
+
+    def test_edits_to_a_copied_resource_survive_a_missing_receipt(self):
+        self.assertEqual(self.build()[0].returncode, 0)
+        self.release.write_text("JAVA_VERSION=25 hand edited\n")
+        self.state_file().unlink()
+        self.assert_blocked(self.release, "JAVA_VERSION=25 hand edited\n")
+
+    def test_a_destination_first_declared_by_a_new_support_revision_is_checked_too(self):
+        self.assertEqual(self.build()[0].returncode, 0)
+        wc = self.wc()
+        script = wc / "copyMacRes.sh"
+        script.write_text(script.read_text() + 'patch_dependency "Extra" "third_party/extra" "" "res/extra/current" ""\n')
+        (wc / "res" / "extra" / "current").mkdir(parents=True)
+        (wc / "res" / "extra" / "current" / "info").write_text("from support\n")
+        extra = self.src / "third_party" / "extra" / "current" / "info"
+        extra.parent.mkdir(parents=True)
+        extra.write_text("already here\n")
+        result, document = self.build()
+        self.assertEqual((result.returncode, document["error"]["code"]), (4, "PREPARATION_CONFLICT"))
+        self.assertIn("third_party/extra/current/info", str(document["error"]["details"]["files"]))
+        self.assertEqual(extra.read_text(), "already here\n")
+        extra.unlink()
+        self.assertEqual(self.build()[0].returncode, 0)
+        self.assertEqual(extra.read_text(), "from support\n")
+
+
+@unittest.skipIf(SKIP, "needs direnv on a macOS host")
+class SupportScriptEffectsTests(AndroidTestCase):
+    def test_a_script_that_writes_outside_its_declared_scope_is_reported_and_not_recorded(self):
+        (self.src / "chrome" / "other.cc").write_text("upstream\n")
+        self.sandbox.commit_all("main")
+        self.assertEqual(self.setup_support().returncode, 0)
+        script = self.wc() / "applyPatches.sh"
+        script.write_text(script.read_text() + 'echo "surprise" >> ../src/chrome/other.cc\n')
+        result, document = self.document("build", "android")
+        self.assertEqual((result.returncode, document["error"]["code"]), (4, "PREPARATION_CONFLICT"), result.stderr)
+        self.assertEqual([item["path"] for item in document["error"]["details"]["files"]], ["chrome/other.cc"])
+        self.assertEqual([r for r in self.node_calls() if "build" in r["argv"]], [], "the build did not start")
+        self.assertEqual(list(self.sandbox.config.parent.rglob("android-support.json")), [], "nothing was recorded")
 
 
 if __name__ == "__main__":

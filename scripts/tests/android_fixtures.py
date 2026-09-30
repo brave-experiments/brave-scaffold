@@ -30,10 +30,11 @@ if [ "$1" = "-v" ]; then
   cmp -s patches/marker ../src/SUPPORT_PATCHED
   exit $?
 fi
-cp patches/marker ../src/SUPPORT_PATCHED
-mkdir -p ../src/base && echo "support patched" > ../src/base/support_target.cc
-if [ -f ../src/base/BUILD.gn ] && ! grep -q "support edit" ../src/base/BUILD.gn; then
-  echo "support edit" >> ../src/base/BUILD.gn
+src_root=../src
+cp patches/marker "$src_root/SUPPORT_PATCHED"
+mkdir -p "$src_root/base" && echo "support patched" > "$src_root/base/support_target.cc"
+if [ -f "$src_root/base/BUILD.gn" ] && ! grep -q "support edit" "$src_root/base/BUILD.gn"; then
+  echo "support edit" >> "$src_root/base/BUILD.gn"
 fi
 """
 

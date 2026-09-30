@@ -12,10 +12,12 @@ never reset, switched, or cleaned by the scaffold.
 
 from __future__ import annotations
 
+import filecmp
 import hashlib
 import json
 import os
 import re
+import shlex
 import shutil
 import tomllib
 from pathlib import Path
@@ -23,7 +25,7 @@ from pathlib import Path
 from ..common.config import atomic_write
 from ..common.procs import run_capture, run_streaming
 from ..common.results import ScaffoldError, repair
-from . import freshness, gitstate
+from . import freshness, gitstate, sync_scope
 from .patchformat import UnknownPatchFormat, parse_patch_targets
 from .records import checkout_key, store_root
 
@@ -34,6 +36,10 @@ MAX_COMPARED_BYTES = 1 << 20
 MACHO_MAGICS = (b"\xcf\xfa\xed\xfe", b"\xca\xfe\xba\xbe", b"\xfe\xed\xfa\xcf")
 PATCH_REFERENCE = re.compile(r"patches/([A-Za-z0-9_.-]+\.patch)")
 SOURCE_FILE_REFERENCE = re.compile(r"\$\{?src_root\}?/([A-Za-z0-9_./+-]*[A-Za-z0-9_+-]\.[A-Za-z0-9]+)")
+ASSIGNMENT = re.compile(r'^\s*(?:local\s+)?([A-Za-z_]\w*)="([^"]*)"', re.MULTILINE)
+PATCH_CALL = re.compile(r"^\s*handle_patch\s+(?!\()(.+)$", re.MULTILINE)
+SOURCE_ROOT_REPOSITORY = re.compile(r"^\$(?:src_root|\{src_root\})((?:/[A-Za-z0-9_+-][A-Za-z0-9_.+-]*)*)$")
+PATCH_FILE = re.compile(r"(?:^|/)patches/([A-Za-z0-9_.-]+\.patch)$")
 RESOURCE_LINE = re.compile(r'^\s*patch_dependency\s+"[^"]*"\s+"([^"]+)"\s+"[^"]*"\s+"(res/[^"]+)"', re.MULTILINE)
 
 
@@ -337,6 +343,52 @@ def _script_text(wc, name):
         return ""
 
 
+def _variables(text):
+    return {name: value for name, value in ASSIGNMENT.findall(text)}
+
+
+def _expand(token, variables, depth=0):
+    """A shell word with simple `$name` / `${name}` references replaced by the script's own quoted assignments."""
+    if depth > 5:
+        return token
+    return re.sub(r"\$(?:\{(\w+)\}|(\w+))",
+                  lambda match: _expand(variables[match.group(1) or match.group(2)], variables, depth + 1)
+                  if (match.group(1) or match.group(2)) in variables else match.group(0), token)
+
+
+def patch_applications(wc):
+    """The (repository path relative to the source root, patch file) pairs applyPatches.sh applies.
+
+    The supported interface is one `handle_patch "<label>" "<repository>" "<patch>"` call per patch, where the
+    repository is `$src_root` or `$src_root/<directory>` and the patch is a `patches/<name>.patch` file (given
+    directly or through a variable assigned to one in the script). Returns (None, []) when the script makes no
+    such calls, and problems for any call the interface does not describe completely.
+    """
+    text = _script_text(wc, "applyPatches.sh")
+    variables = _variables(text)
+    applications, problems = [], []
+    for match in PATCH_CALL.finditer(text):
+        try:
+            words = shlex.split(match.group(1), comments=True)
+        except ValueError as error:
+            problems.append({"path": "applyPatches.sh", "reason": "cannot read a patch call (%s)" % error})
+            continue
+        words = words[:words.index("||")] if "||" in words else words
+        words = words[:words.index("&&")] if "&&" in words else words
+        if len(words) < 3:
+            problems.append({"path": "applyPatches.sh", "reason": "a patch call names no repository or patch: %s" %
+                             match.group(0).strip()})
+            continue
+        repository = SOURCE_ROOT_REPOSITORY.match(_expand(words[1], {}))
+        patch = PATCH_FILE.search(_expand(words[2], variables))
+        if repository is None or patch is None:
+            problems.append({"path": "applyPatches.sh", "reason": "cannot tell which repository or patch this call "
+                             "uses: %s" % match.group(0).strip()})
+            continue
+        applications.append((repository.group(1).lstrip("/"), patch.group(1)))
+    return (applications or None), problems
+
+
 def applied_patches(wc):
     """Patch files the apply script names; every patch in the directory when it names none."""
     named = sorted({name for name in PATCH_REFERENCE.findall(_script_text(wc, "applyPatches.sh"))
@@ -349,34 +401,60 @@ def directly_edited_files(wc):
     return sorted(set(SOURCE_FILE_REFERENCE.findall(_script_text(wc, "applyPatches.sh"))))
 
 
-def write_inventory(identity, wc, log=None):
-    """Every source file support preparation may write, by owning repository: {key: (repo, path)}.
+def owning_repository(repositories, path):
+    """The most deeply nested repository that contains `path`."""
+    return max((repo for repo in repositories if Path(path).is_relative_to(repo)), key=lambda repo: len(repo.parts),
+               default=None)
 
-    Patch paths are relative to the repository each patch is applied in, so the owner is the repository
-    that tracks the path (or, for an untracked file, holds it). Keys are paths relative to the Chromium
-    source root. Problems list patches or files whose format or owner cannot be established; preparation
-    must not run while any remain.
+
+def _patch_targets(wc, name, problems):
+    try:
+        return parse_patch_targets((Path(wc) / "patches" / name).read_text(encoding="utf-8"))
+    except (UnknownPatchFormat, OSError, UnicodeDecodeError) as error:
+        problems.append({"path": "patches/" + name, "reason": "patch format not recognised (%s)" % error})
+        return set()
+
+
+def write_inventory(identity, wc, log=None):
+    """Every source file support patch application may write, by owning repository: {key: (repo, path)}.
+
+    Keys are paths relative to the Chromium source root; values are the owning repository and the path inside
+    it. Patch calls in the supported interface name their repository. A script without such calls falls back to
+    every patch it names, owned by whichever repository tracks the path. Direct `$src_root/<file>` edits are owned
+    by the deepest repository containing the file. Problems list patches, calls, or files whose format or owner
+    cannot be established; preparation must not run while any remain.
     """
-    files, problems, wanted = {}, [], {}
-    for name in applied_patches(wc):
-        try:
-            for relative in parse_patch_targets((Path(wc) / "patches" / name).read_text(encoding="utf-8")):
+    files, problems = {}, []
+    scope = sync_scope.sync_repositories(identity)
+    applications, problems = patch_applications(wc)
+    if applications is not None:
+        for relative_repository, name in applications:
+            repo = identity.src / relative_repository if relative_repository else identity.src
+            if not (repo / ".git").exists():
+                problems.append({"path": relative_repository or ".", "reason": "%s is applied in a repository "
+                                 "that does not exist here" % name})
+                continue
+            for target in _patch_targets(wc, name, problems):
+                files[os.path.relpath(repo / target, identity.src)] = (repo, target)
+    else:
+        problems += [{"path": problem, "reason": "incomplete evidence"} for problem in scope.problems]
+        wanted = {}
+        for name in applied_patches(wc):
+            for relative in _patch_targets(wc, name, problems):
                 wanted.setdefault(relative, name)
-        except (UnknownPatchFormat, OSError, UnicodeDecodeError) as error:
-            problems.append({"path": "patches/" + name, "reason": "patch format not recognised (%s)" % error})
+        tracked = {repo: gitstate.tracked_paths(repo, wanted, log) for repo in scope.repositories}
+        for relative, origin in sorted(wanted.items()):
+            holders = [repo for repo in scope.repositories if relative in tracked[repo]]
+            holders = holders or [repo for repo in scope.repositories if (repo / relative).exists()]
+            if len(holders) > 1:
+                problems.append({"path": relative, "reason": "%s writes it, but it belongs to more than one "
+                                 "repository (%s)" % (origin, ", ".join(str(repo) for repo in holders))})
+                continue
+            repo = holders[0] if holders else identity.src
+            files[os.path.relpath(repo / relative, identity.src)] = (repo, relative)
     for relative in directly_edited_files(wc):
-        wanted.setdefault(relative, "applyPatches.sh")
-    repositories = gitstate.nested_repositories(identity.src)
-    tracked = {repo: gitstate.tracked_paths(repo, wanted, log) for repo in repositories}
-    for relative, origin in sorted(wanted.items()):
-        holders = [repo for repo in repositories if relative in tracked[repo]]
-        holders = holders or [repo for repo in repositories if (repo / relative).exists()]
-        if len(holders) > 1:
-            problems.append({"path": relative, "reason": "%s writes it, but it belongs to more than one "
-                             "repository (%s)" % (origin, ", ".join(str(repo) for repo in holders))})
-            continue
-        repo = holders[0] if holders else identity.src
-        files[os.path.relpath(repo / relative, identity.src)] = (repo, relative)
+        owner = owning_repository(scope.repositories, identity.src / relative) or identity.src
+        files[relative] = (owner, os.path.relpath(identity.src / relative, owner))
     return files, problems
 
 
@@ -456,9 +534,10 @@ def planned_writes(identity, wc, scripts, log=None):
 class SupportPlan:
     """What preparation must do. `scripts` are the support scripts to run, in order."""
 
-    def __init__(self, action, reason, evidence=None, conflicts=None, scripts=()):
+    def __init__(self, action, reason, evidence=None, conflicts=None, scripts=(), declared=()):
         self.action, self.reason, self.evidence = action, reason, evidence or {}
         self.conflicts, self.scripts = conflicts or [], tuple(scripts)
+        self.declared = tuple(declared)  # absolute paths (files or directories) the scripts are declared to write
 
 
 def protected_work(identity, wc, receipt, scripts, log=None):
@@ -475,15 +554,62 @@ def protected_work(identity, wc, receipt, scripts, log=None):
                     conflicts.append({"path": key, "reason": "has local edits that applying support patches "
                                       "could overwrite"})
     if "copyMacRes.sh" in scripts:
-        recorded = (receipt or {}).get("resources", {})
-        for key, origin, copied in resource_destinations(identity, wc):
-            previous = recorded.get(key)
-            if previous is None or not origin.exists():
-                continue
-            for relative, signature in resource_signature(origin, copied).items():
-                if previous.get(relative) != signature:
-                    conflicts.append({"path": os.path.join(key, relative), "reason": "changed since the last "
-                                      "support refresh and would be replaced by the support resource"})
+        conflicts += resource_conflicts(identity, wc, (receipt or {}).get("resources") or {}, log)
+    return conflicts
+
+
+def _identical(origin, copied):
+    """Whether an existing destination file is a copy of the support file (Mach-O files are re-signed after copying)."""
+    if os.path.islink(copied) or not os.path.isfile(copied) or not os.path.isfile(origin):
+        return False
+    if _is_macho(origin):
+        return _is_macho(copied)
+    return filecmp.cmp(origin, copied, shallow=False)
+
+
+def _tracked_and_unmodified(identity, files, log):
+    """Which of the given destination files a repository tracks and Git shows unchanged: Chromium's own dependency files."""
+    repositories = sync_scope.sync_repositories(identity).repositories
+    by_owner = {}
+    for path in files:
+        owner = owning_repository(repositories, path)
+        if owner is not None:
+            by_owner.setdefault(owner, []).append(os.path.relpath(path, owner))
+    safe = set()
+    for owner, relatives in by_owner.items():
+        for start in range(0, len(relatives), 200):
+            chunk = relatives[start:start + 200]
+            tracked = gitstate.tracked_paths(owner, chunk, log)
+            safe |= {owner / name for name in tracked - gitstate.changed_paths(owner, tracked, log)}
+    return safe
+
+
+def resource_conflicts(identity, wc, recorded, log=None):
+    """Destination files a resource copy would replace that may hold work the scaffold cannot account for.
+
+    A file is the scaffold's to replace when the last refresh left it exactly as recorded, when it is identical to
+    the support resource, or when a repository tracks it and Git shows no change (a dependency Chromium supplied).
+    A file with a record that no longer matches was changed since. A file with no record, and none of that
+    evidence, is reported: an absent record never means an absence of local work.
+    """
+    conflicts, unknown = [], {}
+    for key, origin, copied in resource_destinations(identity, wc):
+        if not origin.exists():
+            continue
+        previous = recorded.get(key) or {}
+        for relative, signature in resource_signature(origin, copied).items():
+            display = os.path.join(key, relative) if relative else key
+            if relative in previous:
+                if previous[relative] != signature:
+                    conflicts.append({"path": display, "reason": "changed since the last support refresh and would be "
+                                      "replaced by the support resource"})
+            elif not _identical(origin / relative if relative else origin, copied / relative if relative else copied):
+                unknown[copied / relative if relative else copied] = display
+    safe = _tracked_and_unmodified(identity, unknown, log) if unknown else set()
+    conflicts += [{"path": display, "reason": "exists without a record of where it came from, differs from the support "
+                   "resource, and is not an unmodified tracked dependency file; move it aside (sync restores fetched "
+                   "dependencies) or restore it, then repeat"}
+                  for path, display in sorted(unknown.items(), key=lambda item: item[1]) if path not in safe]
     return conflicts
 
 
@@ -526,7 +652,9 @@ def plan_preparation(ctx, identity, log=None):
     scripts = [name for name, done in (("applyPatches.sh", patched_ok), ("copyMacRes.sh", current))
                if not (done and settled)]
     conflicts = protected_work(identity, wc, receipt, scripts, log)
-    return SupportPlan("conflict" if conflicts else "refresh", "; ".join(reasons), evidence, conflicts, scripts)
+    declared = [identity.src / key for key in planned_writes(identity, wc, scripts, log)] if not conflicts else []
+    return SupportPlan("conflict" if conflicts else "refresh", "; ".join(reasons), evidence, conflicts, scripts,
+                       declared)
 
 
 def _read_state(identity, state_root):
@@ -555,8 +683,14 @@ def record_state(identity, state_root, plan, log=None):
 
 
 def refresh(ctx, identity, loaded, plan, log=None):
-    """Run the support scripts the plan names, then record the result. Mutates the checkout."""
+    """Run the support scripts the plan names, then record the result. Mutates the checkout.
+
+    The scripts are shell code, so their effects are checked afterwards against what the plan declared: a
+    change to a tracked file outside it is reported, and nothing is recorded as done.
+    """
     wc = working_copy(identity)
+    scope = sync_scope.sync_repositories(identity)
+    before = sync_scope.snapshot(identity, scope, log, include_core=True)
     steps = []
     for script in plan.scripts:
         argv = ["bash", "./" + script]
@@ -565,6 +699,18 @@ def refresh(ctx, identity, loaded, plan, log=None):
         if code != 0:
             raise ScaffoldError("CHILD_FAILED", "%s failed (exit %d)." % (script, code),
                                 details={"argv": argv, "cwd": str(wc)}, child_exit_code=code)
+    changed = sync_scope.changed_between(identity, before, sync_scope.snapshot(identity, scope, log, include_core=True))
+    strays = sorted(str(path.relative_to(identity.src)) for path in changed
+                    if not any(path == declared or path.is_relative_to(declared) for declared in plan.declared))
+    if strays:
+        raise ScaffoldError(
+            "PREPARATION_CONFLICT",
+            "Support preparation changed %d tracked file(s) outside what it declares, so its effects are not "
+            "fully understood and nothing was recorded as prepared." % len(strays),
+            details={"files": [{"path": path, "reason": "changed by a support script but not declared by it"}
+                               for path in strays[:50]], "total": len(strays), "checkout": str(identity.core)},
+            repairs=[repair(["git", "-C", str(identity.src), "status", "--short"],
+                            note="Review what the script changed; nothing was reverted.")])
     recorded = record_state(identity, ctx.state_root, plan, log)
     return {"steps": steps, "recorded": recorded}
 
