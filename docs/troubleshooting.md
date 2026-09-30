@@ -76,8 +76,9 @@ satisfies this and never causes a failure by itself.
 runs the checkout's payload installer. Run it only when the checkout may change.
 `bdev doctor` and `bdev context` show the same checks without changing anything.
 
-A tool that resolves (through links) outside the checkout's `third_party/node` payload,
-or a `vpython3` outside its depot_tools directory, is treated as missing.
+A tool that resolves (through links, including a linked payload directory or ancestor)
+outside the checkout is treated as missing, and so is a checkout with no local `vpython3` even
+when the approved environment names one elsewhere.
 
 If the message says the pinned payload cannot be verified, the checkout's payload
 metadata (`tools/cr/extra_deps.py`) is missing or unreadable. A compatible version

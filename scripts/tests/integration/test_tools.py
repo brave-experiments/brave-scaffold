@@ -273,6 +273,90 @@ class PackageExecutionTests(SandboxTest):
 
 
 @unittest.skipUnless(shutil.which("direnv"), "direnv is required")
+@unittest.skipUnless(shutil.which("direnv"), "direnv is required")
+class ToolLocalityTests(SandboxTest):
+    """Tools must live inside the selected checkout, however the directories that hold them are linked."""
+
+    def setUp(self):
+        super().setUp()
+        self.core = self.sandbox.make_checkout("main")
+        self.sandbox.prepare_environment("main")
+        self.config = str(self.sandbox.config)
+        self.external = self.sandbox.root / "external"
+        self.external.mkdir()
+
+    def move_out_and_link_back(self, path, name):
+        target = self.external / name
+        shutil.move(str(path), str(target))
+        path.symlink_to(target)
+
+    def bpm(self):
+        return self.sandbox.bdev("--json", "--config", self.config, "--checkout", "main", "run", "x", tool="bpm")
+
+    def assert_refused(self):
+        result = self.bpm()
+        self.assertEqual(result.returncode, 3, result.stdout + result.stderr)
+        self.assertEqual(self.sandbox.records(), [], "no foreign tool ran")
+        return json.loads(result.stdout)
+
+    def test_a_whole_node_payload_directory_linked_from_outside_is_rejected(self):
+        self.move_out_and_link_back(self.core / "third_party" / "node", "node")
+        self.assertIn("outside", json.dumps(self.assert_refused()["error"]))
+
+    def test_a_whole_depot_tools_directory_linked_from_outside_is_rejected(self):
+        self.move_out_and_link_back(self.core / "vendor" / "depot_tools", "depot_tools")
+        self.assert_refused()
+        result = self.sandbox.bdev("--json", "vpython3", "--config", self.config, "--checkout", "main", "--", "a.py")
+        self.assertEqual(result.returncode, 3, result.stdout + result.stderr)
+        self.assertEqual(self.sandbox.records(), [])
+
+    def test_a_linked_ancestor_of_the_payload_is_rejected(self):
+        self.move_out_and_link_back(self.core / "third_party", "third_party")
+        self.assert_refused()
+
+    def test_another_checkouts_payload_is_rejected(self):
+        other = self.sandbox.make_checkout("other")
+        node_dir = self.core / "third_party" / "node" / "node-mac-arm64"
+        shutil.rmtree(node_dir)
+        node_dir.symlink_to(other / "third_party" / "node" / "node-mac-arm64")
+        self.assertIn("outside", json.dumps(self.assert_refused()["error"]))
+
+    def test_links_that_stay_inside_the_checkout_are_fine(self):
+        node = self.core / "third_party" / "node"
+        node.rename(self.core / "third_party" / "node-real")
+        node.symlink_to(self.core / "third_party" / "node-real")
+        depot = self.core / "vendor" / "depot_tools"
+        depot.rename(self.core / "vendor" / "depot_real")
+        depot.symlink_to(self.core / "vendor" / "depot_real")
+        result = self.sandbox.bdev("--config", self.config, "--checkout", "main", "run", "x", tool="bpm")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(len(self.sandbox.records()), 1)
+
+    def test_an_environment_cannot_supply_a_python_the_checkout_lacks(self):
+        foreign = self.external / "depot_tools"
+        shutil.move(str(self.core / "vendor" / "depot_tools"), str(foreign))
+        directory = self.sandbox.root / "config" / "environments" / "main"
+        (directory / ".envrc").write_text("\n".join([
+            'export BRAVE_BROWSER_DIR="%s"' % self.core.parents[3], 'export BRAVE_SRC_ROOT="%s"' % self.core.parent,
+            'export BRAVE_CORE_DIR="%s"' % self.core, 'export BRAVE_DEPOT_TOOLS_DIR="%s"' % foreign,
+            'export VPYTHON3="%s/vpython3"' % foreign, ""]))
+        self.sandbox.approve("main")
+        result = self.sandbox.bdev("--json", "vpython3", "--config", self.config, "--checkout", "main", "--", "a.py")
+        document = json.loads(result.stdout)
+        self.assertEqual((result.returncode, document["error"]["code"]), (3, "LOCAL_TOOL_MISSING"), result.stderr)
+        self.assertEqual(self.sandbox.records(), [], "the foreign interpreter never ran")
+        self.assertEqual(self.bpm().returncode, 3)
+        self.assertEqual(self.sandbox.records(), [])
+
+    def test_repair_does_not_write_through_a_payload_directory_that_leaves_the_checkout(self):
+        self.move_out_and_link_back(self.core / "third_party" / "node", "node")
+        self.sandbox.mark_stale("main")
+        result = self.sandbox.bdev("--json", "tools", "setup", "--checkout", "main", "--config", self.config)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual([r for r in self.sandbox.records() if r["tool"] == "installer"], [])
+
+
+@unittest.skipUnless(shutil.which("direnv"), "direnv is required")
 class DirectPythonTests(SandboxTest):
     def setUp(self):
         super().setUp()

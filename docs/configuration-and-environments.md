@@ -179,8 +179,13 @@ missing or stale, the command stops and names the explicit repair,
 `bdev tools setup --checkout <name>`, which runs the checkout's own payload
 installer. Run it only when you intend the checkout to change.
 
-A tool counts as local only if it resolves, after following links, inside the
-checkout's `third_party/node` payload (`vpython3`: inside its depot_tools directory).
-It also has to be verifiable: the checkout's payload metadata must report the pinned
+A tool counts as local only if it resolves, after following every link, inside the
+checkout itself: Node and the package manager inside Core, `vpython3` inside Chromium's source
+root. The comparison is against the checkout's frozen canonical path, so moving a whole payload
+directory (`third_party/node`, `vendor/depot_tools`) outside and linking it back does not make
+its contents local, while links that stay inside the checkout are fine. If the checkout has no
+local `vpython3`, an approved environment cannot provide one: `bdev vpython3` and package
+commands stop with `LOCAL_TOOL_MISSING`, and `bdev tools setup` refuses to install through a
+`third_party/node` that leaves the checkout. It also has to be verifiable: the checkout's payload metadata must report the pinned
 Node (and, for pnpm checkouts, pnpm) as deployed. Without that evidence, or with a
 compatible version but no pin to compare it to, the command stops.

@@ -38,16 +38,34 @@ class DerivedEnv:
 
 
 def resolves_inside(path, root):
-    """Whether `path` (after following every link) lies within `root` (also resolved)."""
+    """Whether `path` (after following every link) lies within `root` (also resolved).
+
+    `root` must be the frozen checkout directory, never a directory found inside the checkout that could itself
+    be a link: a payload directory linked from outside would otherwise move both sides of the comparison.
+    """
     real, base = os.path.realpath(path), os.path.realpath(root)
     return real == base or real.startswith(base + os.sep)
 
 
 def find_depot_tools(identity):
+    """The checkout's own depot_tools directory, anchored in the frozen Chromium source root."""
     for candidate in (identity.core / "vendor" / "depot_tools", identity.src / "third_party" / "depot_tools"):
-        if os.access(candidate / "vpython3", os.X_OK) and resolves_inside(candidate / "vpython3", candidate):
+        if os.access(candidate / "vpython3", os.X_OK) and resolves_inside(candidate / "vpython3", identity.src):
             return candidate
     return None
+
+
+def require_depot_tools(identity):
+    depot = find_depot_tools(identity)
+    if depot is None:
+        raise ScaffoldError(
+            "LOCAL_TOOL_MISSING",
+            "No checkout-local vpython3 exists under %s or %s. An environment cannot supply one from outside the "
+            "checkout." % (identity.core / "vendor" / "depot_tools", identity.src / "third_party" / "depot_tools"),
+            details={"tool": "vpython3", "checkout": str(identity.core)},
+            repairs=[repair(["bdev", "tools", "setup", "--checkout", str(identity.core)],
+                            note="Explicit repair of checkout-local tools; run only when authorized.")])
+    return depot
 
 
 def _remove_entry(value, entry):
@@ -58,15 +76,7 @@ def _remove_entry(value, entry):
 
 def derive_env(identity, environ, with_pythonpath=False):
     """Compute checkout exports from identity alone. Never runs anything."""
-    depot = find_depot_tools(identity)
-    if depot is None:
-        raise ScaffoldError(
-            "LOCAL_TOOL_MISSING",
-            "No checkout-local vpython3 exists under %s or %s." % (
-                identity.core / "vendor" / "depot_tools", identity.src / "third_party" / "depot_tools"),
-            details={"tool": "vpython3", "checkout": str(identity.core)},
-            repairs=[repair(["bdev", "tools", "setup", "--checkout", str(identity.core)],
-                            note="Explicit repair of checkout-local tools; run only when authorized.")])
+    depot = require_depot_tools(identity)
     pythonpath_dir = identity.core / "script"
     path_entries = _remove_entry(environ.get("PATH", ""), environ.get("BRAVE_DEPOT_TOOLS_DIR", ""))
     path_entries = [item for item in path_entries if item != str(depot)]
@@ -242,15 +252,14 @@ def load_environment(identity, environ, log=None, with_pythonpath=False):
 
 def check_identity(identity, loaded, with_pythonpath=False):
     """Raise CHECKOUT_ENV_CONFLICT unless the environment names this checkout."""
-    depot = find_depot_tools(identity)
+    depot = require_depot_tools(identity)
     expected = {
         "BRAVE_BROWSER_DIR": identity.outer,
         "BRAVE_SRC_ROOT": identity.src,
         "BRAVE_CORE_DIR": identity.core,
+        "BRAVE_DEPOT_TOOLS_DIR": depot,
+        "VPYTHON3": depot / "vpython3",
     }
-    if depot is not None:
-        expected["BRAVE_DEPOT_TOOLS_DIR"] = depot
-        expected["VPYTHON3"] = depot / "vpython3"
     problems = []
     for name, want in expected.items():
         got = loaded.get(name)

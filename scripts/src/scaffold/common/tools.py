@@ -164,6 +164,15 @@ def node_layout(core):
     }
 
 
+def payload_escapes(identity):
+    """Where the checkout's Node payload directory really is, when that is outside the checkout; else None.
+
+    Repair installs into this directory, so a link that leaves the checkout would make it write there.
+    """
+    payload = Path(identity.core) / "third_party" / "node"
+    return os.path.realpath(payload) if os.path.lexists(payload) and not resolves_inside(payload, identity.core) else None
+
+
 def _package_version(path):
     try:
         return json.loads(Path(path).read_text(encoding="utf-8")).get("version")
@@ -235,12 +244,11 @@ def inspect_toolchain(identity, log=None):
     except ScaffoldError as error:
         add("local-node", BLOCKER, error.message)
         return None, checks
-    payload_root = Path(identity.core) / "third_party" / "node"
     if not os.access(layout["node"], os.X_OK):
         add("local-node", BLOCKER, "Checkout-local Node is missing: %s" % layout["node"], path=str(layout["node"]))
         node_version = None
-    elif not resolves_inside(layout["node"], payload_root):
-        add("local-node", BLOCKER, "Node at %s resolves outside the checkout's payload (%s)." % (
+    elif not resolves_inside(layout["node"], identity.core):
+        add("local-node", BLOCKER, "Node at %s resolves outside the checkout (%s)." % (
             layout["node"], os.path.realpath(layout["node"])), path=str(layout["node"]))
         node_version = None
     else:
@@ -271,8 +279,8 @@ def inspect_toolchain(identity, log=None):
     if not entry.is_file() or manager_version is None:
         add("local-package-manager", BLOCKER, "Checkout-local %s is missing: %s" % (declaration.manager, entry),
             path=str(entry))
-    elif not (resolves_inside(entry, payload_root) and resolves_inside(package, payload_root)):
-        add("local-package-manager", BLOCKER, "%s at %s resolves outside the checkout's payload (%s)." % (
+    elif not (resolves_inside(entry, identity.core) and resolves_inside(package, identity.core)):
+        add("local-package-manager", BLOCKER, "%s at %s resolves outside the checkout (%s)." % (
             declaration.manager, entry, os.path.realpath(entry)), path=str(entry))
     elif declaration.manager_range and satisfies(manager_version, declaration.manager_range) is not True:
         verdict = satisfies(manager_version, declaration.manager_range)

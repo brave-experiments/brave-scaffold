@@ -106,6 +106,12 @@ def tools_setup(ctx):
             "DEPENDENCY_INCOMPATIBLE",
             "This checkout has no supported payload installer (%s); tool repair is not available for it." % installer,
             details={"checkout": str(identity.core)})
+    escaped = tools_module.payload_escapes(identity)
+    if escaped:
+        raise ScaffoldError(
+            "OWNERSHIP_CONFLICT",
+            "third_party/node resolves outside the checkout (%s), so repairing it would write there; nothing was "
+            "changed." % escaped, details={"payload": str(identity.core / "third_party" / "node"), "resolves_to": escaped})
     entries = [layout["node_entry_key"], layout["pnpm_entry_key"]]
     with track(ctx, "tools setup", identity, {"installer": str(installer), "entries": entries}) as op:
         ran = []
