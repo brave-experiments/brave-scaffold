@@ -140,7 +140,7 @@ def prepare_patches(ctx, identity, prepared, op):
                             "Patches were applied but %d file(s) still differ from their metadata." % len(after.files),
                             details={"files": sorted(after.files)[:50]},
                             repairs=[repair(["bdev", "drift", "--diff", "--checkout", str(identity.core)])])
-    patches.write_receipt(identity, plan.trees, patches.snapshot_files(identity, after), ctx.state_root)
+    patches.write_receipt(identity, plan.trees, patches.snapshot_files(identity, after), ctx.state_root, {})
     return True, plan
 
 
@@ -219,7 +219,10 @@ def perform_build(ctx, identity, effective, prepared, op, force_gn=False):
     changed, plan = prepare_patches(ctx, identity, prepared, op)
     android = effective.target == "android"
     if android:
-        changed = _android().prepare_support(ctx, identity, prepared, op, effective) or changed
+        refreshed = _android().prepare_support(ctx, identity, prepared, op, effective)
+        if refreshed:
+            patches.record_extra_expected(identity, ctx.state_root)
+        changed = refreshed or changed
     arguments = build_arguments(effective, "build", (), force_gn or changed)
     op.update(effective={"target": effective.target, "configuration": effective.configuration,
                          "arch": effective.arch, "output_dir": str(effective.output_dir),
@@ -433,7 +436,7 @@ def run_test_package(ctx, identity, effective, prepared, op, arguments):
     prepare_patches(ctx, identity, prepared, op)
     argv, state = run_output_step(ctx, identity, effective, prepared, op, arguments, "test",
                                   metal_environment(ctx) if effective.target == "mac" else {})
-    state.end_attempt(op.id, "succeeded")
+    state.end_attempt_completed(op.id)
     return argv
 
 

@@ -147,7 +147,39 @@ class AndroidBuildTests(AndroidTestCase):
         self.assertIn(["bdev", "sync", "android"], repairs)
 
 
+class SupportPatchedFileTests(AndroidTestCase):
+    def build_android(self):
+        result = self.sandbox.bdev("--json", "--config", self.config, "--checkout", "main", "build", "android",
+                                   env=self.env())
+        return result, json.loads(result.stdout)
+
+    def test_files_changed_by_support_preparation_are_expected_but_later_edits_are_not(self):
+        self.assertEqual(self.setup_support("v155").returncode, 0)
+        result, document = self.build_android()
+        self.assertEqual(document["status"], "ok", result.stderr)
+        self.assertIn("support edit", (self.src / "base" / "BUILD.gn").read_text())
+        plan = json.loads(self.sandbox.bdev("--json", "--config", self.config, "--checkout", "main", "build",
+                                            "android", "--plan", env=self.env()).stdout)
+        steps = {step["name"]: step for step in plan["data"]["plan"]["steps"]}
+        self.assertEqual(steps["patch-preparation"]["status"], "current")
+        result, document = self.build_android()
+        self.assertEqual(document["status"], "ok", "the second build does not treat support changes as local edits")
+        with open(self.src / "base" / "BUILD.gn", "a") as stream:
+            stream.write("my own experiment\n")
+        result, document = self.build_android()
+        self.assertEqual(document["error"]["code"], "PREPARATION_CONFLICT")
+
+
 class SupportWorkingCopyTests(AndroidTestCase):
+    def test_a_shallow_local_source_still_produces_an_isolated_working_copy(self):
+        shallow = self.sandbox.root / "shallow-support"
+        subprocess.run(["git", "clone", "-q", "--depth", "1", "file://" + str(self.support), str(shallow)], check=True)
+        result = self.setup_support("v155", source=shallow)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.head(self.wc()), self.head(self.support))
+        self.assertTrue(subprocess.run(["git", "-C", str(self.wc()), "config", "lfs.storage"], capture_output=True,
+                                       text=True).stdout.strip().endswith("android-support-lfs"))
+
     def test_two_checkouts_use_different_revisions_without_sharing_a_working_copy(self):
         other = self.sandbox.make_checkout("other", git=True)
         (other.parent / "chrome").mkdir()
@@ -164,7 +196,8 @@ class SupportWorkingCopyTests(AndroidTestCase):
         self.assertEqual(self.setup_support("v154", checkout="other").returncode, 0)
         self.assertEqual(self.head(self.wc("main")), main_head, "the first working copy was not switched")
         self.assertNotEqual(self.head(self.wc("main")), self.head(self.wc("other")))
-        self.assertEqual(len(list((Path(self.config).parent / ".bdev" / "cache").iterdir())), 1, "one shared cache")
+        self.assertEqual(sorted(item.name for item in (Path(self.config).parent / ".bdev" / "cache").iterdir()),
+                         ["android-support-lfs", "android-support.git"], "one shared object cache and large-file store")
         result = self.sandbox.bdev("--json", "--config", self.config, "build", "android", "--checkout", "other",
                                    env=self.env())
         self.assertEqual(json.loads(result.stdout)["status"], "ok", result.stderr)

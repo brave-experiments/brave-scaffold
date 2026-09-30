@@ -32,6 +32,9 @@ if [ "$1" = "-v" ]; then
 fi
 cp patches/marker ../src/SUPPORT_PATCHED
 mkdir -p ../src/base && echo "support patched" > ../src/base/support_target.cc
+if [ -f ../src/base/BUILD.gn ] && ! grep -q "support edit" ../src/base/BUILD.gn; then
+  echo "support edit" >> ../src/base/BUILD.gn
+fi
 """
 
 FAKE_ADB = """#!%(python)s

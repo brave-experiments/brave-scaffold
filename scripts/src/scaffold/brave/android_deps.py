@@ -16,6 +16,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import tomllib
 from pathlib import Path
 
@@ -98,14 +99,20 @@ def setup_working_copy(identity, state_root, source, ref, log=None):
                             "%s exists but is not a Git working copy; move it aside yourself and repeat." % wc,
                             details={"path": str(wc)})
     if facts is None:
-        cloned = run_capture(["git", "clone", "--reference", str(cache), source, str(wc)], str(wc.parent), None, log,
+        # A local clone hardlinks the cache's objects; unlike an alternates reference it also works when
+        # the cache is shallow and does not break if the cache is later removed.
+        cloned = run_capture(["git", "clone", str(cache), str(wc)], str(wc.parent), _no_smudge_env(), log,
                              timeout=3600)
+        if cloned.returncode == 0:
+            cloned = run_capture(["git", "-C", str(wc), "remote", "set-url", "origin", source], str(wc), None, log,
+                                 timeout=60)
         if cloned.returncode != 0:
             raise ScaffoldError("CHILD_FAILED", "Creating the working copy failed: %s" % cloned.stderr.strip()[-500:],
                                 details={"path": str(wc)}, child_exit_code=cloned.returncode)
         target = ref or metadata()["default_ref"]
         if ref or target != (inspect_working_copy(wc, log) or {}).get("branch"):
             _checkout(wc, target, log)
+        materialize_lfs(wc, source, cache.parent / "android-support-lfs", log)
         created = True
     else:
         created = False
@@ -121,12 +128,56 @@ def setup_working_copy(identity, state_root, source, ref, log=None):
                 raise ScaffoldError("CHILD_FAILED", "Fetching into the working copy failed.",
                                     child_exit_code=fetch.returncode)
             _checkout(wc, ref, log)
+            materialize_lfs(wc, source, cache.parent / "android-support-lfs", log)
     return {"cache": str(cache), "cache_action": action, "working_copy": inspect_working_copy(wc, log),
             "created": created}
 
 
+def _no_smudge_env():
+    return {**os.environ, "GIT_LFS_SKIP_SMUDGE": "1"}
+
+
+def _seed_lfs_store(source, store):
+    """Hardlink (or copy) large-file objects of a local source repository into the shared store.
+
+    Large-file objects are named by their content hash, so one store can safely serve every working copy.
+    """
+    objects = Path(str(source)) / ".git" / "lfs" / "objects"
+    if not objects.is_dir():
+        return
+    for path in objects.rglob("*"):
+        if not path.is_file():
+            continue
+        target = store / "objects" / path.relative_to(objects)
+        if target.exists():
+            continue
+        target.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            os.link(path, target)
+        except OSError:
+            shutil.copy2(path, target)
+
+
+def materialize_lfs(wc, source, store, log=None):
+    """Write the working copy's large files from the shared store, fetching only what is missing."""
+    store.mkdir(parents=True, exist_ok=True)
+    if os.path.isdir(str(source)):
+        _seed_lfs_store(source, store)
+    _git(wc, ["config", "lfs.storage", str(store)], log)
+    checkout = _git(wc, ["lfs", "checkout"], log, timeout=1800)
+    if checkout.returncode != 0:
+        pull = _git(wc, ["lfs", "pull"], log, timeout=3600)
+        if pull.returncode != 0:
+            raise ScaffoldError(
+                "CHILD_FAILED", "Fetching the support repository's large files failed: %s" %
+                (pull.stderr.strip() or checkout.stderr.strip())[-400:],
+                details={"path": str(wc)}, child_exit_code=pull.returncode,
+                repairs=[repair(["git", "-C", str(wc), "lfs", "pull"],
+                                note="Uses the network and your Git credentials; run it after fixing access.")])
+
+
 def _checkout(wc, ref, log):
-    result = _git(wc, ["checkout", "-q", ref], log)
+    result = run_capture(["git", "-C", str(wc), "checkout", "-q", ref], str(wc), _no_smudge_env(), log, timeout=300)
     if result.returncode != 0:
         raise ScaffoldError("DEPENDENCY_INCOMPATIBLE", "The ref %r does not exist in the support repository." % ref,
                             details={"stderr": result.stderr.strip()[-300:]})

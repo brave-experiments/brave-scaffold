@@ -168,6 +168,17 @@ class RunTests(BuildTestCase):
         result, document = self.run_app("--artifact", str(self.output_app()))
         self.assertEqual(document["data"]["run"]["freshness"]["status"], "current")
 
+    def test_a_passing_test_run_does_not_leave_the_output_marked_uncertain(self):
+        self.build()
+        result, document = self.document("test", "brave_unit_tests")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(self.state().needs_revalidation)
+        self.assertEqual(self.state().last_attempt()["outcome"], "succeeded")
+        result, document = self.run_app()
+        self.assertEqual(document["data"]["run"]["freshness"]["status"], "current")
+        self.document("test", "brave_unit_tests", env=self.env(FAKE_EXIT="1"))
+        self.assertTrue(self.state().needs_revalidation, "a failed test run still marks the output")
+
     def test_unusable_output_after_a_failed_rebuild_is_rejected(self):
         self.build()
         self.document("build", env=self.env(FAKE_EXIT="1"))

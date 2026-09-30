@@ -181,10 +181,34 @@ def snapshot_files(identity, report):
     return snapshot
 
 
-def write_receipt(identity, trees, files, root=None):
-    path = receipt_path(identity, root)
-    atomic_write(path, json.dumps({"patches_tree": trees.get("patches"), "rewrite_tree": trees.get("rewrite"),
-                                   "files": files}, sort_keys=True, indent=1) + "\n")
+def _sha_or_none(path):
+    try:
+        return sha256_file(path)
+    except OSError:
+        return None
+
+
+_CARRY = object()
+
+
+def write_receipt(identity, trees, files, root=None, extra_expected=_CARRY):
+    """Record patch inputs and file checksums. Expected extra changes are kept unless replaced."""
+    if extra_expected is _CARRY:
+        extra_expected = (read_receipt(identity, root) or {}).get("extra_expected") or {}
+    data = {"patches_tree": trees.get("patches"), "rewrite_tree": trees.get("rewrite"), "files": files,
+            "extra_expected": extra_expected}
+    atomic_write(receipt_path(identity, root), json.dumps(data, sort_keys=True, indent=1) + "\n")
+
+
+def record_extra_expected(identity, root=None):
+    """After a verified step changed patched files, remember exactly what it wrote there."""
+    receipt = read_receipt(identity, root)
+    if receipt is None:
+        return
+    report = collect_drift(identity)
+    receipt["extra_expected"] = {repo_path: _sha_or_none(identity.src / repo_path)
+                                 for repo_path, entry in report.files.items() if entry.reasons == {SOURCE_CHANGED}}
+    atomic_write(receipt_path(identity, root), json.dumps(receipt, sort_keys=True, indent=1) + "\n")
 
 
 @dataclass
@@ -200,8 +224,14 @@ class PatchPlan:
 def plan_patch_preparation(identity, log=None, root=None):
     """Decide whether patches need applying and whether applying could lose local work."""
     report = collect_drift(identity)
-    trees, dirty = patch_inputs(identity, log)
     receipt = read_receipt(identity, root)
+    # Another verified step (for example Android support preparation) may change patched files on
+    # top of Core's patches. Those files are expected while they still hold what that step wrote.
+    for repo_path, expected in ((receipt or {}).get("extra_expected") or {}).items():
+        entry = report.files.get(repo_path)
+        if entry is not None and entry.reasons == {SOURCE_CHANGED} and _sha_or_none(identity.src / repo_path) == expected:
+            del report.files[repo_path]
+    trees, dirty = patch_inputs(identity, log)
     inputs_changed = (receipt is None or receipt.get("patches_tree") != trees["patches"]
                       or receipt.get("rewrite_tree") != trees["rewrite"])
     if report.unverifiable:

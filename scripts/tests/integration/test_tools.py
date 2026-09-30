@@ -93,16 +93,16 @@ class PackageExecutionTests(SandboxTest):
         self.assertEqual(document["status"], "ok")
 
     def test_older_npm_declaration_gets_a_separator_and_pnpm_does_not(self):
-        legacy = self.sandbox.make_checkout("legacy", declaration=False)
+        older_npm = self.sandbox.make_checkout("older_npm", declaration=False)
         self.sandbox.write_config([("main", self.core, "environments/main"),
-                                   ("legacy", legacy, "environments/legacy")])
-        self.sandbox.bdev("env", "init", "--checkout", "legacy", "--config", self.config)
-        self.sandbox.approve("legacy")
-        self.sandbox.bdev("--config", self.config, "--checkout", "legacy", "run", "sync", "--force", "", "a b",
+                                   ("older_npm", older_npm, "environments/older_npm")])
+        self.sandbox.bdev("env", "init", "--checkout", "older_npm", "--config", self.config)
+        self.sandbox.approve("older_npm")
+        self.sandbox.bdev("--config", self.config, "--checkout", "older_npm", "run", "sync", "--force", "", "a b",
                           tool="bpm")
-        self.sandbox.bdev("--config", self.config, "--checkout", "legacy", "run", "sync", "--", "--force",
+        self.sandbox.bdev("--config", self.config, "--checkout", "older_npm", "run", "sync", "--", "--force",
                           tool="bpm")
-        self.sandbox.bdev("--config", self.config, "--checkout", "legacy", "install", tool="bpm")
+        self.sandbox.bdev("--config", self.config, "--checkout", "older_npm", "install", tool="bpm")
         self.bpm("run", "sync", "--force")
         argvs = [record["argv"][1:] for record in self.sandbox.records()]
         self.assertEqual(argvs[0], ["run", "sync", "--", "--force", "", "a b"])

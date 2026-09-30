@@ -60,7 +60,8 @@ def effective_target(explicit, config):
 
 # Combinations proven on a real checkout. A combination absent from this set is
 # reported as unverified, never as supported.
-VALIDATED = set()
+VALIDATED = {("mac", operation, "debug", "arm64") for operation in ("build", "test", "run", "drift")} | {
+    ("android", operation, "debug", "arm64") for operation in ("build", "run", "deploy")}
 # (target, operation) pairs whose commands exist in this release.
 AVAILABLE_OPERATIONS = {("mac", operation) for operation in
                         ("sync", "build", "test", "run", "clean", "drift", "patches-update")} | {

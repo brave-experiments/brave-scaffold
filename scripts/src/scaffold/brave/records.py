@@ -143,6 +143,15 @@ class OutputState:
                 attempt["outcome"] = outcome
         self.save()
 
+    def end_attempt_completed(self, operation_id):
+        """An attempt that wrote the output and finished cleanly without producing a new artifact record.
+
+        The output is consistent again, so it no longer needs revalidation; the earlier
+        success record keeps its own input fingerprint, which still decides staleness.
+        """
+        self.data["needs_revalidation"] = False
+        self.end_attempt(operation_id, "succeeded")
+
     def record_success(self, operation_id, artifact, fingerprint):
         if self.data["success"]:
             self.data["history"] = [*self.data["history"], self.data["success"]][-10:]
