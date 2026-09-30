@@ -55,18 +55,28 @@ like patch preparation does.
 ## Patch preparation
 
 Builds and tests apply Core patches only when the materialized Chromium files no
-longer match the patch metadata, and only when that cannot lose local work. Each
-patched file's checksum is compared with its metadata and with the state recorded
-the last time patches were applied here. A file that differs from both, or that
-differs with no earlier record, may hold local edits: the command stops with
-`PREPARATION_CONFLICT`, lists the files, and suggests `bdev drift --diff`. Missing
-or unreadable metadata is treated as uncertain, not clean.
+longer match the patch metadata, and only when that cannot lose local work.
 
-A patch that has no metadata yet cannot be compared that way, so its targets (read from
-the patch headers, whatever the prefix) are checked directly: a target with staged
-changes, unstaged edits, a deletion, a rename, or an untracked file at its path stops the
-command the same way, before anything is applied. If Git cannot answer, or the patch's
-targets cannot be read, the command stops as well.
+Core lists the repositories it patches in `patches/.repositories.cfg` (`//` is
+Chromium itself; entries such as `//v8` or `//third_party/ffmpeg` are separate Git
+repositories under it). Each repository's patches live in the matching directory
+under `patches/`, and a patch's metadata paths are relative to its repository. The
+scaffold reads that list, so nested repositories are checked and reported like
+Chromium, with paths relative to Chromium's source root (`v8/BUILD.gn`). Patch files in
+subdirectories with no repository list are incomplete evidence, not an empty result.
+
+Applying a patch resets every file it targets, so the command checks the whole write
+set of each patch Core would apply again: the files the current patch changes and the
+files its earlier metadata recorded. A file is safe when it still holds content the
+metadata or the scaffold's receipt recorded for it. Otherwise it may hold local work,
+and the command stops with `PREPARATION_CONFLICT`, lists the files, and suggests
+`bdev drift --diff`. That covers a file that differs from its metadata and from the
+receipt, a file with no earlier record, and a target a patch gained that has staged
+changes, unstaged edits, a deletion, a rename, or an untracked file at its path. A
+target nothing claims and Git shows as unchanged does not block. If Git cannot answer,
+a patch's targets cannot be read, or a patch's metadata is unusable (unreadable, another
+schema version, or any entry without a valid relative path and checksum), the command
+stops as well; one bad entry makes that patch's whole metadata untrusted.
 
 Resolve a conflict yourself: keep wanted edits with `bdev patches update` or
 restore the files, then run `bpm run apply_patches` if you want stale files
@@ -80,9 +90,11 @@ bdev drift --diff   # include each file's Git diff
 ```
 
 Read-only. Reasons are `source changed after patch applied`, `source file missing`,
-`patch file changed`, and `patch file removed`. Patches without metadata or
-unreadable metadata make the evidence incomplete, and the result says so instead of
-reporting a clean tree.
+`patch file changed`, and `patch file removed`. It covers every repository in
+`patches/.repositories.cfg`, and reports paths relative to Chromium's source root. Patches without
+metadata, unusable metadata (including any entry without a valid path and checksum), or
+an unreadable repository list make the evidence incomplete, and the result says so
+instead of reporting a clean tree.
 
 ## Update patches
 
