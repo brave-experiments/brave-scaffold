@@ -7,49 +7,16 @@
 from __future__ import annotations
 
 import os
-import re
 import shlex
 import signal
 import subprocess
 import sys
 from dataclasses import dataclass, field
 
+from .redaction import redact_argv
 from .results import Cancelled
 
-SECRET_NAME = re.compile(
-    r"(token|secret|passw(?:or)?d|api[-_]?key|auth(?:orization)?|credential|private[-_]?key)",
-    re.IGNORECASE)
-URL_CREDENTIALS = re.compile(r"(?P<scheme>[a-z][a-z0-9+.-]*://)(?P<user>[^/@\s:]+):(?P<secret>[^/@\s]+)@",
-                             re.IGNORECASE)
-REDACTED = "***"
 TERMINATE_GRACE_SECONDS = 10
-
-
-def redact_argv(argv):
-    """Hide secret values in separated and --key=value forms and in URLs."""
-    result = []
-    hide_next = False
-    for part in argv:
-        part = str(part)
-        if hide_next:
-            result.append(REDACTED)
-            hide_next = False
-            continue
-        if part.startswith("-") and "=" in part:
-            name, _, value = part.partition("=")
-            if SECRET_NAME.search(name):
-                result.append("%s=%s" % (name, REDACTED))
-                continue
-        elif part.startswith("-") and SECRET_NAME.search(part):
-            result.append(part)
-            hide_next = True
-            continue
-        elif "=" in part and not part.startswith("-") and SECRET_NAME.search(part.partition("=")[0]) \
-                and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", part.partition("=")[0]):
-            result.append("%s=%s" % (part.partition("=")[0], REDACTED))
-            continue
-        result.append(URL_CREDENTIALS.sub(r"\g<scheme>\g<user>:" + REDACTED + "@", part))
-    return result
 
 
 def format_command_block(argv, cwd):

@@ -11,6 +11,8 @@ import sys
 from dataclasses import dataclass, field
 from typing import Any
 
+from .redaction import redact_report, redact_url_credentials
+
 SCHEMA_VERSION = 1
 
 EXIT_OK = 0
@@ -115,6 +117,14 @@ class Result:
             "child_exit_code": self.child_exit_code,
         }
 
+    def redacted(self):
+        """A copy with secrets removed from everything that is shown or stored."""
+        safe = {name: redact_report(getattr(self, name)) for name in (
+            "context", "data", "checks", "warnings", "error", "artifacts", "logs")}
+        text = redact_url_credentials(self.text) if self.text else self.text
+        return Result(command=self.command, status=self.status, exit_code=self.exit_code,
+                      operation_id=self.operation_id, child_exit_code=self.child_exit_code, text=text, **safe)
+
     def add_warning(self, code, message, **details):
         record = {"code": code, "message": message}
         if details:
@@ -160,6 +170,7 @@ def _shell_join(argv):
 def emit(result, json_mode, stdout=None, stderr=None):
     stdout = stdout or sys.stdout
     stderr = stderr or sys.stderr
+    result = result.redacted()
     if json_mode:
         stdout.write(json.dumps(result.to_dict(), indent=2, sort_keys=False) + "\n")
         return

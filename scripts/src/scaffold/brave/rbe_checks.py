@@ -16,7 +16,8 @@ import shutil
 from pathlib import Path
 
 from ..common.checks import BLOCKER, NOT_CHECKED, PASS, WARNING, make_check
-from ..common.procs import URL_CREDENTIALS, REDACTED, run_capture
+from ..common.procs import run_capture
+from ..common.redaction import redact_url_credentials
 from ..common.results import ScaffoldError, repair
 
 MIN_FREE_BYTES = 150 * 1024 ** 3
@@ -26,7 +27,7 @@ METAL_MOUNTS = "/private/var/run/com.apple.security.cryptexd/mnt"
 
 def redact(value):
     """Hide credentials embedded in a URL-like value."""
-    return URL_CREDENTIALS.sub(r"\g<scheme>\g<user>:" + REDACTED + "@", value)
+    return redact_url_credentials(value)
 
 
 def read_env(path, seen=None):

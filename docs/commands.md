@@ -17,7 +17,10 @@ look, and what the codes mean. Only delivered commands appear here.
   command logs go to stderr.
 - Before each subprocess the tools print its absolute working directory and full
   command to stderr, with known secrets redacted. Set `logging.commands = false`
-  to turn this off; results and errors are unaffected.
+  to turn this off; results and errors are unaffected. The same redaction covers
+  command lines in results, plans, error details, and saved operation records; the
+  child still receives the real arguments. Secrets that a child prints itself are
+  not scrubbed.
 - Nothing is repaired or approved automatically. Suggested next steps in errors
   are suggestions.
 

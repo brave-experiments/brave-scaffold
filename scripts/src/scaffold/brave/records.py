@@ -14,6 +14,7 @@ import time
 from pathlib import Path
 
 from ..common.config import atomic_write, scaffold_root
+from ..common.redaction import redact_report
 
 CLI_VERSION = "0.1.0"
 KEEP_OPERATIONS = 100
@@ -39,7 +40,7 @@ def _read(path):
 
 
 def _write(path, data):
-    atomic_write(Path(path), json.dumps(data, indent=2, sort_keys=True) + "\n")
+    atomic_write(Path(path), json.dumps(redact_report(data), indent=2, sort_keys=True) + "\n")
 
 
 class Operation:

@@ -16,6 +16,7 @@ from ..common import tools as tools_module
 from ..common.checks import readiness_error
 from ..common.platforms import RECOGNIZED_TARGETS, effective_target, normalize_target
 from ..common.procs import run_capture, run_streaming
+from ..common.redaction import redact_argv
 from ..common.results import Cancelled, Result, ScaffoldError, repair
 from . import buildopts, freshness, macos, patches
 from .cmd_tools import local_shims
@@ -301,7 +302,7 @@ def plan_result(command, ctx, identity, effective, steps):
 def build_plan_steps(ctx, identity, effective, subcommand="build", script_args=(), sync_args=None):
     steps = []
     if sync_args is not None:
-        steps.append({"name": "sync", "writes": ["source tree"], "detail": "bpm " + " ".join(sync_args)})
+        steps.append({"name": "sync", "writes": ["source tree"], "detail": "bpm " + " ".join(redact_argv(sync_args))})
     unresolved = []
     try:
         env_module.require_environment(identity, ctx.environ, ctx.log)
@@ -640,7 +641,7 @@ def cmd_sync(ctx):
         result = Result(command="sync")
         result.data = {"plan": {"argv_arguments": sync_arguments(ctx, mobile, parsed.forwarded, identity),
                                 "cwd": str(identity.core), "writes": ["source tree and dependencies"]}}
-        result.text = "Plan for sync (nothing was run): bpm " + " ".join(result.data["plan"]["argv_arguments"])
+        result.text = "Plan for sync (nothing was run): bpm " + " ".join(redact_argv(result.data["plan"]["argv_arguments"]))
         return result
     prepared = prepare_environment(ctx, identity, "mac")
     op = Operation("sync", identity, {"targets": targets}, ctx.state_root)

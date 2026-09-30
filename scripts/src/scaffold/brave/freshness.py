@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 
 from ..common.procs import run_capture
+from ..common.redaction import redact_argv
 
 UNKNOWN_MESSAGE = "Build freshness is unknown; this output may not include the latest code."
 
@@ -78,7 +79,7 @@ def compute(identity, patched_paths, effective_args, log=None):
         "core_worktree": core_worktree_state(identity, log),
         "patched_files": patched.hexdigest() if patched_paths else None,
         "env_file": hashlib.sha256(env_file.read_bytes()).hexdigest() if env_file.is_file() else "absent",
-        "build_arguments": hashlib.sha256("\0".join(effective_args).encode()).hexdigest(),
+        "build_arguments": hashlib.sha256("\0".join(redact_argv(effective_args)).encode()).hexdigest(),
     }
 
 
