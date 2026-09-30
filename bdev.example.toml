@@ -1,0 +1,21 @@
+# Copy to bdev.toml and replace the example Core path before use.
+# The CLI and environment setup are not implemented yet.
+schema_version = 1
+
+[logging]
+# Print effective commands and their working directories by default.
+commands = true
+
+# Optional platform override. Omit to use the current host platform.
+# [defaults]
+# platform = "mac"
+
+[[checkouts]]
+# An alias names a checkout; it does not make it the default checkout.
+alias = "main"
+core = "/work/browser/_bad_scm/workspace/src/brave"
+# Directory containing the .envrc that supplies this checkout's tool paths.
+# The CLI will load it with direnv before running checkout commands.
+# Relative to bdev.toml: this example loads environments/main/.envrc.
+# Setup must create the file, then you must review it and run direnv allow.
+direnv_dir = "environments/main"

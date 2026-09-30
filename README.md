@@ -14,3 +14,7 @@ Read [AGENTS.md](AGENTS.md) before contributing. `CLAUDE.md` links to the same
 instructions. Project skill discovery uses `.agents/skills/`; `.claude/skills`
 links to that directory. See [available skills](docs/skills.md) for their purposes
 and instructions.
+
+See [configuration and environments](docs/configuration-and-environments.md) for
+the configuration template and local checkout mappings. Configuration files can
+be prepared now; command execution and environment setup are not available yet.
