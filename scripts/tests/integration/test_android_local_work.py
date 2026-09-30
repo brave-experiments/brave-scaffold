@@ -44,7 +44,7 @@ class SupportRefreshLocalWorkTests(AndroidTestCase):
     def setUp(self):
         super().setUp()
         src = self.src
-        (src / "build" / "config").mkdir(parents=True)
+        (src / "build" / "config").mkdir(parents=True, exist_ok=True)
         (src / "build" / "config" / "support_fork.gni").write_text("original fork\n")
         (src / "build" / "config" / "BUILDCONFIG.gn").write_text(BUILD_CONFIG)
         (src / "support").mkdir()

@@ -156,7 +156,7 @@ class RunTests(BuildTestCase):
         self.assertEqual(document["data"]["run"]["freshness"]["status"], "current", "restoring the file restores it")
 
     def test_files_included_by_the_env_file_are_tracked(self):
-        (self.core / ".env").write_text("include_env=extra/build.env\n")
+        (self.core / ".env").write_text((self.core / ".env").read_text() + "include_env=extra/build.env\n")
         (self.core / "extra").mkdir()
         (self.core / "extra" / "build.env").write_text("use_foo=false\n")
         freshness = self.freshness_after(lambda: (self.core / "extra" / "build.env").write_text("use_foo=true\n"))

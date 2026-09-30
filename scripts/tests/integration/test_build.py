@@ -50,6 +50,7 @@ class BuildTestCase(SandboxTest):
         self.src = self.core.parent
         self.sandbox.prepare_environment("main")
         self.sandbox.add_patch("main", "base/BUILD.gn")
+        self.sandbox.configure_rbe("main")
         self.sandbox.commit_all("main")
         self.config = str(self.sandbox.config)
         self.hook = self.sandbox.hook(BUILD_HOOK)
@@ -215,6 +216,34 @@ class BuildTests(BuildTestCase):
         self.assertEqual((record["state"], record["status"]), ("complete", "ok"))
         self.assertEqual(record["checkout"], str(self.core))
         self.assertFalse(list(self.core.glob(".bdev*")))
+
+
+class RemoteBuildReadinessTests(BuildTestCase):
+    """Local remote-build configuration is required exactly when the effective compile mode is remote."""
+
+    def break_rbe(self):
+        self.sandbox.configure_rbe("main", siso_cache_dir=str(self.sandbox.root / "no-such-cache"))
+
+    def test_a_remote_build_needs_its_local_configuration(self):
+        self.break_rbe()
+        for args in (["build"], ["build", "--use_remoteexec=true"], ["test", "brave_unit_tests"]):
+            with self.subTest(args=args):
+                result, document = self.document(*args)
+                self.assertEqual((result.returncode, document["error"]["code"]), (3, "READINESS_BLOCKED"))
+                failing = {check["name"] for check in document["error"]["details"]["checks"]}
+                self.assertIn("rbe-siso-cache", failing)
+                self.assertEqual(self.node_calls(), [])
+
+    def test_local_compilation_does_not_need_it(self):
+        self.break_rbe()
+        for args in (["build", "--offline"], ["build", "--use_remoteexec=false"], ["build", "--use_remoteexec", "false"]):
+            with self.subTest(args=args):
+                result, document = self.document(*args)
+                self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_the_default_fixture_configuration_is_enough_for_a_remote_build(self):
+        result, document = self.document("build")
+        self.assertEqual(result.returncode, 0, result.stderr)
 
 
 class NonCompilingModeTests(BuildTestCase):

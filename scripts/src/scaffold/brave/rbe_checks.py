@@ -217,13 +217,14 @@ def _reachability(scope):
                       scope, required=False, affects=("rbe build",))
 
 
-def mac_build_checks(ctx, scope):
+def mac_build_checks(ctx, scope, remote_required=False):
+    """Host and configuration checks for a macOS build; remote-build configuration is required when asked."""
     checks = _machine(ctx, scope)
     identity, error = _selection(ctx)
     checks.append(_disk(scope, identity.src if identity and identity.src.is_dir() else ctx.scaffold_root))
     if identity is None:
         return checks + _unchecked(("services-key", "rbe-config"), scope, error, False, ("mac build",))
-    return checks + [_services_key(identity, scope)] + _rbe_config(ctx, identity, scope, required=False) \
+    return checks + [_services_key(identity, scope)] + _rbe_config(ctx, identity, scope, required=remote_required) \
         + [_reachability(scope)]
 
 

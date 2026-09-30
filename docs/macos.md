@@ -139,7 +139,17 @@ written to the checkout.
 | `metal-toolchain` | `xcrun metal` works, or a Metal toolchain component is mounted | no (warning) |
 | `disk-space` | At least 150 GiB free where the checkout lives | no (warning) |
 | `services-key` | `brave_services_key` is nonempty in Core's `.env` (including `include_env=` files). The value is never shown and its validity is not verified | no (warning) |
-| `rbe-*` | The RBE checks below, as warnings only | no |
+| `rbe-*` | The RBE checks below. In `doctor mac` they are warnings, because doctor does not know how you will compile | no |
+
+Building is stricter than doctor about the compile mode. `build`, `test`, and the
+combined commands treat the local RBE configuration checks as required when the
+effective mode is remote (the default) and not at all when it is local (`--offline`, or a
+forwarded `--use_remoteexec=false`); a missing key, unreadable certificate, or absent
+Siso cache directory then stops the command with `READINESS_BLOCKED` before anything is
+prepared. Reachability of the service is never tested. Readiness is also checked per
+phase: `sync` needs the host but not the build's target or the RBE artifacts that sync
+refreshes, and `sync-build` checks the build's readiness and tools again after the sync
+step.
 
 The Xcode developer directory is checked separately by `host-macos-arm64` and
 `xcode-developer-directory`. Node, the package manager, and `vpython3` are

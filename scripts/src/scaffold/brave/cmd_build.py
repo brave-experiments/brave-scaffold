@@ -57,13 +57,23 @@ def require_available_target(target):
         raise ScaffoldError("UNSUPPORTED_CAPABILITY", "The target %r is not available." % target)
 
 
-def readiness_gate(ctx, target):
-    """Required macOS host and build-readiness checks; blockers stop before anything is prepared."""
+def readiness_gate(ctx, target, phase="build", remote_required=False):
+    """Required checks for one phase; blockers stop before that phase prepares anything.
+
+    The sync phase needs the macOS host but not the Android target it is about to establish, and it does not
+    demand the remote-build configuration that sync itself refreshes. The build phase needs the target and, when
+    the effective compile mode is remote, the local remote-build configuration.
+    """
     from . import doctor
     checks = []
-    groups = ("host-mac", "mac-build") if target == "mac" else ("android-build",)
+    groups = ("host-mac", "mac-build") if target == "mac" or phase == "sync" else ("android-build",)
     for group in groups:
-        checks.extend(doctor.GROUP_FUNCTIONS[group](ctx, "mac" if target == "mac" else "android"))
+        function = doctor.GROUP_FUNCTIONS[group]
+        scope = "mac" if group != "android-build" else "android"
+        if group in ("mac-build", "android-build"):
+            checks.extend(function(ctx, scope, remote_required=remote_required and phase == "build"))
+        else:
+            checks.extend(function(ctx, scope))
     error = readiness_error(checks)
     if error is not None:
         error.details["checks"] = [check.to_dict() for check in checks if check.status != "pass"]
@@ -91,12 +101,19 @@ def load_context(ctx, identity):
     return dataclasses.replace(ctx, environ=loaded, prepared=True), loaded
 
 
-def prepare_environment(ctx, identity, target):
-    """Environment, checkout-local tools, and readiness for one request; returns them with the prepared context."""
+def prepare_environment(ctx, identity, target, phase="build", remote_required=False):
+    """Environment, checkout-local tools, and readiness for one phase; returns them with the prepared context."""
     ctx, loaded = load_context(ctx, identity)
     toolchain, tool_checks = tools_module.require_toolchain(identity, ctx.log)
-    checks = readiness_gate(ctx, target)
+    checks = readiness_gate(ctx, target, phase, remote_required)
     return Prepared(loaded, toolchain, [*tool_checks, *checks], ctx)
+
+
+def revalidate_for_build(prepared, identity, target, remote_required):
+    """After sync changed the checkout: check its tools and the build's readiness again."""
+    toolchain, tool_checks = tools_module.require_toolchain(identity, prepared.ctx.log)
+    checks = readiness_gate(prepared.ctx, target, "build", remote_required)
+    return Prepared(prepared.loaded, toolchain, [*prepared.checks, *tool_checks, *checks], prepared.ctx)
 
 
 def package_environment(prepared, shims):
@@ -353,13 +370,15 @@ def do_build(ctx, command, sync_first=False, run_after=False):
         raise ScaffoldError("INVALID_INPUT", "--device applies to Android only.")
     ctx, _ = load_context(ctx, identity)
     device = _android().preflight_device(ctx) if run_after and effective.target == "android" else None
-    prepared = prepare_environment(ctx, identity, effective.target)
+    remote = not effective.offline
+    prepared = prepare_environment(ctx, identity, effective.target, "sync" if sync_first else "build", remote)
     op = Operation(command, identity, {"target": effective.target, "configuration": effective.configuration},
                    ctx.state_root)
     sync_result = None
     try:
         if sync_first:
             sync_result = do_sync_phase(ctx, identity, prepared, op, effective.target, [])
+            prepared = revalidate_for_build(prepared, identity, effective.target, remote)
         outcome = perform_build(ctx, identity, effective, prepared, op, bool(parsed.get("force_gn")))
         if run_after and outcome.artifact is None:
             raise unresolved_error(outcome, identity)
@@ -438,7 +457,7 @@ def cmd_test(ctx):
     if parsed.get("plan"):
         return plan_result("test", ctx, identity, effective,
                            build_plan_steps(ctx, identity, effective, "test", script_args))
-    prepared = prepare_environment(ctx, identity, effective.target)
+    prepared = prepare_environment(ctx, identity, effective.target, "build", not effective.offline)
     ctx = prepared.ctx
     op = Operation("test", identity, {"target": effective.target, "suite": parsed.get("suite")}, ctx.state_root)
     try:
@@ -586,14 +605,15 @@ def gclient_targets(identity):
         tree = ast.parse(path.read_text(encoding="utf-8"))
     except (OSError, SyntaxError):
         return None
+    found = []
     for node in tree.body:
         if isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "target_os" for t in node.targets):
             try:
                 value = ast.literal_eval(node.value)
             except (ValueError, TypeError):
                 return None
-            return [value] if isinstance(value, str) else list(value)
-    return []
+            found = [value] if isinstance(value, str) else list(value)
+    return found
 
 
 def target_os_union(existing, requested):
@@ -671,7 +691,7 @@ def cmd_sync(ctx):
                                 "cwd": str(identity.core), "writes": ["source tree and dependencies"]}}
         result.text = "Plan for sync (nothing was run): bpm " + " ".join(redact_argv(result.data["plan"]["argv_arguments"]))
         return result
-    prepared = prepare_environment(ctx, identity, "mac")
+    prepared = prepare_environment(ctx, identity, "mac", "sync")
     ctx = prepared.ctx
     op = Operation("sync", identity, {"targets": targets}, ctx.state_root)
     try:

@@ -13,6 +13,11 @@ from tests.android_fixtures import GIT, install_fake_aapt2, install_fake_adb, ma
 from tests.integration.test_build import SKIP, BuildTestCase
 
 ANDROID_HOOK = """
+if "sync" in argv and not os.environ.get("FAKE_SYNC_KEEPS_TARGETS"):
+    requested = [a.split("=", 1)[1] for a in argv if a.startswith("--target_os=")]
+    gclient = os.path.join(os.path.dirname(os.environ["BRAVE_CORE_DIR"]), "..", ".gclient")
+    with open(gclient, "a") as stream:
+        stream.write("target_os = %r\\n" % (requested[0].split(",") if requested else [],))
 if "build" not in argv:
     raise SystemExit(int(os.environ.get("FAKE_EXIT", "0")))
 import zipfile
@@ -52,7 +57,8 @@ class AndroidTestCase(BuildTestCase):
         super().setUp()
         (self.src / "chrome").mkdir(exist_ok=True)
         (self.src / "chrome" / "VERSION").write_text("MAJOR=155\nMINOR=0\n")
-        (self.src.parent / ".gclient").write_text("target_os = ['android']\n")
+        with open(self.src.parent / ".gclient", "a") as stream:
+            stream.write("target_os = ['android']\n")
         install_fake_aapt2(self.src)
         self.sandbox.commit_all("main")
         self.hook = self.sandbox.hook(ANDROID_HOOK)
@@ -236,7 +242,9 @@ class SupportWorkingCopyTests(AndroidTestCase):
         other = self.sandbox.make_checkout("other", git=True)
         (other.parent / "chrome").mkdir()
         (other.parent / "chrome" / "VERSION").write_text("MAJOR=154\n")
-        (other.parent.parent / ".gclient").write_text("target_os = ['android']\n")
+        self.sandbox.configure_rbe("other")
+        with open(other.parent.parent / ".gclient", "a") as stream:
+            stream.write("target_os = ['android']\n")
         self.sandbox.add_patch("other", "base/BUILD.gn")
         self.sandbox.commit_all("other")
         self.sandbox.write_config([("main", self.core, "environments/main"), ("other", other, "environments/other")])
@@ -414,6 +422,46 @@ class DeviceTests(AndroidTestCase):
                                             command="build-run")
         self.assertEqual((result.returncode, document["error"]["code"]), (5, "ARTIFACT_UNRESOLVED"))
         self.assertFalse([c for c in self.adb_calls() if "install" in c])
+
+
+class PhaseReadinessTests(AndroidTestCase):
+    """Each phase is checked for what it needs; sync establishes the Android target the build then requires."""
+
+    def setUp(self):
+        super().setUp()
+        self.setup_support()
+        self.sandbox.configure_rbe("main")
+        (self.src.parent / ".gclient").write_text((self.src.parent / ".gclient").read_text() + "target_os = []\n")
+
+    def combined(self, **extra):
+        return self.document("sync-build", "android", env=self.env(**extra))
+
+    def test_sync_is_not_blocked_by_the_target_it_is_about_to_establish(self):
+        result, document = self.combined()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        calls = [call["argv"][1:3] for call in self.node_calls()]
+        self.assertEqual(calls, [["run", "sync"], ["run", "build"]])
+
+    def test_build_readiness_is_checked_again_after_sync(self):
+        result, document = self.combined(FAKE_SYNC_KEEPS_TARGETS="1")
+        self.assertEqual((result.returncode, document["error"]["code"]), (3, "READINESS_BLOCKED"))
+        self.assertEqual([call["argv"][1:3] for call in self.node_calls()], [["run", "sync"]])
+        self.assertIn("android-gclient-target", {c["name"] for c in document["error"]["details"]["checks"]})
+
+    def test_a_standalone_build_still_needs_the_target_first(self):
+        result, document = self.document("build", "android")
+        self.assertEqual((result.returncode, document["error"]["code"]), (3, "READINESS_BLOCKED"))
+        self.assertEqual(self.node_calls(), [])
+
+    def test_a_remote_android_build_needs_local_rbe_configuration_and_an_offline_one_does_not(self):
+        self.combined()
+        self.sandbox.configure_rbe("main", siso_cache_dir=str(self.sandbox.root / "no-such-cache"))
+        with open(self.src.parent / ".gclient", "a") as stream:
+            stream.write("target_os = ['android']\n")
+        result, document = self.document("build", "android")
+        self.assertEqual(document["error"]["code"], "READINESS_BLOCKED")
+        result, document = self.document("build", "android", "--offline")
+        self.assertEqual(result.returncode, 0, result.stderr)
 
 
 class PackageIdentityTests(AndroidTestCase):

@@ -292,6 +292,27 @@ class Sandbox:
                             "-c", "commit.gpgsign=false", "commit", "-q", "--allow-empty", "-m", "fixture"],
                            check=True, capture_output=True)
 
+    def configure_rbe(self, name, **env_overrides):
+        """Local remote-build configuration that satisfies the readiness checks (no service is contacted)."""
+        core = self.checkouts[name]
+        write_executable(self.bin / "openssl", "#!/bin/sh\nexit ${FAKE_OPENSSL_EXIT:-0}\n")
+        service = "https://user:pw@rbe.example:443"
+        certs = self.root / "rbe-files"
+        certs.mkdir(exist_ok=True)
+        (certs / "client.crt").write_text("cert")
+        (certs / "client.key").write_text("key")
+        cache = certs / "siso-cache"
+        cache.mkdir(exist_ok=True)
+        values = {"rbe_service": service, "use_remoteexec": "true", "rbe_tls_client_auth_cert": str(certs / "client.crt"),
+                  "rbe_tls_client_auth_key": str(certs / "client.key"), "siso_cache_dir": str(cache)}
+        values.update(env_overrides)
+        (core / ".env").write_text("".join("%s=%s\n" % item for item in values.items() if item[1] is not None))
+        siso = core.parent / "build" / "config" / "siso"
+        siso.mkdir(parents=True, exist_ok=True)
+        (core.parent.parent / ".gclient").write_text('custom_vars = {"reapi_address": "%s"}\n' % service)
+        (siso / ".sisorc").write_text('reapi_keep_exec_stream googlechrome -local_cache_enable -cache_dir "%s"\n' % cache)
+        (siso / ".sisoenv").write_text("REAPI=%s\n" % service)
+
     def hook(self, code):
         """Python run inside the fake package command; APP_HELPERS is available."""
         path = self.root / "hook.py"

@@ -15,6 +15,9 @@ checkout's Android support working copy (below). `bdev doctor android --checkout
 1. Add Android to the checkout's targets: `bdev sync android`. This builds
    `--target_os` from the union of the checkout's existing `.gclient` values and
    `android`, and changes the checkout ([source and cleanup](source-and-cleanup.md)).
+   `bdev sync-build android` does this first and then checks the build's readiness
+   (the Android target, and the local RBE configuration unless you compile with
+   `--offline`) again; a standalone `bdev build android` needs the target already.
 2. Create the checkout's own support working copy: `bdev android setup`. This is
    the only step that uses the network.
 

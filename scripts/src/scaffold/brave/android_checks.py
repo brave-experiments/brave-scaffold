@@ -42,8 +42,9 @@ def _selected(ctx):
         raise
 
 
-def build_checks(ctx, scope):
-    """What a build needs before preparation: an Android target in the checkout and RBE configuration."""
+def build_checks(ctx, scope, remote_required=False):
+    """What a build needs before preparation: an Android target in the checkout and, for remote compilation,
+    local RBE configuration."""
     identity, error = _selected(ctx)
     if identity is None:
         return [make_check("android-gclient-target", NOT_CHECKED, "No checkout is selected: %s" % error.message,
@@ -57,7 +58,7 @@ def build_checks(ctx, scope):
                          "This checkout is not configured for Android (target_os: %s)." % (
                              ", ".join(targets) if targets else "missing or unreadable"),
                          scope, affects=("android build",), repairs=[] if ok else [sync], target_os=targets)]
-    return checks + rbe_checks._rbe_config(ctx, identity, scope, required=False)
+    return checks + rbe_checks._rbe_config(ctx, identity, scope, required=remote_required)
 
 
 def support_checks(ctx, scope):
