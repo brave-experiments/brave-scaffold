@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import sys
 
-from ..common.cli import CommandSpec, Parsed, detect_json_leading, parse_leading, render_help
+from ..common.cli import CommandSpec, Parsed, detect_json_leading, help_requested, parse_leading, render_help
 from ..common.results import ScaffoldError
 from . import cmd_tools
 from ..common.procs import install_signal_handlers
@@ -28,7 +28,7 @@ def main(argv, stdout=None, stderr=None):
     stdout = stdout or sys.stdout
     stderr = stderr or sys.stderr
     install_signal_handlers()
-    if argv and argv[0] in ("-h", "--help"):
+    if help_requested(SPEC, list(argv)):
         stdout.write(render_help(SPEC, prefix="bpm"))
         return 0
     try:

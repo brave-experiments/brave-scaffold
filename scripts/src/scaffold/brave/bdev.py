@@ -9,7 +9,7 @@ from __future__ import annotations
 import difflib
 import sys
 
-from ..common.cli import (COMMON_OPTIONS, Parsed, check_positionals, detect_json, parse_leading,
+from ..common.cli import (COMMON_OPTIONS, Parsed, check_positionals, detect_json, help_requested, parse_leading,
                           parse_tokens, render_help)
 from ..common.results import ScaffoldError
 from ..common.procs import install_signal_handlers
@@ -108,7 +108,7 @@ def main(argv, stdout=None, stderr=None):
                 stdout.write(top_help())
                 return 0 if argv else 2
             raise ScaffoldError("INVALID_INPUT", "No command was given.", details={"usage": "bdev <command>"})
-        if _wants_help(tokens):
+        if help_requested(spec, tokens):
             stdout.write(render_help(spec))
             return 0
         parsed = parse_command(spec, tokens)

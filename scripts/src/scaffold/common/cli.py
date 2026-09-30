@@ -109,6 +109,9 @@ def parse_tokens(spec, tokens):
     while index < len(tokens):
         token = tokens[index]
         if token == "--":
+            if tokens[index + 1:] and not spec.forward:
+                raise _input_error("%s does not take arguments after '--'; nothing was run." % spec.name, spec,
+                                   ignored=tokens[index + 1:])
             parsed.delimiter = True
             parsed.forwarded.extend(tokens[index + 1:])
             break
@@ -261,6 +264,31 @@ def parse_leading(spec, tokens):
         index += 1
     parsed.forwarded = list(tokens[index:])
     return parsed
+
+
+def help_requested(spec, tokens):
+    """Whether help is asked for inside the command's own scaffold-option region.
+
+    Ordinary commands take scaffold options anywhere before `--`. A direct-tool command
+    (`bpm`, `vpython3`) takes them only before its first program argument, so `--help` after
+    that belongs to the program.
+    """
+    known = {option.name: option for option in (*spec.options, *spec.common)}
+    index = 0
+    while index < len(tokens):
+        token = tokens[index]
+        if token in ("-h", "--help"):
+            return True
+        if token == "--":
+            return False
+        if spec.leading_only:
+            name = token.partition("=")[0] if token.startswith("--") else token
+            if name not in known:
+                return False
+            index += 2 if known[name].takes_value and "=" not in token else 1
+        else:
+            index += 1
+    return False
 
 
 def detect_json_leading(spec, tokens):

@@ -77,7 +77,10 @@ bpm [--checkout <name-or-path>] [--config <file>] [--json] <package arguments...
 Scaffold options are accepted only before the first package argument; from that
 argument on, every token (including `--json` and `--checkout`) goes to the
 package manager. A leading `--` ends scaffold options: `bpm -- --help` asks the
-package manager for help, `bpm --help` shows scaffold help.
+package manager for help, `bpm --help` (or `bpm --checkout main --help`, help among the
+leading scaffold options) shows scaffold help, and `bpm run test --help` passes `--help`
+to the package manager. `bdev vpython3` follows the same rule: `bdev vpython3 script.py
+--help` runs the script with `--help`.
 
 The package manager comes from `devEngines.packageManager` in Core's
 `package.json` (`npm` or `pnpm`). A checkout with no declaration is an older npm
@@ -90,6 +93,10 @@ manager (by absolute path, first on the child's `PATH`) and stops before startin
 if either is missing, stale, or outside the declared version range.
 `bpm` exits `5` with the child's status in `child_exit_code` when the package
 command fails.
+
+Commands that do not forward arguments (for example `capabilities`, `context`, `doctor`,
+`clean`) reject anything after a `--` with `INVALID_INPUT` and run nothing; an empty
+trailing `--` is accepted.
 
 ### `bdev vpython3`
 
