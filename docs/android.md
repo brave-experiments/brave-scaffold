@@ -24,8 +24,11 @@ Compiling Android from macOS needs resources and patches Chromium does not ship,
 kept in a separate support repository. Each checkout gets its own working copy
 at `<workspace>/brave-android-mac-support`, beside (not inside) its sources. Two
 checkouts that need different revisions therefore never switch a shared tree. Only
-the Git object cache, `.bdev/cache/android-support.git` next to your
-configuration, is shared.
+content-addressed storage is shared: the Git object cache
+(`.bdev/cache/android-support.git` next to your configuration) and the store of
+Git LFS objects beside it. Working copies are local clones of the cache, so objects
+are hardlinked on the same filesystem, and their large files are written from the
+shared store. A local `--source` seeds both without using the network.
 
 ```sh
 bdev android setup                     # clone at the default ref
@@ -114,5 +117,8 @@ as on macOS. `adb` comes from `ADB`, `ANDROID_HOME`, `ANDROID_SDK_ROOT`, or `PAT
   older valid APK can still be installed. Nothing rebuilds or deletes for you.
 - Clean outputs with `bdev clean android` ([source and cleanup](source-and-cleanup.md)).
 - Release, other architectures, and AAB output are accepted but `limited`.
-- Real device installation and restart, and building against real support
-  revisions, have not been verified by the automated tests, which use fakes.
+- Checked on a real checkout and emulator on 2026-09-30: creating the support
+  working copy from a local clone, the compatibility gate, support preparation, a
+  Debug arm64 build through RBE/Siso, and deploying to the only connected device
+  without naming it. Not yet verified: `bdev sync android`, cleanup, a second
+  checkout at a different support revision, and physical devices.

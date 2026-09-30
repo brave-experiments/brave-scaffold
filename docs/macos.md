@@ -99,6 +99,15 @@ if an older application is still usable; a later successful build clears it.
 send extra arguments to the build phase only. See
 [source and cleanup](source-and-cleanup.md) for sync.
 
+## Verification status
+
+Checked on a real macOS arm64 checkout on 2026-09-30: environment loading and
+checkout-local tools, a Debug build through RBE/Siso (the output was already up to
+date, so no compilation ran), one browser test, restart of the application including
+quitting a running instance, and drift inspection. Not yet verified on a real
+checkout: sync, patch update, cleanup, compiling after source changes, and offline
+builds. `bdev capabilities` reflects this.
+
 ## Readiness and RBE/Siso prerequisites
 
 `bdev doctor mac` and `bdev doctor rbe` report these checks without changing
