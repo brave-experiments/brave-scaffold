@@ -43,6 +43,12 @@ differs with no earlier record, may hold local edits: the command stops with
 `PREPARATION_CONFLICT`, lists the files, and suggests `bdev drift --diff`. Missing
 or unreadable metadata is treated as uncertain, not clean.
 
+A patch that has no metadata yet cannot be compared that way, so its targets (read from
+the patch headers, whatever the prefix) are checked directly: a target with staged
+changes, unstaged edits, a deletion, a rename, or an untracked file at its path stops the
+command the same way, before anything is applied. If Git cannot answer, or the patch's
+targets cannot be read, the command stops as well.
+
 Resolve a conflict yourself: keep wanted edits with `bdev patches update` or
 restore the files, then run `bpm run apply_patches` if you want stale files
 replaced. The receipts live beside your configuration in `.bdev/`, never in Core.

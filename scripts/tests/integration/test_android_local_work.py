@@ -11,7 +11,7 @@ from tests.android_fixtures import GIT, make_support_repo
 from tests.integration.test_android import AndroidTestCase
 from tests.integration.test_build import SKIP
 
-from scaffold.brave import android_deps  # noqa: E402  (tests.support puts the sources on sys.path)
+from scaffold.brave import patchformat  # noqa: E402  (tests.support puts the sources on sys.path)
 
 BUILD_CONFIG = 'import("//build/config/x.gni")\nassert(host_os == "linux")\nkeep = true\n'
 TARGET_A = "line1\nline2\nline3\nline4\nline5\nline6\nline7\nline8\n"
@@ -28,15 +28,15 @@ class ParsePatchTargetsTests(unittest.TestCase):
         git_style = "diff --git a/b/two.cc b/b/two.cc\n--- a/b/two.cc\n+++ b/b/two.cc\n"
         created = "diff --git a/new.txt b/new.txt\n--- /dev/null\n+++ b/new.txt\n"
         renamed = "diff --git a/old.cc b/moved.cc\nsimilarity index 100%\nrename from old.cc\nrename to moved.cc\n"
-        self.assertEqual(android_deps.parse_patch_targets(fork), {"a/one.gni"})
-        self.assertEqual(android_deps.parse_patch_targets(git_style), {"b/two.cc"})
-        self.assertEqual(android_deps.parse_patch_targets(created), {"new.txt"})
-        self.assertEqual(android_deps.parse_patch_targets(renamed), {"old.cc", "moved.cc"})
+        self.assertEqual(patchformat.parse_patch_targets(fork), {"a/one.gni"})
+        self.assertEqual(patchformat.parse_patch_targets(git_style), {"b/two.cc"})
+        self.assertEqual(patchformat.parse_patch_targets(created), {"new.txt"})
+        self.assertEqual(patchformat.parse_patch_targets(renamed), {"old.cc", "moved.cc"})
 
     def test_text_without_recognisable_headers_is_not_guessed_at(self):
         for text in ("", "just some words\n", "--- \n+++ \n"):
-            with self.subTest(text=text), self.assertRaises(android_deps.UnknownPatchFormat):
-                android_deps.parse_patch_targets(text)
+            with self.subTest(text=text), self.assertRaises(patchformat.UnknownPatchFormat):
+                patchformat.parse_patch_targets(text)
 
 
 @unittest.skipIf(SKIP, "needs direnv on a macOS host")

@@ -191,6 +191,66 @@ class TestCommandTests(BuildTestCase):
 
 
 @unittest.skipIf(SKIP, "needs direnv on a macOS host")
+class UnrecordedPatchTargetTests(BuildTestCase):
+    """A patch without metadata is applied only when none of its targets holds local work."""
+
+    def setUp(self):
+        super().setUp()
+        for name in ("keep.cc", "staged.cc", "gone.cc", "old.cc", "staged_gone.cc"):
+            (self.src / "base" / name).write_text(name + "\n")
+        self.sandbox.commit_all("main")
+        self.assertEqual(self.document("build")[0].returncode, 0)
+
+    def add_patch(self, *targets, name="extra.patch"):
+        text = "".join("diff --git a/base/%s b/base/%s\n--- a/base/%s\n+++ b/base/%s\n@@ -1 +1 @@\n-x\n+y\n" % (
+            (target,) * 4) for target in targets)
+        (self.core / "patches" / name).write_text(text)
+        self.sandbox.commit_all("main")
+
+    def git(self, *args):
+        subprocess.run(["git", "-C", str(self.src), *args], check=True, capture_output=True)
+
+    def assert_stops(self, *targets, ok=False):
+        self.sandbox.record.unlink(missing_ok=True)
+        result, document = self.document("build")
+        if ok:
+            self.assertEqual(result.returncode, 0, document.get("error"))
+            return
+        self.assertEqual((result.returncode, document["error"]["code"]), (4, "PREPARATION_CONFLICT"))
+        paths = {item["path"] for item in document["error"]["details"]["files"]}
+        self.assertEqual(paths, {"base/" + name for name in targets})
+        self.assertEqual(self.node_calls(), [], "nothing was applied or built")
+
+    def test_untouched_targets_do_not_block(self):
+        self.add_patch("keep.cc")
+        self.assert_stops(ok=True)
+
+    def test_each_kind_of_local_work_on_a_target_blocks_before_anything_runs(self):
+        self.add_patch("staged.cc", "gone.cc", "staged_gone.cc", "moved_to.cc", "made_locally.cc", "keep.cc")
+        (self.src / "base" / "staged.cc").write_text("staged edit\n")
+        self.git("add", "base/staged.cc")
+        (self.src / "base" / "gone.cc").unlink()
+        self.git("rm", "-q", "base/staged_gone.cc")
+        self.git("mv", "base/old.cc", "base/moved_to.cc")
+        (self.src / "base" / "made_locally.cc").write_text("mine\n")
+        self.assert_stops("staged.cc", "gone.cc", "staged_gone.cc", "moved_to.cc", "made_locally.cc")
+
+    def test_the_old_name_of_a_renamed_file_blocks_too(self):
+        self.add_patch("old.cc")
+        self.git("mv", "base/old.cc", "base/moved_to.cc")
+        self.assert_stops("old.cc")
+
+    def test_a_patch_whose_targets_cannot_be_read_stops(self):
+        (self.core / "patches" / "odd.patch").write_text("this is not a patch\n")
+        self.sandbox.commit_all("main")
+        self.sandbox.record.unlink(missing_ok=True)
+        result, document = self.document("build")
+        self.assertEqual((result.returncode, document["error"]["code"]), (4, "PREPARATION_CONFLICT"))
+        self.assertIn("odd.patch", json.dumps(document["error"]))
+        self.assertEqual(self.node_calls(), [])
+
+
+@unittest.skipIf(SKIP, "needs direnv on a macOS host")
 class DriftTests(BuildTestCase):
     def test_clean_and_drifted_reports(self):
         result, document = self.document("drift")

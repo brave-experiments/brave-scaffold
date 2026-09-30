@@ -24,6 +24,7 @@ from ..common.config import atomic_write
 from ..common.procs import run_capture, run_streaming
 from ..common.results import ScaffoldError, repair
 from . import freshness, gitstate
+from .patchformat import UnknownPatchFormat, parse_patch_targets
 from .records import checkout_key, store_root
 
 METADATA = Path(__file__).with_name("android_support.toml")
@@ -31,8 +32,6 @@ WORKING_COPY_NAME = "brave-android-mac-support"
 SENTINELS = ("release", "cr_build_revision", "source.properties", "sysroot/NOTICE", "NOTICE")
 MAX_COMPARED_BYTES = 1 << 20
 MACHO_MAGICS = (b"\xcf\xfa\xed\xfe", b"\xca\xfe\xba\xbe", b"\xfe\xed\xfa\xcf")
-DIFF_GIT_LINE = re.compile(r"^diff --git (\S+) (\S+)$")
-RENAME_LINE = re.compile(r"^(?:rename|copy) (?:from|to) (\S+)$")
 PATCH_REFERENCE = re.compile(r"patches/([A-Za-z0-9_.-]+\.patch)")
 SOURCE_FILE_REFERENCE = re.compile(r"\$\{?src_root\}?/([A-Za-z0-9_./+-]*[A-Za-z0-9_+-]\.[A-Za-z0-9]+)")
 RESOURCE_LINE = re.compile(r'^\s*patch_dependency\s+"[^"]*"\s+"([^"]+)"\s+"[^"]*"\s+"(res/[^"]+)"', re.MULTILINE)
@@ -329,37 +328,6 @@ def inputs_dirty(wc, log=None):
     paths = ["copyMacRes.sh", "applyPatches.sh", "patches", ".gitattributes", *sorted({s for _, s in manifest})]
     status = _git(wc, ["status", "--porcelain", "--untracked-files=all", "--", *paths], log)
     return status.stdout.splitlines() if status.returncode == 0 else ["status unavailable"]
-
-
-class UnknownPatchFormat(ValueError):
-    pass
-
-
-def _strip_prefix(name):
-    """Drop the first path component, as `git apply` does by default, whatever the prefix is called."""
-    if name.startswith('"') or "/" not in name:
-        raise UnknownPatchFormat("unsupported path %r" % name)
-    return name.split("/", 1)[1]
-
-
-def parse_patch_targets(text):
-    """Repository-relative files a patch writes. Raises UnknownPatchFormat instead of guessing."""
-    targets = set()
-    for line in text.splitlines():
-        if line.startswith(("--- ", "+++ ")):
-            name = line[4:].split("\t")[0].strip()
-            if name and name != "/dev/null":
-                targets.add(_strip_prefix(name))
-        elif line.startswith("diff --git "):
-            match = DIFF_GIT_LINE.match(line)
-            if match is None:
-                raise UnknownPatchFormat("unsupported header %r" % line)
-            targets.update(_strip_prefix(name) for name in match.groups())
-        elif RENAME_LINE.match(line):
-            targets.add(RENAME_LINE.match(line).group(1))
-    if not targets:
-        raise UnknownPatchFormat("no file headers")
-    return targets
 
 
 def _script_text(wc, name):

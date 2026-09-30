@@ -9,13 +9,14 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from ..common.config import atomic_write
 from ..common.procs import run_capture
 from ..common.results import ScaffoldError, repair
+from . import gitstate
+from .patchformat import UnknownPatchFormat, parse_patch_targets
 from .records import checkout_key, store_root
 
 SOURCE_CHANGED = "source changed after patch applied"
@@ -274,11 +275,12 @@ def plan_patch_preparation(identity, log=None, root=None):
     return PatchPlan("apply", "; ".join(reasons) or "patch state unverified", report, trees, [], receipt is not None)
 
 
-_DIFF_HEADER = re.compile(r"^diff --git a/(\S+) b/\S+", re.MULTILINE)
-
-
 def _unrecorded_patch_targets(identity, report, known, log):
-    """Targets of patches that have no metadata yet, when they hold uncommitted Chromium edits."""
+    """Targets of patches that have no metadata yet, when they hold local Chromium work.
+
+    Staged changes, unstaged edits, deletions, renames, and untracked files all count. A patch whose targets
+    cannot be read, or a Git failure, stops the operation: an unknown state is never treated as clean.
+    """
     patches = identity.core / "patches"
     if not patches.is_dir():
         return []
@@ -288,16 +290,14 @@ def _unrecorded_patch_targets(identity, report, known, log):
         if patch.with_suffix(".patchinfo").name in described:
             continue
         try:
-            targets = _DIFF_HEADER.findall(patch.read_text(encoding="utf-8", errors="replace"))
-        except OSError:
+            targets = parse_patch_targets(patch.read_text(encoding="utf-8", errors="replace"))
+        except (OSError, UnknownPatchFormat) as error:
+            conflicts.append({"path": "patches/" + patch.name,
+                              "reason": "cannot tell which files this patch without metadata writes (%s)" % error})
             continue
-        for target in targets:
-            if target in known or not (identity.src / target).exists():
-                continue
-            diff = _git(identity, identity.src, ["diff", "--quiet", "--", target], log)
-            if diff.returncode == 1:
-                conflicts.append({"path": target, "reason": "has uncommitted edits and a patch without metadata "
-                                  "will be applied to it"})
+        for target in sorted(gitstate.changed_paths(identity.src, sorted(t for t in targets if t not in known), log)):
+            conflicts.append({"path": target, "reason": "has local changes (staged, unstaged, deleted, renamed, or "
+                              "untracked) and a patch without metadata will be applied to it"})
     return conflicts
 
 
