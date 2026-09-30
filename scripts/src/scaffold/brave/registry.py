@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 from ..common.cli import CommandSpec, Opt, Positional
-from . import cmd_setup, cmd_tools, doctor
+from . import clean, cmd_setup, cmd_tools, doctor
 
 WITH_PYTHONPATH = Opt("--with-pythonpath", "with_pythonpath", takes_value=False,
                       help="Also export PYTHONPATH for Core's script directory.")
@@ -64,6 +64,7 @@ def build_registry():
                     side_effects="Whatever the Python program does. Runs in your current directory unless --cwd is given.",
                     notes="Scaffold options must come before the first Python argument. Use -- to be explicit.",
                     examples=("bdev vpython3 -- tools/example.py --flag", "bdev vpython3 --cwd out -- ../script.py")),
+        clean.SPEC,
     ]
     registry = {}
     for spec in specs:

@@ -14,14 +14,16 @@ from pathlib import Path
 from ..common import env as env_module
 from ..common import identity as identity_module
 from ..common import tools as tools_module
-from ..common.checks import (BLOCKER, NOT_CHECKED, PASS, UNSUPPORTED, WARNING, CheckResult, readiness_error)
+from ..common.checks import (BLOCKER, NOT_CHECKED, PASS, UNSUPPORTED, WARNING, make_check, readiness_error)
 from ..common.platforms import host_architecture, host_platform
 from ..common.procs import run_capture
 from ..common.results import Result, ScaffoldError, error_result, repair
+from . import rbe_checks as rbe_checks_module
 
 # Scopes delivered so far. Each scope lists the check groups it evaluates.
 SCOPES = {
-    "mac": ("machine", "host-mac", "checkout"),
+    "mac": ("machine", "host-mac", "mac-build", "checkout"),
+    "rbe": ("machine", "rbe"),
     "shell": ("machine", "shell"),
 }
 EXTRA_SCOPES = {}  # populated by later stages: name -> check groups
@@ -35,9 +37,7 @@ def all_scopes():
     return {**SCOPES, **EXTRA_SCOPES}
 
 
-def _check(name, status, summary, scope, required=True, affects=(), repairs=None, **evidence):
-    return CheckResult(name=name, status=status, summary=summary, scopes=(scope,), required=required,
-                       evidence=evidence, affects=tuple(affects), repairs=repairs or [])
+_check = make_check
 
 
 def machine_checks(ctx, scope):
@@ -145,7 +145,8 @@ def shell_checks(ctx, scope):
 
 
 GROUP_FUNCTIONS = {"machine": machine_checks, "host-mac": host_mac_checks, "checkout": checkout_checks,
-                   "shell": shell_checks}
+                   "shell": shell_checks, "mac-build": rbe_checks_module.mac_build_checks,
+                   "rbe": rbe_checks_module.rbe_checks}
 
 
 def register_group(name, function):
@@ -187,3 +188,12 @@ def run_doctor(ctx):
         failed.checks, failed.data, failed.warnings, failed.text = result.checks, result.data, result.warnings, result.text
         return failed
     return result
+
+
+def _register_signing():
+    from .signing_checks import signing_checks
+    register_group("signing", signing_checks)
+    register_scope("signing", ("machine", "signing"))
+
+
+_register_signing()

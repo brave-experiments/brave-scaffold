@@ -30,6 +30,12 @@ class CheckResult:
                 "affects": list(self.affects), "repairs": self.repairs}
 
 
+def make_check(name, status, summary, scope, required=True, affects=(), repairs=None, **evidence):
+    """Build a CheckResult; keyword arguments become evidence."""
+    return CheckResult(name=name, status=status, summary=summary, scopes=(scope,), required=required,
+                       evidence=evidence, affects=tuple(affects), repairs=repairs or [])
+
+
 def aggregate(checks):
     """Return (code, message) when required readiness is missing, else None."""
     required = [check for check in checks if check.required]
