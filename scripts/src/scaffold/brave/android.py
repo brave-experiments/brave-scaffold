@@ -13,8 +13,8 @@ from pathlib import Path
 from ..common.platforms import host_architecture, host_platform
 from ..common.procs import run_capture
 from ..common.results import Result, ScaffoldError, repair
-from . import adb, android_deps, steps as step_module
-from .records import OutputState, output_states, track
+from . import adb, android_deps, output_freshness, steps as step_module
+from .records import output_states, track
 
 PACKAGE_PREFIX = "com.brave."
 DEFAULT_JAVA_OPTS = "-Xmx10G -Xms1G"
@@ -170,7 +170,6 @@ def select_apk(ctx, identity, configuration, arch):
 
 def restart_apk(ctx, identity, artifact, result, device=None, op=None):
     """Install the APK on the selected device and restart its package there."""
-    from . import cmd_build
     if not artifact["package_verified"]:
         raise ScaffoldError(
             "ARTIFACT_UNRESOLVED", "Nothing was installed or restarted: %s." % UNPROVEN_PACKAGE,
@@ -187,8 +186,8 @@ def restart_apk(ctx, identity, artifact, result, device=None, op=None):
             op.start(step.name, **step.record())
         progress = op.succeed
     output_dir = artifact.get("output_dir") or str(Path(artifact["path"]).parent.parent)
-    assessment = cmd_build.artifact_freshness(ctx, identity, output_dir, android=True)
-    cmd_build.add_freshness_warning(result, assessment)
+    assessment = output_freshness.artifact_freshness(ctx, identity, output_dir, android=True)
+    output_freshness.add_freshness_warning(result, assessment)
     outcome = adb.restart_package(adapter, device["id"], artifact["path"], artifact["package"], ctx.environ, ctx.log,
                                   progress=progress)
     if op is not None:
@@ -204,9 +203,8 @@ def restart_apk(ctx, identity, artifact, result, device=None, op=None):
 
 def run_plan(ctx, identity, artifact):
     """What installing and restarting the selected APK would do, changing nothing."""
-    from . import cmd_build
     package = artifact["package"] or "<package from the APK>"
-    steps = [cmd_build.environment_plan_step(ctx, identity),
+    steps = [step_module.plan_environment_step(ctx, identity),
              step_module.Step("select-artifact", "Use the selected APK; run never builds.", "resolved",
                               reads=[artifact["path"]], needs=["environment"], detail=artifact["path"])]
     try:

@@ -20,24 +20,17 @@ from ..common.checks import (BLOCKER, MARKER_LEGEND, MARKERS, NOT_CHECKED, PASS,
 from ..common.platforms import host_architecture, host_platform
 from ..common.procs import run_capture
 from ..common.results import Result, ScaffoldError, error_result, repair
-from . import execution as execution_module
+from . import android_checks, execution as execution_module, signing_checks
 from . import rbe_checks as rbe_checks_module
 
-# Scopes delivered so far. Each scope lists the check groups it evaluates.
+# Each scope lists the check groups it evaluates.
 SCOPES = {
     "mac": ("machine", "host-mac", "mac-build", "checkout"),
     "rbe": ("machine", "rbe"),
     "shell": ("machine", "shell"),
+    "signing": ("machine", "signing"),
+    "android": ("machine", "host-mac", "android-machine", "checkout", "android-build", "android-support"),
 }
-EXTRA_SCOPES = {}  # populated by later stages: name -> check groups
-
-
-def register_scope(name, groups):
-    EXTRA_SCOPES[name] = tuple(groups)
-
-
-def all_scopes():
-    return {**SCOPES, **EXTRA_SCOPES}
 
 
 _check = make_check
@@ -168,8 +161,10 @@ def shell_checks(ctx, scope):
     return checks
 
 
-GROUP_FUNCTIONS = {"machine": machine_checks, "host-mac": host_mac_checks, "shell": shell_checks, "mac-build": rbe_checks_module.mac_build_checks,
-                   "rbe": rbe_checks_module.rbe_checks}
+GROUP_FUNCTIONS = {"machine": machine_checks, "host-mac": host_mac_checks, "shell": shell_checks,
+                   "mac-build": rbe_checks_module.mac_build_checks, "rbe": rbe_checks_module.rbe_checks,
+                   "signing": signing_checks.signing_checks, "android-machine": android_checks.machine_checks,
+                   "android-build": android_checks.build_checks, "android-support": android_checks.support_checks}
 
 
 # These describe the machine, the shell, or Git, not the checkout, so the caller's environment is the right one.
@@ -192,10 +187,6 @@ def group_checks(ctx, group, scope, state):
     return function(state.execution.context(ctx), scope)
 
 
-def register_group(name, function):
-    GROUP_FUNCTIONS[name] = function
-
-
 def render_text(scopes, checks):
     """The readable report: one marked line per check, then what the markers mean."""
     lines = ["Doctor scopes: %s" % ", ".join(scopes)]
@@ -207,7 +198,7 @@ def render_text(scopes, checks):
 
 
 def run_doctor(ctx):
-    scopes_map = all_scopes()
+    scopes_map = SCOPES
     requested = ctx.parsed.positionals[0].lower() if ctx.parsed.positionals else None
     if requested is not None and requested not in scopes_map:
         deferred = requested in ("ios", "android-studio", "emulator", "agent", "agents", "skills")
@@ -238,24 +229,3 @@ def run_doctor(ctx):
         failed.checks, failed.data, failed.warnings, failed.text = result.checks, result.data, result.warnings, result.text
         return failed
     return result
-
-
-def _register_signing():
-    from .signing_checks import signing_checks
-    register_group("signing", signing_checks)
-    register_scope("signing", ("machine", "signing"))
-
-
-_register_signing()
-
-
-def _register_android():
-    from . import android_checks
-    register_group("android-machine", android_checks.machine_checks)
-    register_group("android-build", android_checks.build_checks)
-    register_group("android-support", android_checks.support_checks)
-    register_scope("android", ("machine", "host-mac", "android-machine", "checkout", "android-build",
-                               "android-support"))
-
-
-_register_android()

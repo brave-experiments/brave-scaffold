@@ -11,7 +11,8 @@ import os
 from ..common.checks import BLOCKER, NOT_CHECKED, PASS, WARNING, make_check
 from ..common.procs import run_capture
 from ..common.results import ScaffoldError, repair
-from . import adb, android_deps, cmd_build, rbe_checks
+from . import adb, android_deps, rbe_checks
+from . import sync as sync_module
 
 UNCHECKED_NAMES = ("android-gclient-target", "android-support-working-copy", "android-support-lfs",
                    "android-support-compatibility", "android-support-currency")
@@ -49,7 +50,7 @@ def build_checks(ctx, scope, remote_required=False):
     if identity is None:
         return [make_check("android-gclient-target", NOT_CHECKED, "No checkout is selected: %s" % error.message,
                            scope, affects=("android build",), repairs=error.repairs, **error.details)]
-    targets = cmd_build.gclient_targets(identity)
+    targets = sync_module.gclient_targets(identity)
     ok = targets is not None and "android" in targets
     sync = repair(["bdev", "sync", "android", "--checkout", str(identity.core)],
                   note="Adds android to the checkout's target_os and syncs; changes the checkout.")

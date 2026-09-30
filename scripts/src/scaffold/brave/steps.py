@@ -18,6 +18,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
+from ..common import env as env_module
 from ..common.checks import BLOCKER, NOT_CHECKED, WARNING, readiness_error
 from ..common.redaction import redact_argv
 
@@ -63,6 +64,16 @@ def render_plan(command, steps):
             line += " - adds %s if an earlier step changes files" % " ".join(step.conditional_arguments)
         lines.append(line)
     return "\n".join(lines)
+
+
+def plan_environment_step(ctx, identity):
+    """The environment step as a plan judges it: approved and present, or blocked with the reason."""
+    from ..common.results import ScaffoldError
+    try:
+        env_module.require_environment(identity, ctx.environ, ctx.log)
+        return environment_step(identity)
+    except ScaffoldError as error:
+        return environment_step(identity, error)
 
 
 def environment_step(identity, error=None):

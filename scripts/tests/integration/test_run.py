@@ -10,6 +10,7 @@ import signal
 import subprocess
 import time
 import unittest
+from pathlib import Path
 from unittest import mock
 
 from tests.integration.test_build import BUILD_HOOK, SKIP, BuildTestCase
@@ -202,9 +203,9 @@ class RunTests(BuildTestCase):
         self.build()
         import glob
         (path,) = glob.glob(str(self.sandbox.config.parent / ".bdev" / "outputs" / "*" / "*.json"))
-        record = json.loads(open(path).read())
+        record = json.loads(Path(path).read_text())
         del record["success"]["fingerprint"]["chromium_worktree"]
-        open(path, "w").write(json.dumps(record))
+        Path(path).write_text(json.dumps(record))
         result, document = self.run_app()
         self.assertEqual(document["data"]["run"]["freshness"]["status"], "unknown")
         self.assertEqual(document["warnings"][0]["code"], "UNKNOWN_FRESHNESS")

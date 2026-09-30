@@ -33,7 +33,11 @@ Tooling code, launchers, and tests live under `scripts/`; there is no root
 | `brave/registry.py` | The command table: parsing, help, and dispatch all read it |
 | `brave/execution.py` | The selected checkout's execution context: identity, approved environment, resolved tools |
 | `brave/patch_inventory.py`, `brave/sync_scope.py` | Which repositories Core patches and a sync can reset, and what their metadata records |
-| `brave/cmd_*.py`, `brave/doctor.py` | Command handlers |
+| `brave/cmd_build.py`, `brave/cmd_patches.py`, `brave/cmd_tools.py`, `brave/cmd_setup.py`, `brave/clean.py`, `brave/android.py`, `brave/doctor.py` | Command handlers and their platform code |
+| `brave/sync.py` | Sync arguments, the target list kept across syncs, the local-work guard, and the sync phase |
+| `brave/packages.py` | The one place a package command is turned into a child process (bpm and every phase use it) |
+| `brave/patches.py`, `brave/android_deps.py`, `brave/freshness.py`, `brave/output_freshness.py` | Patch preparation, Android support preparation, and freshness evidence |
+| `brave/records.py`, `brave/steps.py` | Operation records with phase outcomes, per-output history, and the step descriptions shared by plans and records |
 
 Handlers receive a context and return a `Result` or raise `ScaffoldError`; the
 runner turns either into exactly one output document.
@@ -69,7 +73,12 @@ environments with `direnv allow`; nothing approves a real environment.
   is needed.
 - **Python 3.14+** as the scaffold runtime.
 
-The full suite takes about six minutes. Each test sandbox stops every process that
+The full suite takes about ten to fifteen minutes. Run a focused set while you work, for example
+`.venv/bin/python -m unittest tests.integration.test_clean tests.integration.test_plans`, or one
+unit module such as `tests.unit.test_buildopts`; unit tests need no direnv, and integration classes
+name what they need in their skip messages. The one timing-sensitive test is
+`RestartLoggingTests.test_liveness_and_launch_probes_are_logged_with_polling_summarised`: on a heavily
+loaded machine it can see fewer liveness polls than it expects; rerun it alone before treating it as a fault. Each test sandbox stops every process that
 mentions its directory when it finishes, so a run leaves nothing behind. `test_doc_examples`
 runs the command examples from the guides in fixtures; a new example in a guide must be
 added to its table (or listed with the reason it cannot run) or a coverage test fails.
@@ -83,9 +92,11 @@ results with the evidence.
 
 1. Add a `CommandSpec` to `brave/registry.py` with a summary, positionals,
    options, side effects, and examples. Help and parsing come from it.
-2. Write the handler. Take the checkout from `ctx.identity()`, load the
-   environment with `common/env.load_environment`, and run processes through
-   `common/procs` so they are logged and cancellable.
+2. Write the handler. Take the checkout from `ctx.identity()`, load its environment once with
+   `brave/execution.load` (resolve tools with `execution.resolve_tools`), pass that
+   `Execution` to every phase, and run processes through `common/procs` (package commands
+   through `brave/packages.run`) so they are logged and cancellable. Record each phase with
+   `op.start`, `op.succeed`, and `op.fail`.
 3. Return a `Result`; raise `ScaffoldError` with a stable code and repairs.
 4. Add the command's `data` shape to `schemas/command-data.schema.json` and select it
    in `schemas/result-envelope.schema.json`; a test fails for a command without one.
@@ -94,8 +105,9 @@ results with the evidence.
    against the schemas and checks that help examples parse.
 5. Update `docs/commands.md`, the troubleshooting entry for new errors, and the
    capability table.
-6. For a doctor check, add it to a check group in `brave/doctor.py`; execution
-   paths reuse the same functions.
+6. For a doctor check, add it to a check group and the group to a scope in the tables in
+   `brave/doctor.py`; execution paths reuse the same functions. Groups other than machine,
+   shell, and signing run in the selected checkout's approved environment.
 
 ## Evidence for support claims
 

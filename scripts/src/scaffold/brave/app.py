@@ -94,4 +94,3 @@ def run_command(command, parsed, handler, argv_environ=None, needs_config=True, 
         result.logs = [{"kind": "command", **record} for record in context.log.records]
     emit(result, json_mode, stdout=stdout, stderr=stderr)
     return result.exit_code
-

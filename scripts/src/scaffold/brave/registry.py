@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 from ..common.cli import CommandSpec, Opt, Positional
-from . import android, clean, cmd_build, cmd_setup, cmd_tools, doctor
+from . import android, clean, cmd_build, cmd_patches, cmd_setup, cmd_tools, doctor
 
 WITH_PYTHONPATH = Opt("--with-pythonpath", "with_pythonpath", takes_value=False,
                       help="Also export PYTHONPATH for Core's script directory.")
@@ -139,10 +139,10 @@ def build_registry():
                                  "checkout. An existing working copy is switched only to an explicit --ref, and only "
                                  "when it has no local changes and no unpushed commits.",
                     examples=("bdev android setup --checkout main", "bdev android setup --ref main")),
-        CommandSpec("drift", "Compare patched Chromium files with the patch metadata (read-only).", cmd_build.cmd_drift,
+        CommandSpec("drift", "Compare patched Chromium files with the patch metadata (read-only).", cmd_patches.cmd_drift,
                     options=(DIFF,), examples=("bdev drift", "bdev drift --diff")),
         CommandSpec("patches update", "Generate Core patch changes from local Chromium edits.",
-                    cmd_build.cmd_patches_update, forward=True,
+                    cmd_patches.cmd_patches_update, forward=True,
                     side_effects="Runs 'bpm run update_patches', which rewrites patch files in Core. Nothing is "
                                  "committed.", examples=("bdev patches update",)),
     ]
