@@ -97,7 +97,8 @@ when the output may not include the latest code: `STALE_BUILD`, or
 `UNKNOWN_FRESHNESS` ("Build freshness is unknown; this output may not include the
 latest code."). After a failed, cancelled, or interrupted rebuild the earlier
 record is marked as needing revalidation, so freshness is reported as unknown even
-if an older application is still usable; a later successful build clears it.
+if an older application is still usable; only a later successful, validated build
+clears it (a passing `bdev test` run proves nothing about the application).
 
 A successful build records these inputs, and a later `run` compares them: Core's and
 Chromium's HEAD, Core's uncommitted state, the tracked Chromium files that differ from

@@ -145,7 +145,7 @@ def assess(recorded, current, output_state):
     """Return {"status": current|stale|unknown, "evidence": [...]} for one output."""
     evidence = []
     if output_state.needs_revalidation:
-        attempt = output_state.last_attempt() or {}
+        attempt = output_state.last_uncertain_attempt() or {}
         evidence.append("An attempt to change this output did not complete successfully (%s); its contents may be "
                         "partly overwritten." % attempt.get("outcome", "unknown"))
     if not recorded:

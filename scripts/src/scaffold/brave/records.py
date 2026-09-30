@@ -132,7 +132,8 @@ class OutputState:
     def begin_attempt(self, operation_id, changes_output=True):
         """Record an attempt before any write; earlier success stops being proof."""
         self.data["attempts"].append({"operation_id": operation_id, "started": now(), "outcome": "started",
-                                      "changes_output": changes_output})
+                                      "changes_output": changes_output,
+                                      "uncertain_before": bool(self.data["needs_revalidation"])})
         self.data["attempts"] = self.data["attempts"][-20:]
         if changes_output and self.data["success"]:
             self.data["needs_revalidation"] = True
@@ -145,12 +146,14 @@ class OutputState:
         self.save()
 
     def end_attempt_completed(self, operation_id):
-        """An attempt that wrote the output and finished cleanly without producing a new artifact record.
+        """An attempt that finished cleanly without producing a new artifact record (a passing test run).
 
-        The output is consistent again, so it no longer needs revalidation; the earlier
-        success record keeps its own input fingerprint, which still decides staleness.
+        It gives no evidence about the browser output, so the output is exactly as uncertain as it was
+        before the attempt began; only a validated build clears the marker.
         """
-        self.data["needs_revalidation"] = False
+        for attempt in self.data["attempts"]:
+            if attempt["operation_id"] == operation_id:
+                self.data["needs_revalidation"] = attempt.get("uncertain_before", False)
         self.end_attempt(operation_id, "succeeded")
 
     def record_success(self, operation_id, artifact, fingerprint):
@@ -171,6 +174,10 @@ class OutputState:
 
     def last_attempt(self):
         return self.data["attempts"][-1] if self.data["attempts"] else None
+
+    def last_uncertain_attempt(self):
+        """The most recent attempt that did not finish cleanly; it is why the output may be partly overwritten."""
+        return next((item for item in reversed(self.data["attempts"]) if item["outcome"] != "succeeded"), None)
 
 
 def output_states(identity, root=None):

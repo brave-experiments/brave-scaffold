@@ -15,8 +15,6 @@ from unittest import mock
 from tests.integration.test_build import BUILD_HOOK, SKIP, BuildTestCase
 from tests.support import SCRIPTS
 
-BUNDLE_ID = "com.brave.ScaffoldTest"
-
 
 def alive(pid):
     try:
@@ -216,6 +214,22 @@ class RunTests(BuildTestCase):
         self.assertEqual(document["data"]["run"]["freshness"]["status"], "current")
         self.document("test", "brave_unit_tests", env=self.env(FAKE_EXIT="1"))
         self.assertTrue(self.state().needs_revalidation, "a failed test run still marks the output")
+
+    def test_a_passing_test_run_does_not_forgive_an_earlier_failed_rebuild(self):
+        self.build()
+        self.document("build", env=self.env(FAKE_EXIT="1"))
+        self.assertTrue(self.state().needs_revalidation)
+        result, document = self.document("test", "brave_unit_tests")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(self.state().needs_revalidation, "a passing test does not prove the browser output")
+        result, document = self.run_app("--artifact", str(self.output_app()))
+        freshness = document["data"]["run"]["freshness"]
+        self.assertEqual(freshness["status"], "unknown")
+        self.assertIn("(failed)", " ".join(freshness["evidence"]), "the evidence names the failed rebuild")
+        self.build()
+        self.assertFalse(self.state().needs_revalidation, "only a validated build clears it")
+        self.document("test", "brave_unit_tests")
+        self.assertFalse(self.state().needs_revalidation)
 
     def test_unusable_output_after_a_failed_rebuild_is_rejected(self):
         self.build()
