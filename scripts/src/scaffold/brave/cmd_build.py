@@ -159,8 +159,10 @@ def verify_mac_artifact(effective):
     return bundle, None
 
 
-def artifact_for(effective):
-    return verify_mac_artifact(effective) if effective.target == "mac" else _android().verify_artifact(effective)
+def artifact_for(effective, identity, environ, log=None):
+    if effective.target == "mac":
+        return verify_mac_artifact(effective)
+    return _android().verify_artifact(effective, identity, environ, log)
 
 
 def _android():
@@ -233,7 +235,7 @@ def perform_build(ctx, identity, effective, prepared, op, force_gn=False):
         _android().build_environment(ctx) if android else metal_environment(ctx),
         (lambda: _android().write_gn_overrides(identity, effective)) if android else None)
     try:
-        artifact, reason = artifact_for(effective)
+        artifact, reason = artifact_for(effective, identity, prepared.loaded, ctx.log)
     except ScaffoldError as error:
         if state is not None:
             state.end_attempt(op.id, "output-invalid")

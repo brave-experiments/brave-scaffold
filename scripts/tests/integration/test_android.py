@@ -9,7 +9,7 @@ import subprocess
 import unittest
 from pathlib import Path
 
-from tests.android_fixtures import GIT, install_fake_adb, make_support_repo
+from tests.android_fixtures import GIT, install_fake_aapt2, install_fake_adb, make_support_repo
 from tests.integration.test_build import SKIP, BuildTestCase
 
 ANDROID_HOOK = """
@@ -43,6 +43,7 @@ class AndroidTestCase(BuildTestCase):
         (self.src / "chrome").mkdir(exist_ok=True)
         (self.src / "chrome" / "VERSION").write_text("MAJOR=155\nMINOR=0\n")
         (self.src.parent / ".gclient").write_text("target_os = ['android']\n")
+        install_fake_aapt2(self.src)
         self.sandbox.commit_all("main")
         self.hook = self.sandbox.hook(ANDROID_HOOK)
         install_fake_adb(self.sandbox)
@@ -345,6 +346,68 @@ class DeviceTests(AndroidTestCase):
                                             command="build-run")
         self.assertEqual((result.returncode, document["error"]["code"]), (5, "ARTIFACT_UNRESOLVED"))
         self.assertFalse([c for c in self.adb_calls() if "install" in c])
+
+
+class PackageIdentityTests(AndroidTestCase):
+    """The package to stop and launch comes from the APK itself, never from a default."""
+
+    def setUp(self):
+        super().setUp()
+        self.setup_support()
+        self.aapt2 = self.src / "third_party" / "android_build_tools" / "aapt2" / "cipd" / "aapt2"
+
+    def combined(self, command="build-run", **extra):
+        self.sandbox.record.unlink(missing_ok=True)
+        env = self.env(FAKE_ADB_DEVICES="emulator-5554,device", **extra)
+        result = self.sandbox.bdev("--json", "--config", self.config, "--checkout", "main", command, "android",
+                                   "--device", "emulator-5554", env=env)
+        return result, json.loads(result.stdout)
+
+    def device_changes(self):
+        return [call for call in self.adb_calls() if any(word in call for word in ("install", "force-stop", "monkey"))]
+
+    def test_a_non_default_package_is_the_one_stopped_and_launched(self):
+        result, document = self.combined(FAKE_APK_PACKAGE="com.brave.browser_beta")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        calls = self.adb_calls()
+        self.assertIn(["-s", "emulator-5554", "shell", "am", "force-stop", "com.brave.browser_beta"], calls)
+        self.assertIn(["-s", "emulator-5554", "shell", "monkey", "-p", "com.brave.browser_beta", "1"], calls)
+        self.assertNotIn("com.brave.browser_default", " ".join(" ".join(call) for call in calls))
+        self.assertEqual(document["data"]["run"]["package"], "com.brave.browser_beta")
+        self.assertTrue(document["artifacts"][0]["package_verified"])
+
+    def test_an_apk_for_an_unrelated_package_never_reaches_the_device(self):
+        result, document = self.combined(FAKE_APK_PACKAGE="org.example.unrelated")
+        self.assertEqual((result.returncode, document["error"]["code"]), (5, "ARTIFACT_MISMATCH"))
+        self.assertEqual(self.device_changes(), [])
+
+    def test_unproven_identity_blocks_combined_commands_and_leaves_standalone_build_a_warning(self):
+        for label, change in (("no inspector", lambda: self.aapt2.unlink()), ("failing inspector", lambda: None)):
+            with self.subTest(label):
+                if label == "no inspector":
+                    change()
+                extra = {"FAKE_AAPT2_FAIL": "1"} if label == "failing inspector" else {}
+                result, document = self.combined(**extra)
+                self.assertEqual((result.returncode, document["error"]["code"], document["child_exit_code"]),
+                                 (5, "ARTIFACT_UNRESOLVED", 0))
+                self.assertIn("package", document["error"]["message"])
+                self.assertEqual(self.device_changes(), [])
+                result, document = self.combined("build", **extra)
+                self.assertEqual((result.returncode, document["warnings"][0]["code"], document["artifacts"]),
+                                 (0, "ARTIFACT_UNRESOLVED", []))
+
+    def test_running_an_existing_apk_needs_a_proven_package_too(self):
+        self.assertEqual(self.combined()[0].returncode, 0)
+        self.aapt2.unlink()
+        result, document = self.combined("run")
+        self.assertEqual(result.returncode, 5, result.stderr)
+        self.assertEqual(self.device_changes(), [])
+
+    def test_a_failed_stop_is_not_reported_as_a_restart(self):
+        result, document = self.combined(FAKE_ADB_FORCE_STOP_FAIL="1")
+        self.assertEqual((result.returncode, document["error"]["code"]), (5, "LAUNCH_FAILED"))
+        self.assertIn("stop", document["error"]["message"].lower())
+        self.assertFalse([call for call in self.adb_calls() if "monkey" in call])
 
 
 class AndroidDoctorTests(AndroidTestCase):

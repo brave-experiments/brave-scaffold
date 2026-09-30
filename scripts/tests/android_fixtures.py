@@ -94,11 +94,25 @@ if args == ["devices"]:
 elif "install" in args:
     print("Success" if not os.environ.get("FAKE_ADB_INSTALL_FAIL") else "Failure [INSTALL_FAILED]")
     sys.exit(int(os.environ.get("FAKE_ADB_INSTALL_FAIL", "0")))
+elif "force-stop" in args:
+    sys.exit(int(os.environ.get("FAKE_ADB_FORCE_STOP_FAIL", "0")))
 elif "pidof" in args:
     if os.environ.get("FAKE_ADB_NO_PID"):
         sys.exit(1)
     print("4321")
 """
+
+
+FAKE_AAPT2 = """#!%(python)s
+import os, sys
+if os.environ.get("FAKE_AAPT2_FAIL"):
+    sys.exit(1)
+print(os.environ.get("FAKE_APK_PACKAGE", "com.brave.browser_default"))
+"""
+
+
+def install_fake_aapt2(src):
+    write_executable(Path(src) / "third_party" / "android_build_tools" / "aapt2" / "cipd" / "aapt2", FAKE_AAPT2)
 
 
 def make_support_repo(root: Path, versions: dict, realistic: bool = False) -> Path:

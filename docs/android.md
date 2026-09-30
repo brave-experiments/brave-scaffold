@@ -103,8 +103,11 @@ defaults to `-Xmx10G -Xms1G`, and Siso's local job limit defaults to 8 (set
 output selection, and artifact outcomes are the same as on
 [macOS](macos.md#build). The verified output is
 `<src>/out/android_Debug_arm64/apks/BraveMonoarm64.apk`; a zip without
-`AndroidManifest.xml`, or a package that is not `com.brave.*` (checked with the
-checkout's `aapt2` when present), is `ARTIFACT_MISMATCH`.
+`AndroidManifest.xml`, or a package that is not `com.brave.*`, is `ARTIFACT_MISMATCH`.
+The package name is read from the APK with the checkout's own `aapt2`. If that tool is
+missing or fails, the package is unproven: the result is `ARTIFACT_UNRESOLVED` (a warning
+for `build`, an error for the combined commands and `run`), and nothing is installed,
+stopped, or launched. No default package name is assumed.
 
 ## Install and restart
 
@@ -121,8 +124,9 @@ first or the most recent. A device that is `offline` or `unauthorized`, or not
 connected, gives `DEVICE_UNAVAILABLE` with recovery steps. `build-run` chooses the
 device before building.
 
-The APK is installed over the existing app (`adb install -d -r -g`), that package
-is stopped on that device only, launched, and its process confirmed. Profiles and
+The APK is installed over the existing app (`adb install -d -r -g`), the APK's own
+package is stopped on that device only (a failed stop is `LAUNCH_FAILED`), launched, and
+its process confirmed. Profiles and
 app data are kept: nothing is uninstalled or cleared. Older or independently built
 APKs may be installed, with the same `STALE_BUILD` / `UNKNOWN_FRESHNESS` reporting
 as on macOS. `adb` comes from `ADB`, `ANDROID_HOME`, `ANDROID_SDK_ROOT`, or `PATH`.

@@ -14,7 +14,6 @@ from pathlib import Path
 from ..common.procs import run_capture
 from ..common.results import ScaffoldError, repair
 
-DEFAULT_PACKAGE = "com.brave.browser_default"
 VERIFY_SECONDS = 15
 RECOVERY = {
     "offline": "Reconnect the cable or restart the device, then run 'adb reconnect offline'.",
@@ -110,7 +109,11 @@ def restart_package(adb, device, apk, package, environ, log=None, verify_seconds
         output = (installed.stdout + installed.stderr).strip()
         raise ScaffoldError("LAUNCH_FAILED", "Installing %s on %s failed: %s" % (apk, device, output[-500:]),
                             details={"device": device, "exit": installed.returncode})
-    _adb(adb, device, ["shell", "am", "force-stop", package], environ, log)
+    stopped = _adb(adb, device, ["shell", "am", "force-stop", package], environ, log)
+    if stopped.returncode != 0:
+        raise ScaffoldError("LAUNCH_FAILED", "Stopping %s on %s failed, so it was not restarted: %s" % (
+            package, device, stopped.stderr.strip()[-300:] or "exit %d" % stopped.returncode),
+            details={"device": device, "package": package, "exit": stopped.returncode})
     launched = _adb(adb, device, ["shell", "monkey", "-p", package, "1"], environ, log)
     if launched.returncode != 0:
         raise ScaffoldError("LAUNCH_FAILED", "Launching %s on %s failed." % (package, device),

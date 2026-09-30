@@ -64,14 +64,19 @@ def read_apk(path, identity=None, environ=None, log=None):
     if package is not None and not package.startswith(PACKAGE_PREFIX):
         raise ScaffoldError("ARTIFACT_MISMATCH", "%s is package %s, not a Brave application." % (path, package),
                             details={"path": str(path), "package": package})
-    return {"path": str(path), "kind": "apk", "name": path.name, "package": package or adb.DEFAULT_PACKAGE,
+    return {"path": str(path), "kind": "apk", "name": path.name, "package": package,
             "package_verified": package is not None}
 
 
-def verify_artifact(effective):
+UNPROVEN_PACKAGE = "the APK's package name could not be verified (the checkout's aapt2 is missing or failed)"
+
+
+def verify_artifact(effective, identity, environ, log=None):
     if effective.unresolved:
         return None, "; ".join(effective.unresolved)
-    artifact = read_apk(apk_path(effective.output_dir, effective.arch))
+    artifact = read_apk(apk_path(effective.output_dir, effective.arch), identity, environ, log)
+    if not artifact["package_verified"]:
+        return None, UNPROVEN_PACKAGE
     artifact.update(target="android", configuration=effective.configuration, arch=effective.arch,
                     output_dir=str(effective.output_dir), verified=True)
     return artifact, None
@@ -161,6 +166,12 @@ def select_apk(ctx, identity, configuration, arch):
 def restart_apk(ctx, identity, artifact, result, device=None):
     """Install the APK on the selected device and restart its package there."""
     from . import cmd_build
+    if not artifact["package_verified"]:
+        raise ScaffoldError(
+            "ARTIFACT_UNRESOLVED", "Nothing was installed or restarted: %s." % UNPROVEN_PACKAGE,
+            details={"artifact": artifact["path"]},
+            repairs=[repair(["bdev", "tools", "setup", "--checkout", str(identity.core)], requires_user_action=False,
+                            note="Explicit repair of checkout-local tools; run it only if aapt2 is missing.")])
     env_module.require_environment(identity, ctx.environ, ctx.log)
     adapter, device, source = device or preflight_device(ctx)
     output_dir = artifact.get("output_dir") or str(Path(artifact["path"]).parent.parent)
