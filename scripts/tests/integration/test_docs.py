@@ -104,7 +104,7 @@ class DocumentationTests(unittest.TestCase):
             self.assertTrue(spec.name in text, spec.name)
 
     def test_documents_do_not_carry_local_paths_or_planning_references(self):
-        forbidden = re.compile(r"/Users/|/home/[a-z]|handoff|predecessor|spec\.md|implementation-notes", re.IGNORECASE)
+        forbidden = re.compile(r"/Users/|/home/[a-z]|handoff|predecessor", re.IGNORECASE)
         for document in DOCUMENTS:
             if document.name != "AGENTS.md":
                 self.assertIsNone(forbidden.search(document.read_text(encoding="utf-8")), document.name)

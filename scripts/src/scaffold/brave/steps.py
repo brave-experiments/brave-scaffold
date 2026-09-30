@@ -15,6 +15,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 from ..common.checks import BLOCKER, NOT_CHECKED, WARNING, readiness_error
+from ..common.redaction import redact_argv
 
 NO_CLEANUP = "None; the scaffold does not roll back or clean up after a failure."
 
@@ -105,7 +106,7 @@ def sync_step(identity, arguments, argv, needs=()):
                                                                         str(identity.workspace / ".gclient")],
                 argv=argv, cwd=str(identity.core), needs=list(needs),
                 on_failure="Stops before any later phase; a partial sync stays as it is.", cleanup=NO_CLEANUP,
-                detail="arguments: " + " ".join(arguments))
+                detail="arguments: " + " ".join(redact_argv(arguments)))
 
 
 def build_step(identity, effective, subcommand, arguments, argv, needs):
@@ -116,7 +117,7 @@ def build_step(identity, effective, subcommand, arguments, argv, needs):
         on_failure="The output is marked as needing revalidation; the previous build record is kept as history, "
                    "and the output cannot be restored to its earlier state.",
         cleanup=NO_CLEANUP + " Cleaning output is a separate, explicit command.",
-        detail=None if argv else "arguments: " + " ".join(arguments) + " (the final command needs local tools)")
+        detail=None if argv else "arguments: " + " ".join(redact_argv(arguments)) + " (the final command needs local tools)")
 
 
 def verify_step(effective, needs):

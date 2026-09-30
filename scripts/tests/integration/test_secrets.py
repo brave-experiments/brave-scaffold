@@ -63,6 +63,13 @@ class SecretRedactionTests(BuildTestCase):
             with self.subTest(command=command):
                 self.assert_secret_free(self.bdev(*command).stdout, self.bdev_text(*command).stdout)
 
+    def test_a_plan_that_cannot_resolve_its_command_still_hides_secrets(self):
+        (self.core / "third_party" / "node" / "node-mac-arm64" / "bin" / "node").unlink()
+        command = ["build", "--plan", *SECRET_ARGS]
+        result = self.bdev(*command)
+        self.assertIn("arguments:", result.stdout, "the unresolved command is still shown, redacted")
+        self.assert_secret_free(result.stdout, self.bdev_text(*command).stdout)
+
     def test_direct_package_results_hide_secrets(self):
         for env, flags in ((self.env(), ["--json"]), (self.env(FAKE_EXIT="3"), ["--json"]), (self.env(FAKE_EXIT="3"), [])):
             result = self.sandbox.bdev(*flags, "--config", self.config, "--checkout", "main", "run", "x", *SECRET_ARGS,

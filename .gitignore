@@ -18,7 +18,3 @@ __pycache__/
 /brave-browser*/
 /support/
 /bot/
-
-# External implementation planning stays outside this repository
-/spec.md
-/implementation-notes.md

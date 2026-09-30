@@ -5,8 +5,8 @@
 """Every execution phase uses the approved environment that was loaded and validated for the checkout."""
 
 import json
-import shutil
 import unittest
+from pathlib import Path
 
 from tests.integration.test_android import DEVICES_TWO, AndroidTestCase
 from tests.integration.test_build import SKIP, BuildTestCase
@@ -71,7 +71,7 @@ class AndroidEnvironmentTests(AndroidTestCase):
 
     def test_build_settings_exported_by_the_environment_reach_the_build(self):
         extend_environment(self, "export SCAFFOLD_ANDROID_SISO_LOCAL_JOBS=3", "export JAVA_OPTS=-Xmx2G")
-        hook = self.sandbox.hook(open(self.hook).read().split("\n", 1)[1] + """
+        hook = self.sandbox.hook(Path(self.hook).read_text().split("\n", 1)[1] + """
 import json
 open(os.environ["FAKE_ENV_DUMP"], "w").write(json.dumps({key: os.environ.get(key) for key in ("SISO_LIMITS", "JAVA_OPTS")}))
 """)
