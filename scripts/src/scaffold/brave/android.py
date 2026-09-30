@@ -112,7 +112,7 @@ def prepare_support(ctx, identity, prepared, op, effective):
 
 
 def write_gn_overrides(identity, effective):
-    return android_deps.ensure_args_gn(identity, effective.output_dir)
+    return android_deps.ensure_args_gn(identity, effective.output_dir, effective.chosen_gn_keys)
 
 
 # --- devices and run --------------------------------------------------------------------------

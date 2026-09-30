@@ -23,6 +23,16 @@ for index, arg in enumerate(argv):
     if arg == "-C":
         build_dir = argv[index + 1]
 out = build_dir if os.path.isabs(build_dir) else os.path.join(src, "out", build_dir)
+os.makedirs(out, exist_ok=True)
+generated = {"use_remoteexec": "true" if "--use_remoteexec=true" in argv else "false"}
+for index, arg in enumerate(argv):
+    if arg.startswith("--gn=") or arg == "--gn":
+        key, _, value = (arg[5:] if arg != "--gn" else argv[index + 1]).partition(":")
+        generated[key] = value
+    elif arg.startswith("--use_remoteexec="):
+        generated["use_remoteexec"] = arg.partition("=")[2]
+with open(os.path.join(out, "args_generated.gni"), "w") as stream:
+    stream.write("".join("%s=%s\\n" % item for item in generated.items()))
 if not os.environ.get("FAKE_NO_APP"):
     os.makedirs(os.path.join(out, "apks"), exist_ok=True)
     path = os.path.join(out, "apks", "BraveMonoarm64.apk")
@@ -62,6 +72,23 @@ class AndroidTestCase(BuildTestCase):
 
     def adb_calls(self):
         return [r["argv"] for r in self.sandbox.records() if r["tool"] == "adb"]
+
+
+def effective_gn_args(output_dir):
+    """What GN would see: each import is expanded in place and the last assignment of a key wins."""
+    final = {}
+
+    def read(path):
+        for line in Path(path).read_text().splitlines():
+            line = line.strip()
+            if line.startswith('import("//'):
+                read(Path(output_dir).parents[1] / line[len('import("//'):-2])
+            elif "=" in line and not line.startswith("#"):
+                key, _, value = line.partition("=")
+                final[key.strip()] = value.strip()
+
+    read(Path(output_dir) / "args.gn")
+    return final
 
 
 class AndroidBuildTests(AndroidTestCase):
@@ -120,6 +147,30 @@ class AndroidBuildTests(AndroidTestCase):
         argv = self.build_argv()
         self.assertIn("--gn=use_mold:true", argv)
         self.assertNotIn("--gn=use_mold:false", argv, "a forwarded value replaces the generated one")
+
+    def final_gn_args(self, *args, output="android_Debug_arm64"):
+        result, document = self.document("build", "android", *args)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        return effective_gn_args(self.src / "out" / output)
+
+    def test_final_gn_settings_default_to_the_scaffold_choices(self):
+        self.setup_support()
+        final = self.final_gn_args()
+        self.assertEqual({key: final[key] for key in ("is_component_build", "enable_android_secondary_abi",
+                                                       "use_mold", "use_remoteexec", "android_static_analysis")},
+                         {"is_component_build": "false", "enable_android_secondary_abi": "false", "use_mold": "false",
+                          "use_remoteexec": "true", "android_static_analysis": '"off"'})
+
+    def test_accepted_gn_options_reach_the_final_settings(self):
+        self.setup_support()
+        final = self.final_gn_args("--gn=use_mold:true", "--gn", 'android_static_analysis:"build_server"',
+                                   "--gn=is_component_build:true")
+        self.assertEqual((final["use_mold"], final["android_static_analysis"], final["is_component_build"]),
+                         ("true", '"build_server"', "true"))
+        self.assertEqual(final["enable_android_secondary_abi"], "false", "unrelated choices are kept")
+        final = self.final_gn_args("--use_remoteexec=false")
+        self.assertEqual((final["use_remoteexec"], final["use_mold"]), ("false", "false"),
+                         "an override applies to one build; the next build starts from the defaults again")
 
     def test_apk_outcomes(self):
         self.setup_support()

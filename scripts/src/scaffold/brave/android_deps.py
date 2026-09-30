@@ -538,8 +538,12 @@ OVERRIDES = ("is_component_build=false", "enable_android_secondary_abi=false", "
              "use_mold=false", 'android_static_analysis="off"')
 
 
-def ensure_args_gn(identity, output_dir):
-    """Keep a marked block of GN overrides in the output's args.gn; other content is untouched."""
+def ensure_args_gn(identity, output_dir, chosen=()):
+    """Keep a marked block of GN overrides in the output's args.gn; other content is untouched.
+
+    The block follows Core's generated arguments, so it would win over them; settings the caller chose
+    for this build (forwarded `--gn` values or `--use_remoteexec`) are left out of it.
+    """
     output_dir = Path(output_dir)
     if output_dir.is_symlink():
         raise ScaffoldError("OWNERSHIP_CONFLICT", "%s is a symlink; args.gn was not changed." % output_dir)
@@ -559,7 +563,8 @@ def ensure_args_gn(identity, output_dir):
         lines = [header, ""] + lines
     while lines and not lines[-1]:
         lines.pop()
-    updated = "\n".join([*lines, "", BEGIN, *OVERRIDES, END]) + "\n"
+    overrides = [item for item in OVERRIDES if item.partition("=")[0] not in chosen]
+    updated = "\n".join([*lines, "", BEGIN, *overrides, END]) + "\n"
     if updated != text:
         atomic_write(args, updated)
         return True

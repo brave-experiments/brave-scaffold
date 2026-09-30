@@ -127,6 +127,7 @@ class Effective:
     sources: dict
     unresolved: list
     changes_output: bool = True
+    chosen_gn_keys: frozenset = frozenset()
 
 
 def conflict(field_name, scaffold_value, forwarded_value, example):
@@ -220,4 +221,6 @@ def resolve_effective(src, forwarded_tokens, target, configuration, explicit_tar
     return Effective(target=effective_target, configuration=effective_configuration, arch=arch, output_dir=output,
                      build_dir_arg=build_dir_arg, generated=generated, forwarded=list(forwarded_tokens),
                      build_target=fwd.target, channel=fwd.channel, offline=offline, sources=sources,
-                     unresolved=unresolved, changes_output=fwd.skips_compilation != "--prepare_only")
+                     unresolved=unresolved, changes_output=fwd.skips_compilation != "--prepare_only",
+                     chosen_gn_keys=frozenset(fwd.gn_keys | ({"use_remoteexec"} if fwd.remoteexec is not None
+                                                             else set())))

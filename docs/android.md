@@ -82,7 +82,11 @@ as they are. The scaffold finds direct edits by the `$src_root/<file>` paths in
 `applyPatches.sh`; a write it does not mention there cannot be predicted.
 
 The build also keeps a marked block of GN overrides (no component build, no
-secondary ABI, `use_mold=false`, remote execution) in the output's `args.gn`.
+secondary ABI, `use_mold=false`, `android_static_analysis="off"`, remote execution)
+at the end of the output's `args.gn`, after the import of Core's generated arguments,
+so the block wins over them. A setting you forward for that build (`--gn=<key>:<value>`
+or `--use_remoteexec=...`) is left out of the block and takes effect; the next build
+without it returns to the defaults.
 Everything outside the block is left alone.
 
 ## Build
