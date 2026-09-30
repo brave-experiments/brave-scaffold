@@ -138,6 +138,44 @@ class RunTests(BuildTestCase):
                          "Build freshness is unknown; this output may not include the latest code.")
         self.assertEqual(document["data"]["run"]["freshness"]["status"], "unknown")
 
+    def freshness_after(self, change):
+        self.build()
+        change()
+        result, document = self.run_app()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        return document["data"]["run"]["freshness"]
+
+    def test_an_edit_to_an_unpatched_chromium_file_makes_the_output_stale(self):
+        other = self.src / "base" / "unpatched.cc"
+        other.write_text("original\n")
+        self.sandbox.commit_all("main")
+        freshness = self.freshness_after(lambda: other.write_text("edited after the build\n"))
+        self.assertEqual(freshness["status"], "stale")
+        self.assertIn("chromium_worktree", " ".join(freshness["evidence"]))
+        other.write_text("original\n")
+        subprocess.run(["git", "-C", str(self.src), "checkout", "--", "base/unpatched.cc"], check=True)
+        result, document = self.run_app()
+        self.assertEqual(document["data"]["run"]["freshness"]["status"], "current", "restoring the file restores it")
+
+    def test_files_included_by_the_env_file_are_tracked(self):
+        (self.core / ".env").write_text("include_env=extra/build.env\n")
+        (self.core / "extra").mkdir()
+        (self.core / "extra" / "build.env").write_text("use_foo=false\n")
+        freshness = self.freshness_after(lambda: (self.core / "extra" / "build.env").write_text("use_foo=true\n"))
+        self.assertEqual(freshness["status"], "stale")
+        self.assertIn("env_file", " ".join(freshness["evidence"]))
+
+    def test_a_record_from_before_a_newly_compared_input_is_unknown(self):
+        self.build()
+        import glob
+        (path,) = glob.glob(str(self.sandbox.config.parent / ".bdev" / "outputs" / "*" / "*.json"))
+        record = json.loads(open(path).read())
+        del record["success"]["fingerprint"]["chromium_worktree"]
+        open(path, "w").write(json.dumps(record))
+        result, document = self.run_app()
+        self.assertEqual(document["data"]["run"]["freshness"]["status"], "unknown")
+        self.assertEqual(document["warnings"][0]["code"], "UNKNOWN_FRESHNESS")
+
     # --- failed and interrupted rebuilds ----------------------------------------
 
     def state(self, output="Debug_arm64"):

@@ -23,7 +23,7 @@ from pathlib import Path
 from ..common.config import atomic_write
 from ..common.procs import run_capture, run_streaming
 from ..common.results import ScaffoldError, repair
-from . import gitstate
+from . import freshness, gitstate
 from .records import checkout_key, store_root
 
 METADATA = Path(__file__).with_name("android_support.toml")
@@ -410,6 +410,18 @@ def resource_destinations(identity, wc):
         copied = identity.src / destination / origin.name
         found.append((os.path.relpath(copied, identity.src), origin, copied))
     return found
+
+
+def freshness_inputs(identity, log=None):
+    """Support inputs an APK depends on: the working copy's revision and edits, and the copied resources."""
+    wc = working_copy(identity)
+    if not (wc / ".git").exists():
+        return {"support_head": None, "support_worktree": None, "support_resources": None}
+    digest = hashlib.sha256()
+    for key, origin, copied in resource_destinations(identity, wc):
+        digest.update(("%s=%s\n" % (key, json.dumps(resource_signature(origin, copied), sort_keys=True))).encode())
+    return {"support_head": freshness.resolve_head(wc), "support_worktree": freshness.worktree_state(wc, log),
+            "support_resources": digest.hexdigest()}
 
 
 class SupportPlan:

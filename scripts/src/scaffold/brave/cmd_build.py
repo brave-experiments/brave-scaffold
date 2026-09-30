@@ -18,7 +18,7 @@ from ..common.platforms import RECOGNIZED_TARGETS, effective_target, normalize_t
 from ..common.procs import run_capture, run_streaming
 from ..common.redaction import redact_argv
 from ..common.results import Cancelled, Result, ScaffoldError, repair
-from . import buildopts, freshness, macos, patches
+from . import android_deps, buildopts, freshness, macos, patches
 from .cmd_tools import local_shims
 from .records import Operation, OutputState, output_states
 
@@ -242,7 +242,8 @@ def perform_build(ctx, identity, effective, prepared, op, force_gn=False):
         error.child_exit_code = 0
         error.details.setdefault("argv", argv)
         raise
-    inputs = freshness.compute(identity, plan.report.patched_paths, arguments, ctx.log)
+    inputs = freshness.compute(identity, plan.report.patched_paths, arguments, ctx.log,
+                               android_deps.freshness_inputs(identity, ctx.log) if android else None)
     if artifact is not None and state is not None:
         state.record_success(op.id, artifact, inputs)
     elif state is not None:
@@ -494,11 +495,12 @@ def select_artifact(ctx, identity, target, configuration, arch):
     return candidates[0]
 
 
-def artifact_freshness(ctx, identity, output_dir):
+def artifact_freshness(ctx, identity, output_dir, android=False):
     state = OutputState(identity, output_dir, ctx.state_root)
     report = patches.collect_drift(identity)
     recorded = (state.success or {}).get("fingerprint")
-    current = freshness.compute(identity, report.patched_paths, [], ctx.log)
+    current = freshness.compute(identity, report.patched_paths, [], ctx.log,
+                                android_deps.freshness_inputs(identity, ctx.log) if android else None)
     return freshness.assess(recorded, current, state)
 
 

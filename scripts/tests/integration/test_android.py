@@ -383,6 +383,23 @@ class DeviceTests(AndroidTestCase):
         result, document = self.run_android("android", "--device", "emulator-5554", "--artifact", str(apk))
         self.assertEqual(result.returncode, 0)
 
+    def freshness_after(self, change):
+        change()
+        result, document = self.run_android("android", "--device", "emulator-5554")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        return document["data"]["run"]["freshness"]
+
+    def test_an_edit_to_the_support_working_copy_makes_the_apk_stale(self):
+        freshness = self.freshness_after(lambda: (self.wc() / "patches" / "marker").write_text("edited support\n"))
+        self.assertEqual(freshness["status"], "stale")
+        self.assertIn("support_worktree", " ".join(freshness["evidence"]))
+
+    def test_an_edit_to_a_copied_resource_makes_the_apk_stale(self):
+        freshness = self.freshness_after(lambda: (self.src / "third_party" / "jdk" / "current" / "release").write_text(
+            "edited after the build, with a different size\n"))
+        self.assertEqual(freshness["status"], "stale")
+        self.assertIn("support_resources", " ".join(freshness["evidence"]))
+
     def test_build_run_chooses_the_device_before_building(self):
         self.sandbox.record.unlink(missing_ok=True)
         result, document = self.run_android("android", command="build-run")

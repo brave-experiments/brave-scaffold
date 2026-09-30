@@ -174,7 +174,8 @@ reconnect it.
 `bdev run` may start an older output. `STALE_BUILD` means tracked inputs changed
 since the recorded build. `UNKNOWN_FRESHNESS` means there is no record, or an
 earlier rebuild of this output failed, was cancelled, or was interrupted, so its
-contents may be partly overwritten. Rebuild with `bdev build` to refresh the
+contents may be partly overwritten, or some input could not be compared (see
+[macOS](macos.md#run-and-restart) for what is compared). Rebuild with `bdev build` to refresh the
 record; nothing rebuilds or deletes for you.
 
 ## Interrupted operations
