@@ -37,9 +37,15 @@ class DerivedEnv:
     pythonpath_dir: Path
 
 
+def resolves_inside(path, root):
+    """Whether `path` (after following every link) lies within `root` (also resolved)."""
+    real, base = os.path.realpath(path), os.path.realpath(root)
+    return real == base or real.startswith(base + os.sep)
+
+
 def find_depot_tools(identity):
     for candidate in (identity.core / "vendor" / "depot_tools", identity.src / "third_party" / "depot_tools"):
-        if os.access(candidate / "vpython3", os.X_OK):
+        if os.access(candidate / "vpython3", os.X_OK) and resolves_inside(candidate / "vpython3", candidate):
             return candidate
     return None
 

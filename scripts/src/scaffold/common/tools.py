@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .checks import BLOCKER, PASS, WARNING, CheckResult
-from .env import find_depot_tools
+from .env import find_depot_tools, resolves_inside
 from .platforms import host_architecture, host_platform
 from .procs import run_capture
 from .results import ScaffoldError, repair
@@ -171,10 +171,17 @@ def _package_version(path):
         return None
 
 
-def payload_freshness(identity, layout, log=None):
-    """Ask the checkout's payload metadata whether entries are deployed. Read-only."""
+def payload_freshness(identity, layout, manager, log=None):
+    """Ask the checkout's payload metadata whether the entries the package manager needs are deployed. Read-only.
+
+    Node always matters. The package manager entry is separate only for pnpm; npm ships inside the Node payload,
+    so another manager's metadata is never consulted for it.
+    """
+    entries = [("node", layout["node_entry_key"])]
+    if manager == "pnpm":
+        entries.append(("package_manager", layout["pnpm_entry_key"]))
     result = {}
-    for label, key in (("node", layout["node_entry_key"]), ("package_manager", layout["pnpm_entry_key"])):
+    for label, key in entries:
         probe = run_capture([sys.executable, "-B", "-I", str(PROBE), str(identity.core), str(identity.workspace), key],
                             str(identity.core), {"PATH": os.environ.get("PATH", "")}, log, timeout=60)
         state = "unverified"
@@ -228,8 +235,13 @@ def inspect_toolchain(identity, log=None):
     except ScaffoldError as error:
         add("local-node", BLOCKER, error.message)
         return None, checks
+    payload_root = Path(identity.core) / "third_party" / "node"
     if not os.access(layout["node"], os.X_OK):
         add("local-node", BLOCKER, "Checkout-local Node is missing: %s" % layout["node"], path=str(layout["node"]))
+        node_version = None
+    elif not resolves_inside(layout["node"], payload_root):
+        add("local-node", BLOCKER, "Node at %s resolves outside the checkout's payload (%s)." % (
+            layout["node"], os.path.realpath(layout["node"])), path=str(layout["node"]))
         node_version = None
     else:
         version = run_capture([str(layout["node"]), "--version"], str(identity.core),
@@ -259,6 +271,9 @@ def inspect_toolchain(identity, log=None):
     if not entry.is_file() or manager_version is None:
         add("local-package-manager", BLOCKER, "Checkout-local %s is missing: %s" % (declaration.manager, entry),
             path=str(entry))
+    elif not (resolves_inside(entry, payload_root) and resolves_inside(package, payload_root)):
+        add("local-package-manager", BLOCKER, "%s at %s resolves outside the checkout's payload (%s)." % (
+            declaration.manager, entry, os.path.realpath(entry)), path=str(entry))
     elif declaration.manager_range and satisfies(manager_version, declaration.manager_range) is not True:
         verdict = satisfies(manager_version, declaration.manager_range)
         add("local-package-manager", BLOCKER,
@@ -269,18 +284,22 @@ def inspect_toolchain(identity, log=None):
         add("local-package-manager", PASS, "%s %s" % (declaration.manager, manager_version),
             path=str(entry), version=manager_version)
 
-    freshness = payload_freshness(identity, layout, log)
+    freshness = payload_freshness(identity, layout, declaration.manager, log)
     stale = [label for label, state in freshness.items() if state == "stale"]
+    unverified = [label for label, state in freshness.items() if state != "current" and label not in stale]
     if stale:
         add("payload-freshness", BLOCKER, "Payload metadata reports stale or undeployed: %s" % ", ".join(stale),
             **freshness)
-    elif all(state == "current" for state in freshness.values()):
-        add("payload-freshness", PASS, "Payload metadata matches the checkout's pinned versions.", **freshness)
-    else:
+    elif unverified:
+        installer = Path(identity.core) / "tools" / "cr" / "tarball_installer.py"
         checks.append(CheckResult(
-            name="payload-freshness", status=WARNING, scopes=("tools",), required=False,
-            summary="This checkout has no payload metadata that can be read; freshness is unverified.",
-            evidence=freshness, affects=("package commands",)))
+            name="payload-freshness", status=BLOCKER, scopes=("tools",), evidence=freshness,
+            summary="The pinned payload of %s cannot be verified: this checkout's payload metadata "
+                    "(tools/cr/extra_deps.py) is missing or unreadable, and a compatible version alone does not "
+                    "prove the pinned payload." % " and ".join(unverified),
+            affects=("package commands",), repairs=[repair_step] if installer.is_file() else []))
+    else:
+        add("payload-freshness", PASS, "Payload metadata matches the checkout's pinned versions.", **freshness)
 
     if any(check.status == BLOCKER for check in checks):
         return None, checks

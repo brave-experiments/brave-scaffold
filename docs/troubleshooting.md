@@ -76,8 +76,16 @@ satisfies this and never causes a failure by itself.
 runs the checkout's payload installer. Run it only when the checkout may change.
 `bdev doctor` and `bdev context` show the same checks without changing anything.
 
-If the message says freshness is unverified, the checkout has no readable payload
-metadata; tools still run if their versions satisfy the declaration.
+A tool that resolves (through links) outside the checkout's `third_party/node` payload,
+or a `vpython3` outside its depot_tools directory, is treated as missing.
+
+If the message says the pinned payload cannot be verified, the checkout's payload
+metadata (`tools/cr/extra_deps.py`) is missing or unreadable. A compatible version
+number alone does not prove the pinned payload, so the command stops rather than
+running unverified tools. Node is verified for every checkout; pnpm additionally for
+pnpm checkouts (an older npm checkout is never judged by pnpm's metadata). If the
+checkout has a payload installer the message names `bdev tools setup`; otherwise
+update the checkout to a revision that carries the metadata.
 
 ## `DEPENDENCY_INCOMPATIBLE`
 

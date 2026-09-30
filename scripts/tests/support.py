@@ -63,8 +63,9 @@ record = os.environ.get("FAKE_RECORD")
 if record:
     with open(record, "a") as stream:
         stream.write(json.dumps({"tool": "installer", "argv": sys.argv[1:]}) + "\\n")
-stale = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "..", "STALE")
-if os.path.exists(stale):
+import glob
+workspace = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "..")
+for stale in glob.glob(os.path.join(workspace, "STALE*")):
     os.unlink(stale)
 """
 APP_HELPERS = """
@@ -121,7 +122,10 @@ if pids:
 """
 EXTRA_DEPS = """import os
 def check_extra_deps_installed(root, path):
-    return not os.path.exists(os.path.join(str(root), "STALE"))
+    marker = lambda name: os.path.exists(os.path.join(str(root), name))
+    if marker("STALE"):
+        return False
+    return not (marker("STALE-pnpm") and "node_modules" in path or marker("STALE-node") and "node-mac" in path)
 """
 
 
@@ -294,8 +298,9 @@ class Sandbox:
         path.write_text(APP_HELPERS + "\n" + code)
         return str(path)
 
-    def mark_stale(self, name):
-        (self.checkouts[name].parent.parent / "STALE").write_text("")
+    def mark_stale(self, name, only=None):
+        """Make the fake payload metadata report stale: everything, or only the "node" or "pnpm" entry."""
+        (self.checkouts[name].parent.parent / ("STALE-" + only if only else "STALE")).write_text("")
 
     def write_config(self, entries, extra=""):
         """entries: list of (alias|None, core, direnv_dir|None)."""

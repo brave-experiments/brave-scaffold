@@ -121,6 +121,82 @@ class PackageExecutionTests(SandboxTest):
         self.assertEqual(self.sandbox.records(), [])
         self.assertFalse((self.sandbox.root / "global-used").exists())
 
+    def blocked(self, name="main"):
+        result = self.sandbox.bdev("--json", "--config", self.config, "--checkout", name, "run", "x", tool="bpm")
+        document = json.loads(result.stdout)
+        self.assertEqual((result.returncode, document["error"]["code"]), (3, "LOCAL_TOOL_MISSING"), result.stderr)
+        self.assertEqual(self.sandbox.records(), [], "the package command never started")
+        self.assertFalse((self.sandbox.root / "global-used").exists())
+        return document
+
+    def test_tools_that_resolve_outside_the_checkout_payload_are_rejected(self):
+        node_dir = self.core / "third_party" / "node" / "node-mac-arm64"
+        external = self.sandbox.root / "external"
+        for relative in ("bin/node", "bin/version"):
+            (external / relative).parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy(node_dir / relative, external / relative)
+        node = node_dir / "bin" / "node"
+        node.unlink()
+        node.symlink_to(external / "bin" / "node")
+        self.assertIn("outside", json.dumps(self.blocked()["error"]))
+        node.unlink()
+        shutil.copy(external / "bin" / "node", node)
+        pnpm_entry = self.core / "third_party" / "node" / "node_modules" / "pnpm" / "bin" / "pnpm.mjs"
+        pnpm_entry.unlink()
+        (external / "pnpm.mjs").write_text("")
+        pnpm_entry.symlink_to(external / "pnpm.mjs")
+        self.assertIn("outside", json.dumps(self.blocked()["error"]))
+
+    def test_a_vpython3_that_resolves_outside_the_checkout_is_not_used(self):
+        vpython = self.core / "vendor" / "depot_tools" / "vpython3"
+        external = self.sandbox.root / "external-vpython3"
+        external.write_text(vpython.read_text())
+        external.chmod(0o755)
+        vpython.unlink()
+        vpython.symlink_to(external)
+        result = self.sandbox.bdev("--json", "--config", self.config, "--checkout", "main", "run", "x", tool="bpm")
+        self.assertEqual(result.returncode, 3, result.stderr)
+        self.assertEqual(self.sandbox.records(), [])
+
+    def test_links_that_stay_inside_the_payload_are_fine(self):
+        node_dir = self.core / "third_party" / "node" / "node-mac-arm64"
+        real = self.core / "third_party" / "node" / "node-v0-real"
+        node_dir.rename(real)
+        node_dir.symlink_to(real)
+        result = self.bpm("run", "x")
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_payloads_that_cannot_be_verified_stop_execution(self):
+        unverifiable = self.sandbox.make_checkout("nometa", payload_metadata=False)
+        unreadable = self.sandbox.make_checkout("broken")
+        (unreadable / "tools" / "cr" / "extra_deps.py").write_text("this is not python (\n")
+        self.sandbox.write_config([("main", self.core, "environments/main"), ("nometa", unverifiable, "environments/nometa"),
+                                   ("broken", unreadable, "environments/broken")])
+        for name in ("nometa", "broken"):
+            self.sandbox.bdev("env", "init", "--checkout", name, "--config", self.config)
+            self.sandbox.approve(name)
+            with self.subTest(name):
+                document = self.blocked(name)
+                self.assertIn("verif", document["error"]["message"])
+        result = self.sandbox.bdev("--json", "--config", self.config, "doctor", "mac", "--checkout", "nometa")
+        local = next(check for check in json.loads(result.stdout)["checks"] if check["name"] == "local-tools")
+        self.assertEqual(local["status"], "blocker")
+        nested = {check["name"]: check["status"] for check in local["evidence"]["checks"]}
+        self.assertEqual(nested["payload-freshness"], "blocker")
+
+    def test_older_npm_is_verified_by_its_own_payload_not_pnpms(self):
+        older_npm = self.sandbox.make_checkout("older_npm", declaration=False)
+        self.sandbox.write_config([("main", self.core, "environments/main"),
+                                   ("older_npm", older_npm, "environments/older_npm")])
+        self.sandbox.bdev("env", "init", "--checkout", "older_npm", "--config", self.config)
+        self.sandbox.approve("older_npm")
+        self.sandbox.mark_stale("older_npm", only="pnpm")
+        result = self.sandbox.bdev("--config", self.config, "--checkout", "older_npm", "run", "x", tool="bpm")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.sandbox.mark_stale("older_npm", only="node")
+        self.sandbox.record.unlink()
+        self.assertEqual(self.blocked("older_npm")["error"]["code"], "LOCAL_TOOL_MISSING")
+
     def test_stale_payload_stops_before_the_command_and_names_the_repair(self):
         self.sandbox.mark_stale("main")
         result = self.sandbox.bdev("--json", "--config", self.config, "--checkout", "main", "run", "x", tool="bpm")

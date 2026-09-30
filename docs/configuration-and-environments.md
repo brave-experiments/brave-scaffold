@@ -167,3 +167,9 @@ checkout. There is no fallback to global tools. Inspection (`doctor`, `context`,
 missing or stale, the command stops and names the explicit repair,
 `bdev tools setup --checkout <name>`, which runs the checkout's own payload
 installer. Run it only when you intend the checkout to change.
+
+A tool counts as local only if it resolves, after following links, inside the
+checkout's `third_party/node` payload (`vpython3`: inside its depot_tools directory).
+It also has to be verifiable: the checkout's payload metadata must report the pinned
+Node (and, for pnpm checkouts, pnpm) as deployed. Without that evidence, or with a
+compatible version but no pin to compare it to, the command stops.
