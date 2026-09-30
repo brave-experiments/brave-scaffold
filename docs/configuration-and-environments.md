@@ -23,6 +23,7 @@ checkout as their purpose; each command's help states its side effects.
 | `schema_version` | Configuration format version. Must be `1`. | required |
 | `logging.commands` | Print each dispatched command and its working directory to stderr. | `true` |
 | `defaults.platform` | Target used when no target is named: `mac`, `macos`, or `android`. | the host platform |
+| `defaults.android_device` | Device id used when several Android devices are usable and `--device` is not given. | none |
 | `checkouts[].core` | Absolute path to the checkout's `src/brave` directory. Stored once. | required |
 | `checkouts[].alias` | Optional name, usable with `--checkout`. It does not make a default checkout. | none |
 | `checkouts[].direnv_dir` | Directory holding the checkout's `.envrc`. Relative paths resolve beside the configuration file. | set by `env init` |

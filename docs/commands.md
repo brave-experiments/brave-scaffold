@@ -34,11 +34,13 @@ look, and what the codes mean. Only delivered commands appear here.
 | `bdev shell` | Child shell in Core with the environment loaded | Whatever you do in the shell |
 | `bdev context` | Resolved checkout, selection source, environment, tools | None |
 | `bdev capabilities` | Supported, limited, unverified, unsupported combinations | None; needs no checkout |
-| `bdev doctor [scope]` | Named readiness checks (`mac`, `rbe`, `shell`, `signing`) | None |
+| `bdev doctor [scope]` | Named readiness checks (`mac`, `android`, `rbe`, `shell`, `signing`) | None |
 | `bdev build [target]` | Prepare, compile, and verify the output ([macOS](macos.md)) | Writes build output; may apply patches |
 | `bdev test [target] <suite>` | Compile if needed and run one suite ([macOS](macos.md)) | Writes build output; runs tests |
 | `bdev run [target]` | Restart the browser with an existing output; never builds | Quits and relaunches the application |
 | `bdev build-run` (`br`), `sync-build` (`sb`), `sync-build-run` (`sbr`) | Combined workflows; extras go to the build phase | Effects of each phase |
+| `bdev deploy android` | Install the APK on one device and launch it; same as `run android` ([Android](android.md)) | Installs over the existing app and restarts the package |
+| `bdev android setup` | Create this checkout's Android support working copy | Uses the network; writes the shared object cache and the working copy |
 | `bdev sync [targets]` | Core source sync ([details](source-and-cleanup.md)) | Changes sources and dependencies |
 | `bdev drift [--diff]` | Compare patched Chromium files with patch metadata | None |
 | `bdev patches update` | Regenerate patch files from local Chromium edits | Rewrites patch files; commits nothing |
@@ -46,8 +48,6 @@ look, and what the codes mean. Only delivered commands appear here.
 | `bdev tools setup` | Explicit repair of checkout-local Node/package-manager payloads | Runs the checkout's payload installer inside the checkout |
 | `bdev vpython3 [options] [--] <args>` | Checkout-local Python | Whatever the program does |
 | `bpm [options] <package args>` | Checkout's package manager | Whatever the package command does |
-
-Android build, install, and restart are not available yet.
 
 ### Forwarding to package commands
 
@@ -155,7 +155,7 @@ authority for the action ([agent workflows](agent-workflows.md)).
 `CHECKOUT_AMBIGUOUS`, `CHECKOUT_NOT_FOUND`, `UNSUPPORTED_CAPABILITY` (for example
 a Git linked worktree or an unavailable platform), `ENVIRONMENT_REQUIRED`,
 `ENVIRONMENT_UNAPPROVED`, `ENVIRONMENT_LOAD_FAILED`, `CHECKOUT_ENV_CONFLICT`,
-`LOCAL_TOOL_MISSING`, `DEPENDENCY_INCOMPATIBLE`, `READINESS_BLOCKED`,
+`LOCAL_TOOL_MISSING`, `DEPENDENCY_INCOMPATIBLE`, `DEVICE_AMBIGUOUS`, `DEVICE_UNAVAILABLE`, `READINESS_BLOCKED`,
 `READINESS_INCOMPLETE`, `PREPARATION_CONFLICT`, `OWNERSHIP_CONFLICT`, `ARTIFACT_MISSING`,
 `ARTIFACT_MISMATCH`, `ARTIFACT_UNRESOLVED`, `ARTIFACT_AMBIGUOUS`, `LAUNCH_FAILED`,
 `CHILD_FAILED`, `CANCELLED`, and `INTERNAL_ERROR`.

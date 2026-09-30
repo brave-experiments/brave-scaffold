@@ -148,6 +148,26 @@ and nothing was stopped, installed, or launched.
 start. The error says which and lists the steps taken. Other processes are never
 touched.
 
+## `DEPENDENCY_INCOMPATIBLE` for the Android support repository
+
+*Meaning:* the checkout's support working copy is missing, or its version gate
+rejects this checkout (the reason is quoted). Nothing was prepared or built.
+
+*Next:* `bdev android setup` creates a missing working copy (network). For a
+mismatch, pick a revision for this checkout only: `bdev android setup --ref <ref>`,
+which switches a clean working copy, or switch it yourself. A working copy with
+local changes or unpushed commits is never switched for you.
+
+## `DEVICE_AMBIGUOUS` and `DEVICE_UNAVAILABLE`
+
+*Meaning:* several usable Android devices are connected (choose one), or the
+chosen device is missing, `offline`, or `unauthorized`. The ids and states are
+listed.
+
+*Next:* `adb devices`, then pass `--device <id>` (or set `defaults.android_device`).
+For `unauthorized`, accept the USB debugging prompt on the device; for `offline`,
+reconnect it.
+
 ## Stale or unknown build freshness
 
 `bdev run` may start an older output. `STALE_BUILD` means tracked inputs changed

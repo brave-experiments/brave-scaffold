@@ -13,6 +13,8 @@ commands = true
 # Optional platform override. Omit to use the current host platform.
 # [defaults]
 # platform = "mac"
+# Device id used when several Android devices are usable and --device is not given.
+# android_device = "emulator-5554"
 
 [[checkouts]]
 # An alias names a checkout; it does not make it the default checkout.

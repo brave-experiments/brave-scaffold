@@ -27,6 +27,12 @@ notes Core and Chromium revisions before and after. Sync changes source and
 dependencies inside the checkout; it is the requested work, not an installation
 side effect.
 
+Android additions: `bdev sync android` requires nothing beyond the existing
+`.gclient`; the mobile union is described above. The Android support working copy
+and its refresh are described in [Android](android.md#android-on-mac-support-repository);
+a refresh that would overwrite local Chromium edits stops with `PREPARATION_CONFLICT`
+like patch preparation does.
+
 ## Patch preparation
 
 Builds and tests apply Core patches only when the materialized Chromium files no

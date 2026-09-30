@@ -24,8 +24,9 @@ Two commands, `bdev` and `bpm`, both under `scripts/`:
 - `bpm` runs the checkout's own package manager with its own Node.js, never a
   global one.
 
-Android build and deploy are not available yet. `bdev capabilities` lists what
-is supported and what has been verified on a real checkout.
+Android builds an arm64 APK and installs and restarts it on a device.
+`bdev capabilities` lists what is supported and what has been verified on a
+real checkout.
 
 The initial platform scope is macOS arm64 hosts with existing Brave macOS and
 Android checkouts. Fresh checkout creation, iOS, and guarded push are not part of
@@ -49,6 +50,7 @@ Nothing requires a `PATH` change, a shell hook, or an edit inside Brave Core.
 | --- | --- |
 | Install and run a first command | [Getting started](docs/getting-started.md) |
 | Build, test, and run on macOS | [macOS](docs/macos.md) |
+| Build and install on Android | [Android](docs/android.md) |
 | Sync sources, patches, and cleanup | [Source and cleanup](docs/source-and-cleanup.md) |
 | Configure checkouts and environments | [Configuration and environments](docs/configuration-and-environments.md) |
 | Look up commands, options, results, exit codes | [Commands](docs/commands.md) |
