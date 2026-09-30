@@ -39,6 +39,7 @@ class Forwarded:
     offline: bool = False
     remoteexec: bool | None = None
     info_only: bool = False
+    skips_compilation: str | None = None
     output_format: str | None = None
     gn_keys: set = field(default_factory=set)
     problems: list = field(default_factory=list)
@@ -54,6 +55,11 @@ def interpret(tokens):
             found.info_only = True
         elif token == "--offline":
             found.offline = True
+        elif token == "--prepare_only":
+            found.skips_compilation = token
+        elif token == "--xcode_gen" or token.startswith("--xcode_gen="):
+            found.skips_compilation = "--xcode_gen"
+            index += 0 if "=" in token else 1
         elif token.startswith("--use_remoteexec"):
             value = "true"
             if "=" in token:
@@ -120,6 +126,7 @@ class Effective:
     offline: bool
     sources: dict
     unresolved: list
+    changes_output: bool = True
 
 
 def conflict(field_name, scaffold_value, forwarded_value, example):
@@ -201,6 +208,8 @@ def resolve_effective(src, forwarded_tokens, target, configuration, explicit_tar
     unresolved = list(fwd.problems)
     if fwd.info_only:
         unresolved.append("the forwarded arguments ask the package command for information, not a build")
+    if fwd.skips_compilation:
+        unresolved.append("%s prepares the build without compiling it" % fwd.skips_compilation)
     if fwd.build_dir is not None and not fwd.build_dir:
         unresolved.append("-C has an empty value")
     if effective_target == "android" and fwd.output_format not in (None, "apk"):
@@ -211,4 +220,4 @@ def resolve_effective(src, forwarded_tokens, target, configuration, explicit_tar
     return Effective(target=effective_target, configuration=effective_configuration, arch=arch, output_dir=output,
                      build_dir_arg=build_dir_arg, generated=generated, forwarded=list(forwarded_tokens),
                      build_target=fwd.target, channel=fwd.channel, offline=offline, sources=sources,
-                     unresolved=unresolved)
+                     unresolved=unresolved, changes_output=fwd.skips_compilation != "--prepare_only")

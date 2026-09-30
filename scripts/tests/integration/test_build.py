@@ -217,5 +217,54 @@ class BuildTests(BuildTestCase):
         self.assertFalse(list(self.core.glob(".bdev*")))
 
 
+class NonCompilingModeTests(BuildTestCase):
+    """Core can exit zero without compiling; an app already at the expected path is not a new build."""
+
+    MODES = (["--prepare_only"], ["--xcode_gen", "ios"], ["--xcode_gen=ios"])
+
+    def output_states(self):
+        directory = self.sandbox.config.parent / ".bdev" / "outputs"
+        return [json.loads(path.read_text()) for path in sorted(directory.glob("*/*.json"))]
+
+    def build_once(self):
+        result, document = self.document("build")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        return document["operation_id"]
+
+    def test_build_reports_the_child_success_but_no_verified_artifact(self):
+        first = self.build_once()
+        for mode in self.MODES:
+            with self.subTest(mode=mode):
+                result, document = self.document("build", *mode, env=self.env(FAKE_NO_APP="1"))
+                self.assertEqual((result.returncode, document["status"], document["child_exit_code"]), (0, "ok", 0))
+                self.assertEqual(document["artifacts"], [])
+                self.assertEqual(document["warnings"][0]["code"], "ARTIFACT_UNRESOLVED")
+                build = document["data"]["build"]
+                self.assertEqual((build["child_succeeded"], build["artifact_status"]), (True, "unresolved"))
+                self.assertIn(mode[0].split("=")[0], build["explanation"])
+                self.assertEqual(self.build_argv()[-len(mode):], mode, "the option still reaches the package command")
+                (state,) = self.output_states()
+                self.assertEqual(state["success"]["operation_id"], first, "the earlier build record is kept")
+
+    def test_build_run_stops_before_touching_the_browser(self):
+        self.build_once()
+        for mode in self.MODES:
+            with self.subTest(mode=mode):
+                self.sandbox.record.unlink(missing_ok=True)
+                result, document = self.document("build-run", *mode, env=self.env(FAKE_NO_APP="1"))
+                self.assertEqual((result.returncode, document["error"]["code"], document["child_exit_code"]),
+                                 (5, "ARTIFACT_UNRESOLVED", 0))
+                self.assertEqual([r for r in self.sandbox.records() if r["tool"] != "node"], [])
+
+    def test_preparing_without_compiling_does_not_clear_or_add_uncertainty_about_the_output(self):
+        self.build_once()
+        self.document("build", "--prepare_only", env=self.env(FAKE_NO_APP="1"))
+        self.assertFalse(self.output_states()[0]["needs_revalidation"], "no compile step touches the output")
+        self.document("build", env=self.env(FAKE_EXIT="1"))
+        self.assertTrue(self.output_states()[0]["needs_revalidation"])
+        self.document("build", "--prepare_only", env=self.env(FAKE_NO_APP="1"))
+        self.assertTrue(self.output_states()[0]["needs_revalidation"], "an earlier failed rebuild is not forgiven")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -196,7 +196,7 @@ def run_output_step(ctx, identity, effective, prepared, op, arguments, phase, ex
     """
     state = OutputState(identity, effective.output_dir, ctx.state_root) if effective.output_dir else None
     if state is not None:
-        state.begin_attempt(op.id)
+        state.begin_attempt(op.id, effective.changes_output)
     op.step(phase, package_arguments=arguments)
     try:
         if before_child is not None:

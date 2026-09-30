@@ -136,7 +136,8 @@ is absent or unusable; inspect the output directory named in the message.
 ## `ARTIFACT_UNRESOLVED`
 
 *Meaning:* the package build exited zero but the scaffold cannot tell which
-application it produced (for example the forwarded arguments build a test target).
+application it produced (for example the forwarded arguments build a test target, or only prepare the build
+with `--prepare_only` or `--xcode_gen`).
 For `build`, this is a warning. For `build-run` and `sync-build-run` it is an error
 and nothing was stopped, installed, or launched.
 

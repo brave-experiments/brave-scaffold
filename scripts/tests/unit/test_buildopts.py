@@ -40,6 +40,21 @@ class InterpretTests(unittest.TestCase):
         self.assertTrue(buildopts.interpret(["--offline"]).offline)
 
 
+class NonCompilingModeTests(unittest.TestCase):
+    def test_options_that_skip_compilation_are_recognised_with_their_values(self):
+        self.assertEqual(buildopts.interpret(["--prepare_only"]).skips_compilation, "--prepare_only")
+        for tokens in (["--xcode_gen", "ios"], ["--xcode_gen=ios"]):
+            found = buildopts.interpret(tokens + ["Release"])
+            self.assertEqual((found.skips_compilation, found.build_config), ("--xcode_gen", "Release"), tokens)
+        self.assertIsNone(buildopts.interpret(["--force_gn_gen", "Debug"]).skips_compilation)
+
+    def test_only_prepare_only_leaves_the_output_directory_alone(self):
+        self.assertFalse(resolve(["--prepare_only"]).changes_output)
+        self.assertTrue(resolve(["--xcode_gen=ios"]).changes_output)
+        self.assertTrue(resolve([]).changes_output)
+        self.assertEqual(len(resolve(["--prepare_only"]).unresolved), 1)
+
+
 class EffectiveTests(unittest.TestCase):
     def test_defaults_match_the_package_command_convention(self):
         effective = resolve([])
