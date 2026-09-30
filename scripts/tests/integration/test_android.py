@@ -518,6 +518,9 @@ class PackageIdentityTests(AndroidTestCase):
         result, document = self.combined("run")
         self.assertEqual(result.returncode, 5, result.stderr)
         self.assertEqual(self.device_changes(), [])
+        commands = [step["argv"][:3] for step in document["error"]["repairs"]]
+        self.assertNotIn(["bdev", "tools", "setup"], commands, "tools setup cannot provide aapt2")
+        self.assertIn(["bdev", "build", "android"], commands, "support preparation copies aapt2")
 
     def test_a_failed_stop_is_not_reported_as_a_restart(self):
         result, document = self.combined(FAKE_ADB_FORCE_STOP_FAIL="1")

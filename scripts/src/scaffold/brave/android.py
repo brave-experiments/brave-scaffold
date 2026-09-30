@@ -173,8 +173,9 @@ def restart_apk(ctx, identity, artifact, result, device=None, op=None):
         raise ScaffoldError(
             "ARTIFACT_UNRESOLVED", "Nothing was installed or restarted: %s." % UNPROVEN_PACKAGE,
             details={"artifact": artifact["path"]},
-            repairs=[repair(["bdev", "tools", "setup", "--checkout", str(identity.core)], requires_user_action=False,
-                            note="Explicit repair of checkout-local tools; run it only if aapt2 is missing.")])
+            repairs=[repair(["bdev", "build", "android", "--checkout", str(identity.core)], requires_user_action=False,
+                            note="aapt2 comes from the Android support resources, which the build prepares before "
+                                 "compiling; this builds too. It is not part of 'bdev tools setup'.")])
     adapter, device, source = device or preflight_device(ctx)
     if op is not None:
         for step in (step_module.install_apk_step(device["id"], artifact["path"]),

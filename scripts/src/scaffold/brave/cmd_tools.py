@@ -6,36 +6,16 @@
 
 from __future__ import annotations
 
-import contextlib
 import os
-import shlex
-import shutil
-import stat
-import tempfile
 from pathlib import Path
 
 from ..common import env as env_module
 from ..common import tools as tools_module
 from ..common.procs import run_streaming
-from ..common.results import Result, ScaffoldError, repair
+from ..common.results import Result, ScaffoldError
+from . import execution as execution_module
+from . import packages
 from .records import track
-
-
-@contextlib.contextmanager
-def local_shims(toolchain):
-    """A private directory with a `pnpm` command bound to the checkout's payload."""
-    if toolchain.manager != "pnpm":
-        yield None
-        return
-    directory = tempfile.mkdtemp(prefix="scaffold-shims-")
-    try:
-        shim = Path(directory) / "pnpm"
-        shim.write_text("#!/bin/sh\nexec %s %s \"$@\"\n" % (shlex.quote(str(toolchain.node)),
-                                                             shlex.quote(str(toolchain.manager_entry))))
-        shim.chmod(shim.stat().st_mode | stat.S_IXUSR)
-        yield directory
-    finally:
-        shutil.rmtree(directory, ignore_errors=True)
 
 
 def mark_child_failure(result, name, argv, cwd, code):
@@ -48,18 +28,14 @@ def mark_child_failure(result, name, argv, cwd, code):
 
 def run_package(ctx, identity, arguments, command):
     """Run a package command in Core with checkout-local tools; return a Result."""
-    loaded = env_module.load_environment(identity, ctx.environ, ctx.log)
-    toolchain, checks = tools_module.require_toolchain(identity, ctx.log)
-    argv = tools_module.package_argv(toolchain, arguments)
-    with local_shims(toolchain) as shims:
-        child_env = tools_module.child_environment(loaded, toolchain, shims)
-        code = run_streaming(argv, str(identity.core), child_env, ctx.log, json_mode=ctx.json_mode)
+    execution = execution_module.resolve_tools(execution_module.load(ctx, identity), ctx)
+    argv, code = packages.run(ctx, execution, arguments)
     data = {"argv": argv, "requested_arguments": list(arguments), "cwd": str(identity.core),
-            "tools": toolchain.describe()}
+            "tools": execution.toolchain.describe()}
     result = Result(command=command, data=data, child_exit_code=code,
-                    checks=[check.to_dict() for check in checks])
+                    checks=[check.to_dict() for check in execution.checks])
     if code != 0:
-        mark_child_failure(result, toolchain.manager, argv, identity.core, code)
+        mark_child_failure(result, execution.toolchain.manager, argv, identity.core, code)
     return result
 
 
@@ -85,7 +61,7 @@ def vpython3(ctx):
     interpreter = Path(loaded["VPYTHON3"])
     if not os.access(interpreter, os.X_OK):
         raise ScaffoldError("LOCAL_TOOL_MISSING", "Checkout-local vpython3 is not executable: %s" % interpreter,
-                            repairs=[repair(tools_module.tools_setup_command(identity))])
+                            repairs=[env_module.depot_tools_repair(identity)])
     argv = [str(interpreter), *ctx.parsed.forwarded]
     code = run_streaming(argv, str(execution_cwd), loaded, ctx.log, json_mode=ctx.json_mode)
     result = Result(command="vpython3", child_exit_code=code,
@@ -112,7 +88,8 @@ def tools_setup(ctx):
             "OWNERSHIP_CONFLICT",
             "third_party/node resolves outside the checkout (%s), so repairing it would write there; nothing was "
             "changed." % escaped, details={"payload": str(identity.core / "third_party" / "node"), "resolves_to": escaped})
-    entries = [layout["node_entry_key"], layout["pnpm_entry_key"]]
+    declaration = tools_module.read_declaration(identity.core)
+    entries = [key for _, key in tools_module.payload_entries(layout, declaration.manager)]
     with track(ctx, "tools setup", identity, {"installer": str(installer), "entries": entries}, validated=True) as op:
         ran = []
         for entry in entries:

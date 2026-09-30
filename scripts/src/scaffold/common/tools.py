@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .checks import BLOCKER, PASS, WARNING, CheckResult
-from .env import find_depot_tools, resolves_inside
+from .env import depot_tools_repair, find_depot_tools, resolves_inside
 from .platforms import host_architecture, host_platform
 from .procs import run_capture
 from .results import ScaffoldError, repair
@@ -180,15 +180,21 @@ def _package_version(path):
         return None
 
 
-def payload_freshness(identity, layout, manager, log=None):
-    """Ask the checkout's payload metadata whether the entries the package manager needs are deployed. Read-only.
+def payload_entries(layout, manager):
+    """The (label, installer entry) pairs the package manager needs deployed.
 
     Node always matters. The package manager entry is separate only for pnpm; npm ships inside the Node payload,
-    so another manager's metadata is never consulted for it.
+    so another manager's entry is never required for it. Inspection and repair both read this list.
     """
     entries = [("node", layout["node_entry_key"])]
     if manager == "pnpm":
         entries.append(("package_manager", layout["pnpm_entry_key"]))
+    return entries
+
+
+def payload_freshness(identity, layout, manager, log=None):
+    """Ask the checkout's payload metadata whether the entries the package manager needs are deployed. Read-only."""
+    entries = payload_entries(layout, manager)
     result = {}
     for label, key in entries:
         probe = run_capture([sys.executable, "-B", "-I", str(PROBE), str(identity.core), str(identity.workspace), key],
@@ -236,6 +242,7 @@ def inspect_toolchain(identity, log=None):
     depot = find_depot_tools(identity)
     if depot is None:
         add("vpython3", BLOCKER, "No checkout-local vpython3 was found under vendor/depot_tools or third_party/depot_tools.")
+        checks[-1].repairs = [depot_tools_repair(identity)]
     else:
         add("vpython3", PASS, "Checkout-local vpython3", path=str(depot / "vpython3"))
 

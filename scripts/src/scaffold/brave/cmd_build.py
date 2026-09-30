@@ -15,11 +15,10 @@ from ..common import env as env_module
 from ..common import tools as tools_module
 from ..common.checks import readiness_error
 from ..common.platforms import RECOGNIZED_TARGETS, effective_target, normalize_target
-from ..common.procs import run_capture, run_streaming
+from ..common.procs import run_capture
 from ..common.redaction import redact_argv
 from ..common.results import Cancelled, Result, ScaffoldError, repair
-from . import android_deps, buildopts, execution as execution_module, freshness, macos, patches, steps as step_module, sync_scope
-from .cmd_tools import local_shims
+from . import android_deps, buildopts, execution as execution_module, freshness, macos, packages, patches, steps as step_module, sync_scope
 from .records import OutputState, output_states, track
 
 SUITE_PATTERN = re.compile(r"[A-Za-z][A-Za-z0-9_]*_tests?")
@@ -99,19 +98,6 @@ def prepare_for_build(execution, ctx, target, remote_required):
     return execution.with_checks(readiness_gate(execution.context(ctx), target, "build", remote_required))
 
 
-def run_package_step(ctx, execution, arguments, extra_env=None):
-    """Run one package command in Core and return its argv and exit code."""
-    argv = tools_module.package_argv(execution.toolchain, arguments)
-    with local_shims(execution.toolchain) as shims:
-        env = tools_module.child_environment(execution.environ, execution.toolchain, shims)
-        for name, value in (extra_env or {}).items():
-            if value is None:
-                env.pop(name, None)
-            else:
-                env[name] = value
-        return argv, run_streaming(argv, str(execution.identity.core), env, ctx.log, json_mode=ctx.json_mode)
-
-
 def metal_environment(ctx, environ):
     """Point the build at an installed Metal toolchain when `xcrun metal` cannot find one."""
     probe = run_capture(["xcrun", "metal", "--version"], os.getcwd(), environ, ctx.log, timeout=60)
@@ -145,7 +131,7 @@ def prepare_patches(ctx, execution, op):
     if plan.action == "conflict":
         raise patches.conflict_error(plan, identity)
     op.step("apply-patches", **step_module.patches_step(identity, plan, apply_argv).record())
-    argv, code = run_package_step(ctx, execution, ["run", "apply_patches"])
+    argv, code = packages.run(ctx, execution, ["run", "apply_patches"])
     if code != 0:
         raise ScaffoldError("CHILD_FAILED", "Applying Core patches failed (exit %d)." % code,
                             details={"argv": argv, "phase": "patches"}, child_exit_code=code)
@@ -221,7 +207,7 @@ def run_output_step(ctx, execution, effective, op, arguments, phase, extra_env=N
     try:
         if before_child is not None:
             before_child()
-        argv, code = run_package_step(ctx, execution, arguments, extra_env)
+        argv, code = packages.run(ctx, execution, arguments, extra_env)
     except Cancelled:
         if state is not None:
             state.end_attempt(op.id, "cancelled")
@@ -719,7 +705,7 @@ def do_sync_phase(ctx, execution, op, target, forwarded):
     arguments = sync_arguments(ctx, target, forwarded, identity)
     op.step("sync", arguments=arguments, before=before,
             **step_module.sync_step(identity, arguments, tools_module.package_argv(execution.toolchain, arguments)).record())
-    argv, code = run_package_step(ctx, execution, arguments)
+    argv, code = packages.run(ctx, execution, arguments)
     if code != 0:
         raise ScaffoldError("CHILD_FAILED", "The sync command exited with status %d." % code,
                             details={"argv": argv, "phase": "sync"}, child_exit_code=code)
@@ -804,7 +790,7 @@ def cmd_patches_update(ctx):
     identity = ctx.identity()
     execution = prepare(ctx, identity, "mac")
     with track(ctx, "patches update", identity, {}, validated=True) as op:
-        argv, code = run_package_step(ctx, execution, ["run", "update_patches", *ctx.parsed.forwarded])
+        argv, code = packages.run(ctx, execution, ["run", "update_patches", *ctx.parsed.forwarded])
         if code != 0:
             raise ScaffoldError("CHILD_FAILED", "update_patches exited with status %d." % code,
                                 details={"argv": argv}, child_exit_code=code)

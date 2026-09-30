@@ -47,6 +47,13 @@ def resolves_inside(path, root):
     return real == base or real.startswith(base + os.sep)
 
 
+def depot_tools_repair(identity):
+    """Core's sync installs depot_tools (`tools setup` deploys only Node and the package manager)."""
+    return repair(["bdev", "sync", "--checkout", str(identity.core)],
+                  note="Core's sync installs the checkout's depot_tools. It changes sources and dependencies; run it "
+                       "only when authorized.")
+
+
 def find_depot_tools(identity):
     """The checkout's own depot_tools directory, anchored in the frozen Chromium source root."""
     for candidate in (identity.core / "vendor" / "depot_tools", identity.src / "third_party" / "depot_tools"):
@@ -63,8 +70,7 @@ def require_depot_tools(identity):
             "No checkout-local vpython3 exists under %s or %s. An environment cannot supply one from outside the "
             "checkout." % (identity.core / "vendor" / "depot_tools", identity.src / "third_party" / "depot_tools"),
             details={"tool": "vpython3", "checkout": str(identity.core)},
-            repairs=[repair(["bdev", "tools", "setup", "--checkout", str(identity.core)],
-                            note="Explicit repair of checkout-local tools; run only when authorized.")])
+            repairs=[depot_tools_repair(identity)])
     return depot
 
 
@@ -232,6 +238,7 @@ def load_environment(identity, environ, log=None, with_pythonpath=False):
     checkout identity.
     """
     direnv, directory = require_environment(identity, environ, log)
+    require_depot_tools(identity)
     base = clean_environ(environ)
     with tempfile.TemporaryDirectory(prefix="scaffold-env-") as scratch:
         target = Path(scratch) / "environment.json"

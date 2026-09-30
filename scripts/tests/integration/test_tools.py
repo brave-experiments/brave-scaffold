@@ -272,7 +272,99 @@ class PackageExecutionTests(SandboxTest):
             os.kill(child, 0)
 
 
+REJECTS_PNPM = """#!%(python)s
+import json, os, sys
+with open(os.environ["FAKE_RECORD"], "a") as stream:
+    stream.write(json.dumps({"tool": "installer", "argv": sys.argv[1:]}) + "\\n")
+if sys.argv[1].endswith("node_modules"):
+    sys.exit(7)
+import glob
+workspace = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "..")
+for stale in glob.glob(os.path.join(workspace, "STALE*")):
+    os.unlink(stale)
+"""
+
+RESTORES_PNPM = """#!%(python)s
+import glob, json, os, sys
+with open(os.environ["FAKE_RECORD"], "a") as stream:
+    stream.write(json.dumps({"tool": "installer", "argv": sys.argv[1:]}) + "\\n")
+core = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if sys.argv[1].endswith("node_modules"):
+    pnpm = os.path.join(core, "third_party", "node", "node_modules", "pnpm")
+    os.makedirs(os.path.join(pnpm, "bin"), exist_ok=True)
+    open(os.path.join(pnpm, "bin", "pnpm.mjs"), "w").write("")
+    open(os.path.join(pnpm, "package.json"), "w").write('{"version": "11.25.0"}')
+workspace = os.path.join(core, "..", "..")
+for stale in glob.glob(os.path.join(workspace, "STALE*")):
+    os.unlink(stale)
+"""
+
+
 @unittest.skipUnless(shutil.which("direnv"), "direnv is required")
+class ToolRepairTests(SandboxTest):
+    """Repair installs exactly what inspection requires for the checkout's package manager."""
+
+    def setUp(self):
+        super().setUp()
+        self.config = str(self.sandbox.config)
+
+    def checkout(self, name, **options):
+        core = self.sandbox.make_checkout(name, **options)
+        entries = [(other, path, "environments/" + other) for other, path in self.sandbox.checkouts.items()]
+        self.sandbox.write_config(entries)
+        self.sandbox.bdev("env", "init", "--checkout", name, "--config", self.config)
+        self.sandbox.approve(name)
+        return core
+
+    def setup_tools(self, name):
+        result = self.sandbox.bdev("--json", "tools", "setup", "--checkout", name, "--config", self.config)
+        return result, json.loads(result.stdout)
+
+    def installed(self):
+        return [record["argv"][0].rsplit("/", 1)[-1] for record in self.sandbox.records() if record["tool"] == "installer"]
+
+    def test_older_npm_repair_installs_only_the_node_payload_that_contains_npm(self):
+        core = self.checkout("older", declaration=False)
+        write_executable(core / "tools" / "cr" / "tarball_installer.py", REJECTS_PNPM)
+        self.sandbox.mark_stale("older", only="node")
+        result, document = self.setup_tools("older")
+        self.assertEqual((result.returncode, document["status"]), (0, "ok"), result.stdout)
+        self.assertEqual(self.installed(), ["node-mac-arm64"])
+        self.assertTrue(document["data"]["ready"])
+
+    def test_npm_with_a_current_node_payload_needs_no_pnpm_entry(self):
+        core = self.checkout("older", declaration=False, manager="npm")
+        write_executable(core / "tools" / "cr" / "tarball_installer.py", REJECTS_PNPM)
+        result, document = self.setup_tools("older")
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertEqual(self.installed(), ["node-mac-arm64"])
+
+    def test_pnpm_repair_installs_node_and_the_missing_manager_payload_then_checks_both(self):
+        core = self.checkout("modern")
+        write_executable(core / "tools" / "cr" / "tarball_installer.py", RESTORES_PNPM)
+        shutil.rmtree(core / "third_party" / "node" / "node_modules")
+        self.sandbox.mark_stale("modern", only="pnpm")
+        result, document = self.setup_tools("modern")
+        self.assertEqual((result.returncode, document["status"]), (0, "ok"), result.stdout)
+        self.assertEqual(self.installed(), ["node-mac-arm64", "node_modules"])
+
+    def test_a_failing_required_entry_is_reported_with_its_own_exit(self):
+        core = self.checkout("modern")
+        write_executable(core / "tools" / "cr" / "tarball_installer.py", REJECTS_PNPM)
+        self.sandbox.mark_stale("modern")
+        result, document = self.setup_tools("modern")
+        self.assertEqual((result.returncode, document["error"]["code"], document["child_exit_code"]),
+                         (5, "CHILD_FAILED", 7))
+
+    def test_a_missing_local_python_points_at_the_sync_that_installs_depot_tools(self):
+        core = self.checkout("modern")
+        shutil.rmtree(core / "vendor" / "depot_tools")
+        result = self.sandbox.bdev("--json", "vpython3", "--checkout", "modern", "--config", self.config, "--", "a.py")
+        argv = [step["argv"][:3] for step in json.loads(result.stdout)["error"]["repairs"]]
+        self.assertNotIn(["bdev", "tools", "setup"], argv, "tools setup installs Node and the package manager only")
+        self.assertIn(["bdev", "sync", "--checkout"], argv)
+
+
 @unittest.skipUnless(shutil.which("direnv"), "direnv is required")
 class ToolLocalityTests(SandboxTest):
     """Tools must live inside the selected checkout, however the directories that hold them are linked."""

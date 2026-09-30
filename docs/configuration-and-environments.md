@@ -186,6 +186,25 @@ missing or stale, the command stops and names the explicit repair,
 `bdev tools setup --checkout <name>`, which runs the checkout's own payload
 installer. Run it only when you intend the checkout to change.
 
+### Supported tool layout
+
+The scaffold reads one checkout layout and reports anything else as missing or unverifiable
+instead of guessing:
+
+| Piece | Where it looks |
+| --- | --- |
+| Package manager | `devEngines.packageManager` in Core's `package.json` (`npm` or `pnpm`). No declaration means an older npm checkout; a malformed or unsupported one is `DEPENDENCY_INCOMPATIBLE`. |
+| Node | `third_party/node/node-mac-<arm64\|x64>/bin/node`, inside the checkout. |
+| npm | Inside the Node payload (`lib/node_modules/npm`); npm needs no separate payload. |
+| pnpm | `third_party/node/node_modules/pnpm`; only pnpm checkouts need it. |
+| `vpython3` | `vendor/depot_tools` in Core, else `third_party/depot_tools` in Chromium. Core's sync installs it. |
+| Verification | The checkout's own `tools/cr/extra_deps.py` says whether each required payload entry is deployed at its pinned version. Without it, or without the entry, the payload counts as unverified: a compatible version alone is not proof. |
+| Repair | `bdev tools setup` runs `tools/cr/tarball_installer.py` for exactly the entries the declared manager needs (Node for npm; Node and pnpm for pnpm), then inspects the same set again. It does not install `vpython3` or Android tools. |
+
+Older npm checkouts are supported when they carry the payload metadata and installer above.
+A checkout from before that metadata existed cannot be verified, so it is refused rather than
+run on tools whose pinning is unknown; how to support such checkouts is an open decision.
+
 A tool counts as local only if it resolves, after following every link, inside the
 checkout itself: Node and the package manager inside Core, `vpython3` inside Chromium's source
 root. The comparison is against the checkout's frozen canonical path, so moving a whole payload
