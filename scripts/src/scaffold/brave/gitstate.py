@@ -12,8 +12,12 @@ from ..common.procs import run_capture
 from ..common.results import ScaffoldError
 
 
+EVIDENCE_BYTES = 64 << 20
+
+
 def _git(repo, args, log, timeout=120):
-    return run_capture(["git", "--literal-pathspecs", "-C", str(repo), *args], str(repo), None, log, timeout=timeout)
+    return run_capture(["git", "--literal-pathspecs", "-C", str(repo), *args], str(repo), None, log, timeout=timeout,
+                       max_bytes=EVIDENCE_BYTES)
 
 
 def changed_paths(repo, paths, log=None):
@@ -25,10 +29,11 @@ def changed_paths(repo, paths, log=None):
     if not paths:
         return set()
     result = _git(repo, ["status", "--porcelain", "-z", "--untracked-files=all", "--", *paths], log)
-    if result.returncode != 0:
+    if result.returncode != 0 or result.truncated:
         raise ScaffoldError("PREPARATION_CONFLICT",
-                            "Local changes in %s could not be inspected (git status exit %d), so nothing was "
-                            "changed." % (repo, result.returncode), details={"repository": str(repo)})
+                            "Local changes in %s could not be inspected (%s), so nothing was changed." % (
+                                repo, "git status output was too large to read completely" if result.truncated
+                                else "git status exit %d" % result.returncode), details={"repository": str(repo)})
     changed, entries = set(), iter(result.stdout.split("\0"))
     for entry in entries:
         if len(entry) < 4:
@@ -45,10 +50,26 @@ def tracked_paths(repo, paths, log=None):
     if not paths:
         return set()
     result = _git(repo, ["ls-files", "-z", "--", *paths], log)
-    if result.returncode != 0:
-        raise ScaffoldError("PREPARATION_CONFLICT", "Tracked files in %s could not be listed." % repo,
+    if result.returncode != 0 or result.truncated:
+        raise ScaffoldError("PREPARATION_CONFLICT", "Tracked files in %s could not be listed completely." % repo,
                             details={"repository": str(repo)})
     return {name for name in result.stdout.split("\0") if name}
+
+
+def head_commit(repo, log=None):
+    """The commit HEAD names, asked of Git so every layout (linked, separate, packed) gives the same answer."""
+    result = _git(repo, ["rev-parse", "--verify", "--quiet", "HEAD^{commit}"], log, timeout=30)
+    text = result.stdout.strip()
+    return text if result.returncode == 0 and not result.truncated and text else None
+
+
+def head_description(repo, log=None):
+    """{"branch": name} or {"detached": commit} for HEAD, or None when it cannot be read."""
+    branch = _git(repo, ["symbolic-ref", "--quiet", "--short", "HEAD"], log, timeout=30)
+    if branch.returncode == 0 and branch.stdout.strip():
+        return {"branch": branch.stdout.strip()}
+    commit = head_commit(repo, log)
+    return {"detached": commit} if commit else None
 
 
 def nested_repositories(root):

@@ -20,7 +20,12 @@ look, and what the codes mean. Only delivered commands appear here.
   to turn this off; results and errors are unaffected. The same redaction covers
   command lines in results, plans, error details, and saved operation records; the
   child still receives the real arguments. Secrets that a child prints itself are
-  not scrubbed.
+  not scrubbed. Every subprocess the tools start is logged, including probes; a check
+  repeated while waiting (for example whether a process has exited) is shown once,
+  followed by a line saying how many more times it ran, and the operation record keeps the
+  count. Probe output is read with a size limit: output beyond it is discarded while
+  reading, and evidence that needs the whole output (Git status, the process listing)
+  is treated as unknown rather than as the complete answer.
 - Nothing is repaired or approved automatically. Suggested next steps in errors
   are suggestions.
 

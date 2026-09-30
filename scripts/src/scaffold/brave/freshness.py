@@ -13,39 +13,15 @@ from pathlib import Path
 
 from ..common.procs import run_capture
 from ..common.redaction import redact_argv
+from . import gitstate
 
+EVIDENCE_BYTES = 64 << 20
 UNKNOWN_MESSAGE = "Build freshness is unknown; this output may not include the latest code."
 
 
-def resolve_head(repo):
-    """Commit id of a repository's HEAD, read from Git metadata (no subprocess)."""
-    git = Path(repo) / ".git"
-    if git.is_file():
-        try:
-            line = git.read_text(encoding="utf-8").splitlines()[0]
-            git = Path(line.split(":", 1)[1].strip())
-        except (OSError, IndexError):
-            return None
-    try:
-        head = (git / "HEAD").read_text(encoding="utf-8").strip()
-    except OSError:
-        return None
-    if not head.startswith("ref:"):
-        return head
-    ref = head[4:].strip()
-    try:
-        return (git / ref).read_text(encoding="utf-8").strip()
-    except OSError:
-        pass
-    common = git / "commondir"
-    packed = (Path(os.path.realpath(git / common.read_text().strip())) if common.is_file() else git) / "packed-refs"
-    try:
-        for line in packed.read_text(encoding="utf-8").splitlines():
-            if line.endswith(" " + ref):
-                return line.split()[0]
-    except OSError:
-        pass
-    return None
+def resolve_head(repo, log=None):
+    """Commit id of a repository's HEAD (asked of Git; see `gitstate.head_commit`)."""
+    return gitstate.head_commit(repo, log)
 
 
 def _file_signature(path):
@@ -59,8 +35,8 @@ def _file_signature(path):
 def worktree_state(repo, log=None):
     """Hash of a repository's uncommitted state, including the content signature of changed files."""
     result = run_capture(["git", "-C", str(repo), "status", "--porcelain=v1", "-z", "--untracked-files=all"],
-                         str(repo), None, log, timeout=120)
-    if result.returncode != 0:
+                         str(repo), None, log, timeout=120, max_bytes=EVIDENCE_BYTES)
+    if result.returncode != 0 or result.truncated:
         return None
     digest = hashlib.sha256(result.stdout.encode())
     for entry in sorted(item for item in result.stdout.split("\0") if item):
@@ -75,8 +51,8 @@ def tracked_changes_state(repo, log=None, timeout=90):
     so a slow or failing check makes freshness unknown instead of claiming a match.
     """
     result = run_capture(["git", "--no-optional-locks", "-C", str(repo), "diff-index", "-z", "--name-only", "HEAD",
-                          "--"], str(repo), None, log, timeout=timeout)
-    if result.returncode != 0 or result.timed_out:
+                          "--"], str(repo), None, log, timeout=timeout, max_bytes=EVIDENCE_BYTES)
+    if result.returncode != 0 or result.timed_out or result.truncated:
         return None
     digest = hashlib.sha256()
     for name in sorted(item for item in result.stdout.split("\0") if item):
@@ -124,8 +100,8 @@ def compute(identity, patched_paths, effective_args, log=None, extra=None):
     for repo_path in sorted(patched_paths):
         patched.update(("%s=%s\n" % (repo_path, _file_signature(identity.src / repo_path))).encode())
     return {
-        "core_head": resolve_head(identity.core),
-        "chromium_head": resolve_head(identity.src),
+        "core_head": resolve_head(identity.core, log),
+        "chromium_head": resolve_head(identity.src, log),
         "core_worktree": worktree_state(identity.core, log),
         "chromium_worktree": tracked_changes_state(identity.src, log),
         "patched_files": patched.hexdigest() if patched_paths else None,

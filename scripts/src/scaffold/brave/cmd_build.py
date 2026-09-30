@@ -730,7 +730,8 @@ def do_sync_phase(ctx, identity, prepared, op, target, forwarded):
                             "Sync could overwrite local work in %d place(s); nothing was changed." % len(conflicts),
                             details={"files": conflicts[:50]},
                             repairs=[repair(["bdev", "drift", "--diff", "--checkout", str(identity.core)])])
-    before = {"core_head": freshness.resolve_head(identity.core), "chromium_head": freshness.resolve_head(identity.src)}
+    before = {"core_head": freshness.resolve_head(identity.core, ctx.log),
+              "chromium_head": freshness.resolve_head(identity.src, ctx.log)}
     arguments = sync_arguments(ctx, target, forwarded, identity)
     op.step("sync", arguments=arguments, before=before,
             **step_module.sync_step(identity, arguments, tools_module.package_argv(prepared.toolchain, arguments)).record())
@@ -738,7 +739,8 @@ def do_sync_phase(ctx, identity, prepared, op, target, forwarded):
     if code != 0:
         raise ScaffoldError("CHILD_FAILED", "The sync command exited with status %d." % code,
                             details={"argv": argv, "phase": "sync"}, child_exit_code=code)
-    after = {"core_head": freshness.resolve_head(identity.core), "chromium_head": freshness.resolve_head(identity.src)}
+    after = {"core_head": freshness.resolve_head(identity.core, ctx.log),
+             "chromium_head": freshness.resolve_head(identity.src, ctx.log)}
     op.step("sync-complete", after=after)
     return {"argv": argv, "revisions_before": before, "revisions_after": after}
 

@@ -58,5 +58,57 @@ class ChangedPathsTests(unittest.TestCase):
         self.assertEqual(gitstate.changed_paths(self.repo, ["star*.cc"]), {"star*.cc"})
 
 
+class HeadTests(unittest.TestCase):
+    """One reader answers 'what is checked out' for every supported repository layout."""
+
+    def setUp(self):
+        self.root = Path(tempfile.mkdtemp(prefix="scaffold-heads-"))
+        self.addCleanup(lambda: __import__("shutil").rmtree(self.root, ignore_errors=True))
+
+    def repo(self, name="repo"):
+        path = self.root / name
+        path.mkdir()
+        subprocess.run([*GIT, "-C", str(path), "init", "-q", "-b", "main"], check=True, capture_output=True)
+        (path / "a.txt").write_text("a\n")
+        subprocess.run([*GIT, "-C", str(path), "add", "-A"], check=True, capture_output=True)
+        subprocess.run([*GIT, "-C", str(path), "commit", "-q", "-m", "one"], check=True, capture_output=True)
+        return path
+
+    def expected(self, path):
+        return subprocess.run(["git", "-C", str(path), "rev-parse", "HEAD"], capture_output=True, text=True,
+                              check=True).stdout.strip()
+
+    def test_ordinary_packed_and_detached_repositories(self):
+        path = self.repo()
+        self.assertEqual(gitstate.head_commit(path), self.expected(path))
+        self.assertEqual(gitstate.head_description(path), {"branch": "main"})
+        subprocess.run(["git", "-C", str(path), "pack-refs", "--all"], check=True, capture_output=True)
+        self.assertEqual(gitstate.head_commit(path), self.expected(path))
+        subprocess.run(["git", "-C", str(path), "checkout", "-q", "--detach"], check=True, capture_output=True)
+        self.assertEqual(gitstate.head_description(path), {"detached": self.expected(path)})
+
+    def test_a_git_file_with_a_relative_gitdir_is_anchored_to_its_own_repository(self):
+        path = self.repo()
+        (self.root / "elsewhere").mkdir()
+        (path / ".git").rename(self.root / "elsewhere" / "real.git")
+        (path / ".git").write_text("gitdir: ../elsewhere/real.git\n")
+        cwd = Path.cwd()
+        self.addCleanup(lambda: __import__("os").chdir(cwd))
+        __import__("os").chdir(tempfile.gettempdir())
+        real = subprocess.run(["git", "-C", str(path), "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
+        self.assertRegex(real, "^[0-9a-f]{40}$")
+        self.assertEqual(gitstate.head_commit(path), real)
+        from scaffold.brave import freshness
+        self.assertEqual(freshness.resolve_head(path), real)
+
+    def test_missing_history_and_non_repositories_have_no_head(self):
+        empty = self.root / "empty"
+        empty.mkdir()
+        subprocess.run(["git", "-C", str(empty), "init", "-q"], check=True, capture_output=True)
+        self.assertIsNone(gitstate.head_commit(empty))
+        self.assertIsNone(gitstate.head_commit(self.root / "not-a-repo"))
+        self.assertIsNone(gitstate.head_description(self.root / "not-a-repo"))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -178,7 +178,7 @@ def lfs_pointers(wc, log=None):
     if not uses_lfs(wc):
         return []
     listing = _git(wc, ["lfs", "ls-files"], log)
-    if listing.returncode != 0:
+    if listing.returncode != 0 or listing.truncated:
         raise ScaffoldError("LOCAL_TOOL_MISSING", "git-lfs could not list the support repository's large files: %s" %
                             (listing.stderr.strip()[-300:] or "exit %d" % listing.returncode),
                             details={"path": str(wc)}, repairs=[repair(["brew", "install", "git-lfs"],
@@ -425,7 +425,7 @@ def freshness_inputs(identity, log=None):
     digest = hashlib.sha256()
     for key, origin, copied in resource_destinations(identity, wc):
         digest.update(("%s=%s\n" % (key, json.dumps(resource_signature(origin, copied), sort_keys=True))).encode())
-    return {"support_head": freshness.resolve_head(wc), "support_worktree": freshness.worktree_state(wc, log),
+    return {"support_head": freshness.resolve_head(wc, log), "support_worktree": freshness.worktree_state(wc, log),
             "support_resources": digest.hexdigest()}
 
 

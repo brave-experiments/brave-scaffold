@@ -340,5 +340,47 @@ class RestartEscalationTests(unittest.TestCase):
         self.assertEqual(caught.exception.code, "LAUNCH_FAILED")
 
 
+class RestartLoggingTests(unittest.TestCase):
+    """Every probe the restart dispatches is logged; repeated polling has a bounded representation."""
+
+    def test_liveness_and_launch_probes_are_logged_with_polling_summarised(self):
+        import io
+        import tempfile
+        from scaffold.brave import macos
+        from scaffold.common.procs import CommandLog
+        from tests.support import make_app
+        directory = tempfile.mkdtemp()
+        self.addCleanup(lambda: __import__("shutil").rmtree(directory, ignore_errors=True))
+        app = make_app(directory, bundle_id="com.brave.RestartLogging")
+        binary = os.path.join(app, "Contents", "MacOS", "Brave Browser Development")
+        process = subprocess.Popen([binary, "i"], start_new_session=True)
+        self.addCleanup(lambda: (process.kill(), process.wait()))
+        bundle = macos.read_bundle(app)
+        stream = io.StringIO()
+        log = CommandLog(stream=stream)
+        env = {"PATH": "/usr/bin:/bin"}
+        instances = macos.running_instances(bundle, env, log)
+        with mock.patch.object(macos, "QUIT_WAIT_SECONDS", 1.0), mock.patch.object(macos, "TERM_WAIT_SECONDS", 1.0), \
+                mock.patch.object(macos, "KILL_WAIT_SECONDS", 5):
+            macos.stop_instances(bundle, instances, env, log)
+        probes = [entry for entry in log.records if entry["argv"][:3] == ["ps", "-o", "stat="]]
+        self.assertEqual(len(probes), 1, "the same liveness probe is described once")
+        self.assertGreater(probes[0]["repeated"], 3, "and says how often it ran")
+        self.assertEqual(stream.getvalue().count("ps -o stat="), 1)
+        self.assertIn("more times", stream.getvalue())
+        fake_open = os.path.join(directory, "bin")
+        os.makedirs(fake_open)
+        with open(os.path.join(fake_open, "open"), "w") as stream:
+            stream.write("#!/bin/sh\nexit 0\n")
+        os.chmod(os.path.join(fake_open, "open"), 0o755)
+        with mock.patch.object(macos, "LAUNCH_WAIT_SECONDS", 1.0):
+            with self.assertRaises(Exception):
+                macos.launch({**bundle, "path": os.path.join(directory, "absent.app")},
+                             {"PATH": fake_open + ":/usr/bin:/bin"}, log)
+        listings = [entry for entry in log.records if entry["argv"][:2] == ["ps", "-axo"]]
+        self.assertEqual(len(listings), 2, "the initial listing, and one description of the launch polling")
+        self.assertGreater(listings[-1]["repeated"], 1)
+
+
 if __name__ == "__main__":
     unittest.main()

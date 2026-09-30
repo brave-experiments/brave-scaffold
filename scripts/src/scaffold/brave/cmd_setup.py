@@ -21,7 +21,7 @@ from ..common.checks import PASS
 from ..common.platforms import capability_table
 from ..common.procs import run_capture, run_streaming
 from ..common.results import Result, ScaffoldError
-from . import records
+from . import gitstate, records
 
 MINIMAL_CONFIG = "schema_version = 1\n\n[logging]\ncommands = true\n"
 GENERATED_MARKER = env_module.GENERATED_MARKER
@@ -145,15 +145,8 @@ def checkout_list(ctx):
 # --- context ----------------------------------------------------------------------
 
 
-def _git_head(repo):
-    head = Path(repo) / ".git" / "HEAD"
-    try:
-        text = head.read_text(encoding="utf-8").strip()
-    except OSError:
-        return None
-    if text.startswith("ref:"):
-        return {"branch": text[4:].strip().removeprefix("refs/heads/")}
-    return {"detached": text}
+def _git_head(repo, log=None):
+    return gitstate.head_description(repo, log)
 
 
 def context(ctx):
@@ -172,7 +165,7 @@ def context(ctx):
     data["checkout"] = {"core": str(identity.core), "chromium_src": str(identity.src),
                         "workspace": str(identity.workspace), "outer": str(identity.outer),
                         "alias": identity.alias, "selection_source": identity.selection_source,
-                        "head": _git_head(identity.core)}
+                        "head": _git_head(identity.core, ctx.log)}
     data["layout"] = {"supported": not worktrees, "linked_worktrees": worktrees}
     lines += ["Checkout: %s" % identity.core, "  Selected by: %s" % identity.selection_source,
               "  Alias: %s" % (identity.alias or "(none)"), "  Chromium src: %s" % identity.src]

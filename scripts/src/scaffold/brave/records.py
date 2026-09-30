@@ -121,8 +121,10 @@ def describe_start(ctx, identity):
     status = run_capture(["git", "-C", str(identity.core), "status", "--porcelain"], str(identity.core), None, ctx.log,
                          timeout=120)
     evidence["source"] = {
-        "core_head": freshness.resolve_head(identity.core), "chromium_head": freshness.resolve_head(identity.src),
-        "core_uncommitted_files": len(status.stdout.splitlines()) if status.returncode == 0 else None,
+        "core_head": freshness.resolve_head(identity.core, ctx.log),
+        "chromium_head": freshness.resolve_head(identity.src, ctx.log),
+        "core_uncommitted_files": len(status.stdout.splitlines()) if status.returncode == 0 and not status.truncated
+        else None,
         "chromium_uncommitted": "not computed here; the output record's fingerprint covers tracked changes"}
     return evidence
 

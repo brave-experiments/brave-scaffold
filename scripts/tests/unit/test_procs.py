@@ -16,7 +16,7 @@ from unittest import mock
 
 import tests.support  # noqa: F401
 from scaffold.common import procs
-from scaffold.common.results import Cancelled
+from scaffold.common.results import Cancelled, ScaffoldError
 
 STUBBORN = ("import os,signal,sys,time\nsignal.signal(signal.SIGTERM, signal.SIG_IGN)\n"
             "open(sys.argv[1], 'w').write(str(os.getpid()))\ntime.sleep(60)")
@@ -134,6 +134,62 @@ class CaptureTests(GroupTestCase):
         self.assertLess(time.monotonic() - started, 10)
         self.assertTrue(result.timed_out)
         self.assertTrue(result.cleanup_incomplete, "output pipes were abandoned")
+
+
+class BoundedCaptureTests(unittest.TestCase):
+    def test_a_chatty_child_cannot_use_more_memory_than_the_limit(self):
+        import tracemalloc
+        code = "import sys\nfor _ in range(100):\n    sys.stdout.buffer.write(b'x' * 1_000_000)\n"
+        tracemalloc.start()
+        try:
+            result = procs.run_capture([sys.executable, "-c", code], os.getcwd(), None, max_bytes=1000, timeout=60)
+            peak = tracemalloc.get_traced_memory()[1]
+        finally:
+            tracemalloc.stop()
+        self.assertEqual((len(result.stdout), result.returncode, result.truncated), (1000, 0, True))
+        self.assertLess(peak, 20_000_000, "output beyond the limit is discarded while reading, not kept")
+
+    def test_output_within_the_limit_is_complete_and_not_marked(self):
+        result = procs.run_capture([sys.executable, "-c", "print('ok'); import sys; print('err', file=sys.stderr)"],
+                                   os.getcwd(), None, max_bytes=1000)
+        self.assertEqual((result.stdout, result.stderr, result.truncated), ("ok\n", "err\n", False))
+
+    def test_each_stream_is_limited_separately(self):
+        code = "import sys\nsys.stdout.write('o' * 5000)\nsys.stderr.write('e' * 5000)\n"
+        result = procs.run_capture([sys.executable, "-c", code], os.getcwd(), None, max_bytes=100)
+        self.assertEqual((len(result.stdout), len(result.stderr), result.truncated), (100, 100, True))
+
+
+class TruncatedEvidenceTests(unittest.TestCase):
+    """Partial command output is never treated as complete safety evidence."""
+
+    def truncated(self, stdout=""):
+        return procs.ProcessResult(returncode=0, stdout=stdout, truncated=True)
+
+    def test_local_work_and_tracked_file_checks_fail_instead_of_answering(self):
+        from scaffold.brave import gitstate
+        with mock.patch.object(gitstate, "run_capture", return_value=self.truncated(" M a.cc\0")):
+            with self.assertRaises(ScaffoldError):
+                gitstate.changed_paths("/repo", ["a.cc"])
+            with self.assertRaises(ScaffoldError):
+                gitstate.tracked_paths("/repo", ["a.cc"])
+
+    def test_freshness_inputs_become_unknown(self):
+        from scaffold.brave import freshness
+        with mock.patch.object(freshness, "run_capture", return_value=self.truncated("a.cc\0")):
+            self.assertIsNone(freshness.tracked_changes_state("/repo"))
+            self.assertIsNone(freshness.worktree_state("/repo"))
+
+    def test_process_listing_and_large_file_listing_fail(self):
+        from scaffold.brave import android_deps, macos
+        with mock.patch.object(macos, "run_capture", return_value=self.truncated("1 x\n")):
+            with self.assertRaises(ScaffoldError):
+                macos.running_instances({"bundle_identifier": "com.brave.X"}, {})
+        with tempfile.TemporaryDirectory() as directory:
+            (Path(directory) / ".gitattributes").write_text("*.bin filter=lfs\n")
+            with mock.patch.object(android_deps, "_git", return_value=self.truncated("abc - big.bin\n")):
+                with self.assertRaises(ScaffoldError):
+                    android_deps.lfs_pointers(directory)
 
 
 if __name__ == "__main__":

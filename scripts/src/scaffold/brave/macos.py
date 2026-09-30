@@ -69,9 +69,13 @@ def read_bundle(path):
 # --- restart -------------------------------------------------------------------
 
 
-def running_instances(bundle, environ, log=None):
+def running_instances(bundle, environ, log=None, poll=False):
     """Main processes of the application with the same bundle identifier, from any checkout."""
-    result = run_capture(["ps", "-axo", "pid=,command="], os.getcwd(), environ, log, timeout=30)
+    result = run_capture(["ps", "-axo", "pid=,command="], os.getcwd(), environ, log, timeout=30, max_bytes=16 << 20,
+                         poll=poll)
+    if result.truncated:
+        raise ScaffoldError("LAUNCH_FAILED", "The process listing was too large to read completely, so running "
+                            "instances of the application cannot be identified; nothing was stopped or launched.")
     found = []
     pattern = re.compile(r"^\s*(\d+)\s+(.*?\.app)/Contents/MacOS/(\S.*)$")
     for line in result.stdout.splitlines():
@@ -90,7 +94,7 @@ def running_instances(bundle, environ, log=None):
     return found
 
 
-def _alive(pid):
+def _alive(pid, log=None):
     try:
         os.kill(pid, 0)
     except ProcessLookupError:
@@ -98,29 +102,38 @@ def _alive(pid):
     except PermissionError:
         return True
     try:
-        state = run_capture(["ps", "-o", "stat=", "-p", str(pid)], os.getcwd(), None, timeout=10).stdout.strip()
+        state = run_capture(["ps", "-o", "stat=", "-p", str(pid)], os.getcwd(), None, log, timeout=10,
+                            poll=True).stdout.strip()
     except OSError:
         return True
     return bool(state) and not state.startswith("Z")
 
 
-def _wait_gone(pids, seconds):
+def _wait_gone(pids, seconds, log=None):
     deadline = time.monotonic() + seconds
     while time.monotonic() < deadline:
-        if not any(_alive(pid) for pid in pids):
+        if not any(_alive(pid, log) for pid in pids):
             return True
         time.sleep(0.2)
-    return not any(_alive(pid) for pid in pids)
+    return not any(_alive(pid, log) for pid in pids)
 
 
 def stop_instances(bundle, instances, environ, log=None):
     """Quit gracefully, then terminate, then kill; confirm exit. Returns the steps taken."""
+    try:
+        return _stop_instances(bundle, instances, environ, log)
+    finally:
+        if log is not None:
+            log.finish_polls()
+
+
+def _stop_instances(bundle, instances, environ, log):
     pids = [item["pid"] for item in instances]
     steps = []
     run_capture(["osascript", "-e", 'tell application id "%s" to quit' % bundle["bundle_identifier"]],
                 os.getcwd(), environ, log, timeout=QUIT_WAIT_SECONDS)
     steps.append("quit")
-    if _wait_gone(pids, QUIT_WAIT_SECONDS):
+    if _wait_gone(pids, QUIT_WAIT_SECONDS, log):
         return steps
     for name, sig, wait in (("terminate", signal.SIGTERM, TERM_WAIT_SECONDS), ("kill", signal.SIGKILL, KILL_WAIT_SECONDS)):
         for pid in pids:
@@ -129,7 +142,7 @@ def stop_instances(bundle, instances, environ, log=None):
             except ProcessLookupError:
                 pass
         steps.append(name)
-        if _wait_gone(pids, wait):
+        if _wait_gone(pids, wait, log):
             return steps
     raise ScaffoldError("LAUNCH_FAILED", "Could not stop the running %s (process %s)." % (
         bundle["name"], ", ".join(str(p) for p in pids)), details={"pids": pids, "steps": steps})
@@ -137,13 +150,21 @@ def stop_instances(bundle, instances, environ, log=None):
 
 def launch(bundle, environ, log=None):
     """Open the selected bundle and confirm that its own process started."""
+    try:
+        return _launch(bundle, environ, log)
+    finally:
+        if log is not None:
+            log.finish_polls()
+
+
+def _launch(bundle, environ, log):
     result = run_capture(["open", bundle["path"]], os.getcwd(), environ, log, timeout=60)
     if result.returncode != 0:
         raise ScaffoldError("LAUNCH_FAILED", "Launching %s failed: %s" % (bundle["path"], result.stderr.strip()),
                             details={"exit": result.returncode})
     deadline = time.monotonic() + LAUNCH_WAIT_SECONDS
     while time.monotonic() < deadline:
-        for item in running_instances(bundle, environ):
+        for item in running_instances(bundle, environ, log, poll=True):
             if os.path.realpath(item["bundle"]) == os.path.realpath(bundle["path"]):
                 return item["pid"]
         time.sleep(0.3)
