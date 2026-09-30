@@ -209,6 +209,31 @@ class RunTests(BuildTestCase):
         self.assertTrue(self.state().needs_revalidation)
         self.assertEqual(self.state().last_attempt()["outcome"], "cancelled")
 
+    def test_cancelled_build_leaves_no_descendant_running_even_if_it_ignores_term(self):
+        pidfile = self.sandbox.root / "descendant-pid"
+        hook = self.sandbox.hook("""
+import subprocess, time
+subprocess.Popen([sys.executable, "-c", "import os,signal,sys,time\\n"
+                  "signal.signal(signal.SIGTERM, signal.SIG_IGN)\\n"
+                  "open(sys.argv[1], 'w').write(str(os.getpid()))\\ntime.sleep(120)", os.environ["FAKE_DESCENDANT_PID"]])
+time.sleep(120)
+""")
+        process = subprocess.Popen(
+            [str(SCRIPTS / "bdev"), "--json", "--config", str(self.sandbox.config), "--checkout", "main", "build"],
+            env=self.sandbox.env(FAKE_HOOK=hook, FAKE_DESCENDANT_PID=str(pidfile)),
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        deadline = time.time() + 30
+        while not pidfile.exists() and time.time() < deadline:
+            time.sleep(0.05)
+        descendant = int(pidfile.read_text())
+        self.addCleanup(lambda: alive(descendant) and os.kill(descendant, signal.SIGKILL))
+        process.send_signal(signal.SIGTERM)
+        stdout, _ = process.communicate(timeout=60)
+        document = json.loads(stdout)
+        self.assertEqual((process.returncode, document["status"]), (143, "cancelled"))
+        self.assertFalse(alive(descendant), "the process this command started was stopped")
+        self.assertNotIn("cleanup_incomplete", document["error"]["details"])
+
     def test_interrupted_operation_without_cleanup_is_reported_as_uncertain_later(self):
         self.build()
         process = subprocess.Popen(

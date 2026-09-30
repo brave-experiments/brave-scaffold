@@ -11,12 +11,16 @@ import shlex
 import signal
 import subprocess
 import sys
+import time
 from dataclasses import dataclass, field
 
 from .redaction import redact_argv
 from .results import Cancelled
 
 TERMINATE_GRACE_SECONDS = 10
+KILL_WAIT_SECONDS = 3
+PIPE_DRAIN_SECONDS = 3
+CANCEL_SIGNALS = {130: signal.SIGINT, 143: signal.SIGTERM}
 
 
 def format_command_block(argv, cwd):
@@ -53,35 +57,67 @@ class ProcessResult:
     stdout: str = ""
     stderr: str = ""
     timed_out: bool = False
+    cleanup_incomplete: bool = False
 
 
 def _forward_and_wait(process, timeout=None):
-    """Wait for an owned process group; on cancellation terminate it within a bound."""
+    """Wait for an owned process group; on cancellation forward the received signal and clean up within a bound."""
     try:
         return process.wait(timeout=timeout)
     except Cancelled as cancelled:
-        terminate_group(process)
+        cancelled.cleanup_incomplete = not terminate_group(process, signum=CANCEL_SIGNALS.get(cancelled.exit_code,
+                                                                                              signal.SIGTERM))
         raise cancelled
     except subprocess.TimeoutExpired:
         terminate_group(process)
         raise
 
 
-def terminate_group(process, grace=TERMINATE_GRACE_SECONDS):
-    if process.poll() is not None:
-        return
+def _group_alive(pgid):
     try:
-        os.killpg(process.pid, signal.SIGTERM)
+        os.killpg(pgid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def _signal_group(pgid, signum):
+    try:
+        os.killpg(pgid, signum)
     except (ProcessLookupError, PermissionError):
-        return
-    try:
-        process.wait(timeout=grace)
-    except subprocess.TimeoutExpired:
-        try:
-            os.killpg(process.pid, signal.SIGKILL)
-        except (ProcessLookupError, PermissionError):
-            pass
-        process.wait()
+        pass
+
+
+def _wait_for_group(process, seconds):
+    """Reap the leader and wait until no member of its group remains."""
+    deadline = time.monotonic() + seconds
+    while True:
+        process.poll()
+        if not _group_alive(process.pid):
+            return True
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(0.02)
+
+
+def terminate_group(process, grace=None, signum=signal.SIGTERM):
+    """Stop every process started in the group `process` leads, even after the leader exited.
+
+    Sends `signum`, waits up to `grace` seconds for the whole group to leave, then kills survivors and waits
+    a short bounded time. Returns True when no member remains. The group id stays reserved while any member
+    runs, so only processes this scaffold started are signalled.
+    """
+    grace = TERMINATE_GRACE_SECONDS if grace is None else grace
+    process.poll()
+    if not _group_alive(process.pid):
+        return True
+    _signal_group(process.pid, signum)
+    if _wait_for_group(process, grace):
+        return True
+    _signal_group(process.pid, signal.SIGKILL)
+    return _wait_for_group(process, KILL_WAIT_SECONDS)
 
 
 def run_streaming(argv, cwd, env, log, json_mode=False, stdin=None):
@@ -97,6 +133,18 @@ def run_streaming(argv, cwd, env, log, json_mode=False, stdin=None):
     return _forward_and_wait(process)
 
 
+def _drain(process):
+    """Output already written by a finished or terminated probe; pipes held by escaped processes are abandoned."""
+    try:
+        out, err = process.communicate(timeout=PIPE_DRAIN_SECONDS)
+        return out, err, True
+    except subprocess.TimeoutExpired as expired:
+        for stream in (process.stdout, process.stderr):
+            if stream is not None:
+                stream.close()
+        return expired.stdout or b"", expired.stderr or b"", False
+
+
 def run_capture(argv, cwd, env, log=None, timeout=60, max_bytes=1_000_000):
     """Run a probe and capture bounded output. Logged when a log is supplied."""
     if log is not None:
@@ -106,19 +154,22 @@ def run_capture(argv, cwd, env, log=None, timeout=60, max_bytes=1_000_000):
                                    stderr=subprocess.PIPE, start_new_session=True)
     except OSError as error:
         return ProcessResult(returncode=127, stderr=str(error))
+    timed_out = incomplete = False
     try:
         out, err = process.communicate(timeout=timeout)
     except subprocess.TimeoutExpired:
-        terminate_group(process)
-        out, err = process.communicate()
-        return ProcessResult(returncode=124, stdout=out[:max_bytes].decode("utf-8", "replace"),
-                             stderr=err[:max_bytes].decode("utf-8", "replace"), timed_out=True)
-    except Cancelled:
-        terminate_group(process)
+        timed_out = True
+        group_gone = terminate_group(process)
+        out, err, drained = _drain(process)
+        incomplete = not (group_gone and drained)
+    except Cancelled as cancelled:
+        cancelled.cleanup_incomplete = not terminate_group(
+            process, signum=CANCEL_SIGNALS.get(cancelled.exit_code, signal.SIGTERM))
         raise
-    return ProcessResult(returncode=process.returncode,
+    return ProcessResult(returncode=124 if timed_out else process.returncode,
                          stdout=out[:max_bytes].decode("utf-8", "replace"),
-                         stderr=err[:max_bytes].decode("utf-8", "replace"))
+                         stderr=err[:max_bytes].decode("utf-8", "replace"), timed_out=timed_out,
+                         cleanup_incomplete=incomplete)
 
 
 def install_signal_handlers():

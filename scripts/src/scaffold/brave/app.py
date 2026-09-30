@@ -73,6 +73,10 @@ def run_command(command, parsed, handler, argv_environ=None, needs_config=True, 
     except Cancelled as cancelled:
         result = Result(command=command, status="cancelled", exit_code=cancelled.exit_code)
         result.error = {"code": "CANCELLED", "message": "The command was interrupted.", "details": {}, "repairs": []}
+        if cancelled.cleanup_incomplete:
+            result.error["details"]["cleanup_incomplete"] = True
+            result.add_warning("CLEANUP_INCOMPLETE", "Some processes started by this command may still be running; "
+                               "inspect them before retrying.")
         if context.selected:
             result.context = context.selected.to_context()
     except Exception as error:  # noqa: BLE001 - last-resort boundary for the one-document guarantee

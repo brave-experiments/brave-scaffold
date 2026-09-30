@@ -82,6 +82,7 @@ class Cancelled(BaseException):
     def __init__(self, exit_code):
         super().__init__(exit_code)
         self.exit_code = exit_code
+        self.cleanup_incomplete = False
 
 
 @dataclass

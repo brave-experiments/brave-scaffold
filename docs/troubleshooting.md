@@ -179,9 +179,14 @@ record; nothing rebuilds or deletes for you.
 
 ## Interrupted operations
 
-Interrupting a command (Ctrl-C or SIGTERM) forwards the signal to its child
-process group, waits briefly, then ends it, and reports `cancelled` with exit
-`130` or `143`. An interrupted build leaves its output marked as needing
+Interrupting a command (Ctrl-C or SIGTERM) forwards the same signal to the process
+group it started, waits up to 10 seconds for every member (including descendants
+whose parent already exited) to leave, then kills the ones that remain, and reports
+`cancelled` with exit `130` or `143`. If a started process could not be confirmed
+gone, or a probe's output pipes were abandoned because a process outside the group
+still held them, the result carries a `CLEANUP_INCOMPLETE` warning and
+`error.details.cleanup_incomplete`; look for leftover processes before retrying.
+Only processes this command started in its own group are signalled. An interrupted build leaves its output marked as needing
 revalidation; a command killed outright leaves an operation record still marked
 incomplete in `.bdev/operations/` beside your configuration. Inspect the checkout
 before retrying anything that modifies it.
