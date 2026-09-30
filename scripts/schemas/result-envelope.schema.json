@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "bdev result envelope",
+  "description": "One document on stdout in JSON mode. Additive fields are compatible; removals or meaning changes need a new schema_version.",
+  "type": "object",
+  "required": ["schema_version", "status", "command", "operation_id", "context", "data", "checks", "warnings",
+               "error", "artifacts", "logs", "exit_code", "child_exit_code"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "status": {"enum": ["ok", "error", "partial", "cancelled"]},
+    "command": {"type": "string"},
+    "operation_id": {"type": ["string", "null"]},
+    "context": {"type": "object"},
+    "data": {},
+    "checks": {"type": "array", "items": {"$ref": "#/$defs/check"}},
+    "warnings": {"type": "array", "items": {"$ref": "#/$defs/warning"}},
+    "error": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/error"}]},
+    "artifacts": {"type": "array"},
+    "logs": {"type": "array"},
+    "exit_code": {"type": "integer"},
+    "child_exit_code": {"type": ["integer", "null"]}
+  },
+  "$defs": {
+    "check": {
+      "type": "object",
+      "required": ["name", "status", "required", "summary", "scopes", "evidence", "affects", "repairs"],
+      "properties": {
+        "status": {"enum": ["pass", "blocker", "warning", "unsupported", "not_checked"]},
+        "required": {"type": "boolean"}
+      }
+    },
+    "warning": {"type": "object", "required": ["code", "message"]},
+    "error": {
+      "type": "object",
+      "required": ["code", "message", "details", "repairs"],
+      "properties": {
+        "repairs": {"type": "array", "items": {"$ref": "#/$defs/repair"}}
+      }
+    },
+    "repair": {
+      "type": "object",
+      "required": ["argv", "cwd", "requires_user_action"],
+      "properties": {
+        "argv": {"type": "array", "items": {"type": "string"}},
+        "requires_user_action": {"type": "boolean"}
+      }
+    }
+  }
+}

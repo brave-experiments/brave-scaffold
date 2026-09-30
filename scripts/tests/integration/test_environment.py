@@ -1,0 +1,126 @@
+# Copyright (c) 2026 The Brave Authors. All rights reserved.
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this file,
+# You can obtain one at https://mozilla.org/MPL/2.0/.
+"""Environment generation, approval, and explicit loading with a real direnv."""
+
+import os
+import shutil
+import unittest
+
+from tests.support import SandboxTest, tree_snapshot
+
+
+@unittest.skipUnless(shutil.which("direnv"), "direnv is required")
+class EnvironmentTests(SandboxTest):
+    def test_init_writes_outside_core_and_never_approves(self):
+        core = self.sandbox.make_checkout("main")
+        self.sandbox.register("main")
+        before = tree_snapshot(core.parent.parent.parent)
+        result = self.sandbox.bdev("env", "init", "--checkout", "main", "--config", str(self.sandbox.config))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(before, tree_snapshot(core.parent.parent.parent), "checkout files changed")
+        envrc = self.sandbox.root / "config" / "environments" / "main" / ".envrc"
+        self.assertTrue(envrc.is_file())
+        self.assertIn("direnv allow", result.stdout)
+        # Not approved: the next execution stops with an approval repair.
+        bpm = self.sandbox.bdev("--json", "--checkout", "main", "--config", str(self.sandbox.config),
+                                "run", tool="bpm")
+        document = __import__("json").loads(bpm.stdout)
+        self.assertEqual(document["error"]["code"], "ENVIRONMENT_UNAPPROVED")
+        self.assertEqual(bpm.returncode, 3)
+        repair = document["error"]["repairs"][0]
+        self.assertEqual(repair["argv"][:2], ["direnv", "allow"])
+        self.assertTrue(repair["requires_user_action"])
+
+    def test_approved_environment_runs_in_a_fresh_process_without_hooks(self):
+        self.sandbox.make_checkout("main")
+        self.sandbox.prepare_environment("main")
+        result = self.sandbox.bdev("env", "check", "--checkout", "main", "--config", str(self.sandbox.config))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("matches", result.stdout)
+
+    def test_editing_the_environment_invalidates_approval(self):
+        self.sandbox.make_checkout("main")
+        self.sandbox.prepare_environment("main")
+        envrc = self.sandbox.root / "config" / "environments" / "main" / ".envrc"
+        envrc.write_text(envrc.read_text() + "\n# edited\n")
+        result, document = self.sandbox.bdev_json("env", "check", "--checkout", "main",
+                                                  "--config", str(self.sandbox.config))
+        self.assertEqual(document["error"]["code"], "ENVIRONMENT_UNAPPROVED")
+
+    def test_failing_environment_stops_before_any_tool(self):
+        self.sandbox.make_checkout("main")
+        self.sandbox.prepare_environment("main", approve=False)
+        envrc = self.sandbox.root / "config" / "environments" / "main" / ".envrc"
+        envrc.write_text("exit 7\n")
+        self.sandbox.approve("main")
+        result = self.sandbox.bdev("--json", "--checkout", "main", "--config", str(self.sandbox.config), "run",
+                                   tool="bpm")
+        document = __import__("json").loads(result.stdout)
+        self.assertEqual(document["error"]["code"], "ENVIRONMENT_LOAD_FAILED")
+        self.assertEqual(self.sandbox.records(), [])
+
+    def test_environment_selecting_another_checkout_conflicts(self):
+        self.sandbox.make_checkout("main")
+        other = self.sandbox.make_checkout("other")
+        self.sandbox.prepare_environment("main", approve=False)
+        envrc = self.sandbox.root / "config" / "environments" / "main" / ".envrc"
+        envrc.write_text('export BRAVE_CORE_DIR="%s"\n' % other)
+        self.sandbox.approve("main")
+        result, document = self.sandbox.bdev_json("env", "check", "--checkout", "main",
+                                                  "--config", str(self.sandbox.config))
+        self.assertEqual(document["error"]["code"], "CHECKOUT_ENV_CONFLICT")
+        names = [item["variable"] for item in document["error"]["details"]["mismatches"]]
+        self.assertIn("BRAVE_CORE_DIR", names)
+        self.assertEqual(self.sandbox.records(), [])
+
+    def test_environment_directory_inside_core_is_rejected(self):
+        core = self.sandbox.make_checkout("main")
+        self.sandbox.write_config([("main", core, str(core / "env"))])
+        result, document = self.sandbox.bdev_json("env", "init", "--checkout", "main",
+                                                  "--config", str(self.sandbox.config))
+        self.assertEqual(document["error"]["code"], "INVALID_INPUT")
+        self.assertFalse((core / "env").exists())
+
+    def test_existing_custom_environment_file_is_preserved(self):
+        self.sandbox.make_checkout("main")
+        self.sandbox.register("main")
+        directory = self.sandbox.root / "config" / "environments" / "main"
+        directory.mkdir(parents=True)
+        (directory / ".envrc").write_text("export CUSTOM=1\n")
+        result = self.sandbox.bdev("env", "init", "--checkout", "main", "--config", str(self.sandbox.config))
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual((directory / ".envrc").read_text(), "export CUSTOM=1\n")
+        self.assertIn("preserved", result.stdout)
+
+    def test_stale_selector_exports_do_not_override_the_selection(self):
+        main = self.sandbox.make_checkout("main")
+        other = self.sandbox.make_checkout("other")
+        self.sandbox.prepare_environment("main")
+        env = self.sandbox.env(BRAVE_CORE_DIR=str(other), BRAVE_SRC_ROOT=str(other.parent),
+                               BRAVE_LAUNCHER_CHECKOUT_DIR=str(other))
+        result = self.sandbox.bdev("env", "check", "--checkout", "main", "--config", str(self.sandbox.config),
+                                   env=env)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        result = self.sandbox.bdev("--config", str(self.sandbox.config), "run", "x", tool="bpm", env=env,
+                                   cwd=main)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        record = self.sandbox.records()[-1]
+        self.assertEqual(record["cwd"], str(main))
+        self.assertEqual(record["launcher"], str(main))
+
+    def test_env_export_is_pure(self):
+        core = self.sandbox.make_checkout("main")
+        self.sandbox.register("main")
+        result = self.sandbox.bdev("env", "export", "--checkout", "main", "--format", "bash",
+                                   "--config", str(self.sandbox.config))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("export BRAVE_CORE_DIR=%s" % core, result.stdout)
+        self.assertIn("vendor/depot_tools", result.stdout)
+        self.assertNotIn("export PYTHONPATH", result.stdout)
+        self.assertEqual(result.stderr, "")
+
+
+if __name__ == "__main__":
+    unittest.main()
