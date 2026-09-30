@@ -13,7 +13,7 @@ import unittest
 from unittest import mock
 
 from tests.integration.test_build import BUILD_HOOK, SKIP, BuildTestCase
-from tests.support import SCRIPTS
+from tests.support import SCRIPTS, write_executable
 
 
 def alive(pid):
@@ -75,6 +75,13 @@ class RunTests(BuildTestCase):
         self.assertTrue(alive(other.pid), "other applications are left alone")
         self.assertEqual(document["data"]["run"]["stopped"], [matching.pid])
         self.assertEqual([r["path"] for r in self.launched()], [str(self.output_app())])
+
+    def test_a_failed_process_listing_stops_a_restart_before_anything_is_stopped_or_launched(self):
+        self.build()
+        write_executable(self.sandbox.bin / "ps", "#!/bin/sh\nexit 1\n")
+        result, document = self.run_app()
+        self.assertEqual((result.returncode, document["error"]["code"]), (5, "LAUNCH_FAILED"))
+        self.assertEqual([r for r in self.sandbox.records() if r["tool"] in ("open", "osascript")], [])
 
     def test_failed_preflight_leaves_the_running_browser_alone(self):
         _, running = self.sandbox.start_app(self.sandbox.root / "somewhere")

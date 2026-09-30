@@ -92,7 +92,10 @@ identifier, including one from another checkout), waits for exit, escalating fro
 graceful quit to termination to a forced kill, launches the selected bundle, and
 confirms its process appeared. Other applications and unrelated processes are left
 alone, profiles and app data are kept, and a failed preflight leaves the running
-browser untouched.
+browser untouched. If the process list cannot be read completely (the listing fails, times
+out, or is cut off), or a liveness check fails while confirming that an instance exited, the
+restart stops with `LAUNCH_FAILED` instead of treating it as no instance running; an empty
+successful listing is the only proof that nothing is running.
 
 An older or independently built output may run. Structured results carry
 `freshness` (`current`, `stale`, or `unknown`) with evidence, and a warning says

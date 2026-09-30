@@ -73,9 +73,12 @@ def running_instances(bundle, environ, log=None, poll=False):
     """Main processes of the application with the same bundle identifier, from any checkout."""
     result = run_capture(["ps", "-axo", "pid=,command="], os.getcwd(), environ, log, timeout=30, max_bytes=16 << 20,
                          poll=poll)
-    if result.truncated:
-        raise ScaffoldError("LAUNCH_FAILED", "The process listing was too large to read completely, so running "
-                            "instances of the application cannot be identified; nothing was stopped or launched.")
+    if result.returncode != 0 or result.timed_out or result.truncated:
+        why = ("was too large to read completely" if result.truncated else "timed out" if result.timed_out
+               else "failed (exit %d)" % result.returncode)
+        raise ScaffoldError("LAUNCH_FAILED", "The process listing %s, so running instances of the application "
+                            "cannot be identified; nothing was stopped or launched." % why,
+                            details={"exit": result.returncode, "stderr": result.stderr.strip()[-300:]})
     found = []
     pattern = re.compile(r"^\s*(\d+)\s+(.*?\.app)/Contents/MacOS/(\S.*)$")
     for line in result.stdout.splitlines():
@@ -101,12 +104,18 @@ def _alive(pid, log=None):
         return False
     except PermissionError:
         return True
+    probe = run_capture(["ps", "-o", "stat=", "-p", str(pid)], os.getcwd(), None, log, timeout=10, poll=True)
+    state = probe.stdout.strip()
+    if probe.returncode == 0 and not probe.timed_out and not probe.truncated and state:
+        return not state.startswith("Z")
+    # The probe gave no usable answer, so only the process disappearing proves it is gone.
     try:
-        state = run_capture(["ps", "-o", "stat=", "-p", str(pid)], os.getcwd(), None, log, timeout=10,
-                            poll=True).stdout.strip()
-    except OSError:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
         return True
-    return bool(state) and not state.startswith("Z")
+    return True
 
 
 def _wait_gone(pids, seconds, log=None):
