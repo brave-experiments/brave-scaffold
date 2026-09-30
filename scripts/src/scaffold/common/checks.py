@@ -11,6 +11,9 @@ from dataclasses import dataclass, field
 from .results import ScaffoldError
 
 PASS, BLOCKER, WARNING, UNSUPPORTED, NOT_CHECKED = "pass", "blocker", "warning", "unsupported", "not_checked"
+MARKERS = {PASS: "✅", BLOCKER: "❌", WARNING: "⚠️", UNSUPPORTED: "🚫", NOT_CHECKED: "❔"}
+MARKER_LEGEND = "%s pass  %s blocker  %s warning  %s unsupported  %s not checked" % tuple(
+    MARKERS[status] for status in (PASS, BLOCKER, WARNING, UNSUPPORTED, NOT_CHECKED))
 
 
 @dataclass

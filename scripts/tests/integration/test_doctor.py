@@ -99,7 +99,7 @@ class DoctorTests(SandboxTest):
         result = self.sandbox.bdev("--config", self.config, "doctor", "mac", cwd=self.sandbox.root)
         self.assertEqual(result.returncode, 3)
         self.assertIn("READINESS_INCOMPLETE", result.stderr)
-        self.assertIn("NOT_CHECKED", result.stdout)
+        self.assertIn("❔ checkout-selection", result.stdout)
 
 
 if __name__ == "__main__":

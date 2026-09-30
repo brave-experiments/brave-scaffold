@@ -14,7 +14,8 @@ from pathlib import Path
 from ..common import env as env_module
 from ..common import identity as identity_module
 from ..common import tools as tools_module
-from ..common.checks import (BLOCKER, NOT_CHECKED, PASS, UNSUPPORTED, WARNING, make_check, readiness_error)
+from ..common.checks import (BLOCKER, MARKER_LEGEND, MARKERS, NOT_CHECKED, PASS, UNSUPPORTED, WARNING, make_check,
+                             readiness_error)
 from ..common.platforms import host_architecture, host_platform
 from ..common.procs import run_capture
 from ..common.results import Result, ScaffoldError, error_result, repair
@@ -153,6 +154,16 @@ def register_group(name, function):
     GROUP_FUNCTIONS[name] = function
 
 
+def render_text(scopes, checks):
+    """The readable report: one marked line per check, then what the markers mean."""
+    lines = ["Doctor scopes: %s" % ", ".join(scopes)]
+    for check in checks:
+        lines.append("%s %s%s: %s" % (MARKERS[check.status], check.name, "" if check.required else " (optional)",
+                                      check.summary))
+    lines += ["", MARKER_LEGEND]
+    return "\n".join(lines)
+
+
 def run_doctor(ctx):
     scopes_map = all_scopes()
     requested = ctx.parsed.positionals[0].lower() if ctx.parsed.positionals else None
@@ -177,11 +188,7 @@ def run_doctor(ctx):
     for check in checks:
         if check.status != PASS and not (check.required and check.status != WARNING):
             result.add_warning("CHECK_" + check.status.upper(), "%s: %s" % (check.name, check.summary))
-    lines = ["Doctor scopes: %s" % ", ".join(scopes)]
-    for check in checks:
-        lines.append("  %-11s %s%s: %s" % (check.status.upper(), check.name, "" if check.required else " (optional)",
-                                             check.summary))
-    result.text = "\n".join(lines)
+    result.text = render_text(scopes, checks)
     error = readiness_error(checks)
     if error is not None:
         failed = error_result("doctor", error, ctx.selected.to_context() if ctx.selected else None)
