@@ -172,6 +172,13 @@ checkout's `vpython3`, which runs checkout tasks.
 
 ## Checkout-local tools
 
+`doctor` judges everything that depends on the checkout (SDK, build, remote-build, Android, and
+tools) in the approved environment that commands on that checkout run in, so a tool or variable
+that only the `.envrc` supplies counts, and one the `.envrc` removes does not. Machine, shell, and
+signing checks use your own environment. With no checkout selected the checkout-dependent checks
+use your environment and the checkout checks are `not_checked`; if the approved environment fails
+to load, those checks are `not_checked` too instead of passing on your environment.
+
 Package commands use the Node, package manager, and `vpython3` inside the
 checkout. There is no fallback to global tools. Inspection (`doctor`, `context`,
 `env check`) is read-only and never installs or updates anything. If a payload is

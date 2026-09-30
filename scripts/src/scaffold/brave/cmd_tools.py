@@ -113,7 +113,7 @@ def tools_setup(ctx):
             "third_party/node resolves outside the checkout (%s), so repairing it would write there; nothing was "
             "changed." % escaped, details={"payload": str(identity.core / "third_party" / "node"), "resolves_to": escaped})
     entries = [layout["node_entry_key"], layout["pnpm_entry_key"]]
-    with track(ctx, "tools setup", identity, {"installer": str(installer), "entries": entries}) as op:
+    with track(ctx, "tools setup", identity, {"installer": str(installer), "entries": entries}, validated=True) as op:
         ran = []
         for entry in entries:
             argv = [str(loaded["VPYTHON3"]), str(installer), entry]

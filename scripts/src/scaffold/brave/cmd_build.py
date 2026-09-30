@@ -6,10 +6,9 @@
 
 from __future__ import annotations
 
-import dataclasses
 import os
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 from ..common import env as env_module
@@ -19,7 +18,7 @@ from ..common.platforms import RECOGNIZED_TARGETS, effective_target, normalize_t
 from ..common.procs import run_capture, run_streaming
 from ..common.redaction import redact_argv
 from ..common.results import Cancelled, Result, ScaffoldError, repair
-from . import android_deps, buildopts, freshness, macos, patches, steps as step_module, sync_scope
+from . import android_deps, buildopts, execution as execution_module, freshness, macos, patches, steps as step_module, sync_scope
 from .cmd_tools import local_shims
 from .records import OutputState, output_states, track
 
@@ -87,69 +86,43 @@ def readiness_gate(ctx, target, phase="build", remote_required=False):
     return checks
 
 
-@dataclass
-class Prepared:
-    loaded: dict
-    toolchain: object
-    checks: list = field(default_factory=list)
-    ctx: object = None
+def prepare(ctx, identity, target, phase="build", remote_required=False, execution=None):
+    """Environment, checkout-local tools, and readiness for one phase, as one execution context."""
+    execution = execution or execution_module.load(ctx, identity)
+    execution = execution_module.resolve_tools(execution, ctx)
+    return execution.with_checks(readiness_gate(execution.context(ctx), target, phase, remote_required))
 
 
-def load_context(ctx, identity):
-    """Load and validate the checkout's approved environment once.
-
-    Returns a copy of the context whose environment is the loaded one, so every later phase (readiness,
-    device and tool lookups, child processes) sees the same values, plus that environment.
-    """
-    if ctx.prepared:
-        return ctx, ctx.environ
-    loaded = env_module.load_environment(identity, ctx.environ, ctx.log)
-    return dataclasses.replace(ctx, environ=loaded, prepared=True), loaded
+def prepare_for_build(execution, ctx, target, remote_required):
+    """After sync changed the checkout: resolve its tools and judge the build's readiness again."""
+    execution = execution_module.resolve_tools(execution, ctx)
+    return execution.with_checks(readiness_gate(execution.context(ctx), target, "build", remote_required))
 
 
-def prepare_environment(ctx, identity, target, phase="build", remote_required=False):
-    """Environment, checkout-local tools, and readiness for one phase; returns them with the prepared context."""
-    ctx, loaded = load_context(ctx, identity)
-    toolchain, tool_checks = tools_module.require_toolchain(identity, ctx.log)
-    checks = readiness_gate(ctx, target, phase, remote_required)
-    return Prepared(loaded, toolchain, [*tool_checks, *checks], ctx)
-
-
-def revalidate_for_build(prepared, identity, target, remote_required):
-    """After sync changed the checkout: check its tools and the build's readiness again."""
-    toolchain, tool_checks = tools_module.require_toolchain(identity, prepared.ctx.log)
-    checks = readiness_gate(prepared.ctx, target, "build", remote_required)
-    return Prepared(prepared.loaded, toolchain, [*prepared.checks, *tool_checks, *checks], prepared.ctx)
-
-
-def package_environment(prepared, shims):
-    return tools_module.child_environment(prepared.loaded, prepared.toolchain, shims)
-
-
-def run_package_step(ctx, identity, prepared, arguments, extra_env=None):
-    """Run one package command in Core and return its exit code."""
-    argv = tools_module.package_argv(prepared.toolchain, arguments)
-    with local_shims(prepared.toolchain) as shims:
-        env = package_environment(prepared, shims)
+def run_package_step(ctx, execution, arguments, extra_env=None):
+    """Run one package command in Core and return its argv and exit code."""
+    argv = tools_module.package_argv(execution.toolchain, arguments)
+    with local_shims(execution.toolchain) as shims:
+        env = tools_module.child_environment(execution.environ, execution.toolchain, shims)
         for name, value in (extra_env or {}).items():
             if value is None:
                 env.pop(name, None)
             else:
                 env[name] = value
-        return argv, run_streaming(argv, str(identity.core), env, ctx.log, json_mode=ctx.json_mode)
+        return argv, run_streaming(argv, str(execution.identity.core), env, ctx.log, json_mode=ctx.json_mode)
 
 
-def metal_environment(ctx):
+def metal_environment(ctx, environ):
     """Point the build at an installed Metal toolchain when `xcrun metal` cannot find one."""
-    probe = run_capture(["xcrun", "metal", "--version"], os.getcwd(), ctx.environ, ctx.log, timeout=60)
+    probe = run_capture(["xcrun", "metal", "--version"], os.getcwd(), environ, ctx.log, timeout=60)
     if probe.returncode == 0:
         return {}
     for info in sorted(Path("/private/var/run/com.apple.security.cryptexd/mnt").glob(
             "com.apple.MobileAsset.MetalToolchain-*/Metal.xctoolchain/ToolchainInfo.plist")):
         result = run_capture(["/usr/libexec/PlistBuddy", "-c", "Print :Identifier", str(info)], os.getcwd(),
-                             ctx.environ, ctx.log, timeout=30)
+                             environ, ctx.log, timeout=30)
         if result.returncode == 0 and result.stdout.strip():
-            existing = ctx.environ.get("TOOLCHAINS")
+            existing = environ.get("TOOLCHAINS")
             identifier = result.stdout.strip()
             return {"TOOLCHAINS": "%s:%s" % (existing, identifier) if existing else identifier}
     return {}
@@ -158,10 +131,11 @@ def metal_environment(ctx):
 # --- patch preparation -----------------------------------------------------------------
 
 
-def prepare_patches(ctx, identity, prepared, op):
+def prepare_patches(ctx, execution, op):
     """Apply Core patches only when needed and only when no local work is at risk."""
+    identity = execution.identity
     plan = patches.plan_patch_preparation(identity, ctx.log, ctx.state_root)
-    apply_argv = tools_module.package_argv(prepared.toolchain, ["run", "apply_patches"])
+    apply_argv = tools_module.package_argv(execution.toolchain, ["run", "apply_patches"])
     op.step("patch-preparation-plan", action=plan.action, reason=plan.reason,
             **step_module.patches_step(identity, plan, apply_argv).record())
     if plan.action == "current":
@@ -171,7 +145,7 @@ def prepare_patches(ctx, identity, prepared, op):
     if plan.action == "conflict":
         raise patches.conflict_error(plan, identity)
     op.step("apply-patches", **step_module.patches_step(identity, plan, apply_argv).record())
-    argv, code = run_package_step(ctx, identity, prepared, ["run", "apply_patches"])
+    argv, code = run_package_step(ctx, execution, ["run", "apply_patches"])
     if code != 0:
         raise ScaffoldError("CHILD_FAILED", "Applying Core patches failed (exit %d)." % code,
                             details={"argv": argv, "phase": "patches"}, child_exit_code=code)
@@ -231,22 +205,23 @@ class BuildOutcome:
     prepared_patches: bool
 
 
-def run_output_step(ctx, identity, effective, prepared, op, arguments, phase, extra_env=None, before_child=None):
+def run_output_step(ctx, execution, effective, op, arguments, phase, extra_env=None, before_child=None):
     """Run the package command that writes the output directory.
 
     The attempt is recorded before the child starts, so an earlier success stops
     being proof of the output's contents even if this process dies mid-write.
     """
+    identity = execution.identity
     state = OutputState(identity, effective.output_dir, ctx.state_root) if effective.output_dir else None
     if state is not None:
         state.begin_attempt(op.id, effective.changes_output)
-    argv_plan = tools_module.package_argv(prepared.toolchain, arguments)
+    argv_plan = tools_module.package_argv(execution.toolchain, arguments)
     op.step(phase, package_arguments=arguments,
             **step_module.build_step(identity, effective, phase, arguments, argv_plan, ["patch-preparation"]).record())
     try:
         if before_child is not None:
             before_child()
-        argv, code = run_package_step(ctx, identity, prepared, arguments, extra_env)
+        argv, code = run_package_step(ctx, execution, arguments, extra_env)
     except Cancelled:
         if state is not None:
             state.end_attempt(op.id, "cancelled")
@@ -260,12 +235,13 @@ def run_output_step(ctx, identity, effective, prepared, op, arguments, phase, ex
     return argv, state
 
 
-def perform_build(ctx, identity, effective, prepared, op, force_gn=False):
+def perform_build(ctx, execution, effective, op, force_gn=False):
     """Prepare sources, run the package build, then verify the resulting output."""
-    changed, plan = prepare_patches(ctx, identity, prepared, op)
+    identity = execution.identity
+    changed, plan = prepare_patches(ctx, execution, op)
     android = effective.target == "android"
     if android:
-        refreshed = _android().prepare_support(ctx, identity, prepared, op, effective)
+        refreshed = _android().prepare_support(ctx, execution, op, effective)
         if refreshed:
             patches.record_extra_expected(identity, ctx.state_root)
         changed = refreshed or changed
@@ -277,11 +253,11 @@ def perform_build(ctx, identity, effective, prepared, op, force_gn=False):
                          "arch": effective.arch, "output_dir": str(effective.output_dir),
                          "package_arguments": arguments})
     argv, state = run_output_step(
-        ctx, identity, effective, prepared, op, arguments, "build",
-        _android().build_environment(ctx) if android else metal_environment(ctx),
+        ctx, execution, effective, op, arguments, "build",
+        _android().build_environment(execution.context(ctx)) if android else metal_environment(ctx, execution.environ),
         (lambda: _android().write_gn_overrides(identity, effective)) if android else None)
     try:
-        artifact, reason = artifact_for(effective, identity, prepared.loaded, ctx.log)
+        artifact, reason = artifact_for(effective, identity, execution.environ, ctx.log)
     except ScaffoldError as error:
         if state is not None:
             state.end_attempt(op.id, "output-invalid")
@@ -320,9 +296,10 @@ def unresolved_error(outcome, identity):
                         note="Placeholder path: select the output you built yourself.")])
 
 
-def finish_build_result(command, outcome, identity, op, prepared):
+def finish_build_result(command, outcome, execution, op):
+    identity = execution.identity
     result = Result(command=command, operation_id=op.id, child_exit_code=outcome.child_exit,
-                    checks=[check.to_dict() for check in prepared.checks])
+                    checks=[check.to_dict() for check in execution.checks])
     result.data = {"build": build_data(outcome, identity)}
     if outcome.artifact:
         result.artifacts = [outcome.artifact]
@@ -440,24 +417,25 @@ def do_build(ctx, command, sync_first=False, run_after=False):
                                                                 run_after))
     if parsed.get("device") and effective.target != "android":
         raise ScaffoldError("INVALID_INPUT", "--device applies to Android only.")
-    ctx, _ = load_context(ctx, identity)
-    device = _android().preflight_device(ctx) if run_after and effective.target == "android" else None
+    execution = execution_module.load(ctx, identity)
+    device = _android().preflight_device(execution.context(ctx)) if run_after and effective.target == "android" \
+        else None
     remote = not effective.offline
-    prepared = prepare_environment(ctx, identity, effective.target, "sync" if sync_first else "build", remote)
+    execution = prepare(ctx, identity, effective.target, "sync" if sync_first else "build", remote, execution)
     with track(ctx, command, identity, {"target": effective.target, "configuration": effective.configuration,
-                                        "arch": effective.arch}) as op:
+                                        "arch": effective.arch}, validated=True) as op:
         sync_result = None
         if sync_first:
-            sync_result = do_sync_phase(ctx, identity, prepared, op, effective.target, [])
-            prepared = revalidate_for_build(prepared, identity, effective.target, remote)
-        outcome = perform_build(ctx, identity, effective, prepared, op, bool(parsed.get("force_gn")))
+            sync_result = do_sync_phase(ctx, execution, op, effective.target, [])
+            execution = prepare_for_build(execution, ctx, effective.target, remote)
+        outcome = perform_build(ctx, execution, effective, op, bool(parsed.get("force_gn")))
         if run_after and outcome.artifact is None:
             raise unresolved_error(outcome, identity)
-        result = finish_build_result(command, outcome, identity, op, prepared)
+        result = finish_build_result(command, outcome, execution, op)
         if sync_result:
             result.data["sync"] = sync_result
         if run_after:
-            result = run_phase(ctx, identity, outcome.artifact, result, device, op)
+            result = run_phase(ctx, execution, outcome.artifact, result, device, op)
         return op.complete(result)
 
 
@@ -519,21 +497,20 @@ def cmd_test(ctx):
         script_args.append("--filter=%s" % parsed.get("filter"))
     if parsed.get("plan"):
         return plan_result("test", effective, build_plan_steps(ctx, identity, effective, "test", script_args))
-    prepared = prepare_environment(ctx, identity, effective.target, "build", not effective.offline)
-    ctx = prepared.ctx
-    with track(ctx, "test", identity, {"target": effective.target, "suite": parsed.get("suite")}) as op:
+    execution = prepare(ctx, identity, effective.target, "build", not effective.offline)
+    with track(ctx, "test", identity, {"target": effective.target, "suite": parsed.get("suite")}, validated=True) as op:
         arguments = build_arguments(effective, "test", script_args, False)
-        outcome = run_test_package(ctx, identity, effective, prepared, op, arguments)
-        result = Result(command="test", child_exit_code=0, checks=[check.to_dict() for check in prepared.checks])
+        outcome = run_test_package(ctx, execution, effective, op, arguments)
+        result = Result(command="test", child_exit_code=0, checks=[check.to_dict() for check in execution.checks])
         result.data = {"suite": parsed.get("suite"), "argv": outcome, "cwd": str(identity.core)}
         result.text = "Test suite %s passed." % parsed.get("suite")
         return op.complete(result)
 
 
-def run_test_package(ctx, identity, effective, prepared, op, arguments):
-    prepare_patches(ctx, identity, prepared, op)
-    argv, state = run_output_step(ctx, identity, effective, prepared, op, arguments, "test",
-                                  metal_environment(ctx) if effective.target == "mac" else {})
+def run_test_package(ctx, execution, effective, op, arguments):
+    prepare_patches(ctx, execution, op)
+    argv, state = run_output_step(ctx, execution, effective, op, arguments, "test",
+                                  metal_environment(ctx, execution.environ) if effective.target == "mac" else {})
     state.end_attempt_completed(op.id)
     return argv
 
@@ -601,9 +578,10 @@ def add_freshness_warning(result, assessment):
         result.add_warning("UNKNOWN_FRESHNESS", freshness.UNKNOWN_MESSAGE, freshness=assessment)
 
 
-def run_phase(ctx, identity, bundle, result, device=None, op=None):
+def run_phase(ctx, execution, bundle, result, device=None, op=None):
     """Restart the browser (or reinstall the APK) with a validated output and add the outcome to a result."""
-    ctx, _ = load_context(ctx, identity)
+    identity = execution.identity
+    ctx = execution.context(ctx)
     if op is not None:
         op.step("run", artifact=bundle["path"])
         if bundle.get("kind") != "apk":
@@ -658,16 +636,15 @@ def cmd_run(ctx):
     require_available_target(target)
     if parsed.get("device") and target != "android":
         raise ScaffoldError("INVALID_INPUT", "--device applies to Android only.")
-    if not parsed.get("plan"):
-        ctx, _ = load_context(ctx, identity)
+    execution = None if parsed.get("plan") else execution_module.load(ctx, identity)
     if target == "android":
-        return _android().run_android(ctx, identity)
+        return _android().run_android(execution.context(ctx) if execution else ctx, identity, execution is not None)
     configuration = requested_configuration(ctx) or "Debug"
     bundle = select_artifact(ctx, identity, target, configuration, "arm64")
     if parsed.get("plan"):
         return run_plan(ctx, identity, bundle)
-    with track(ctx, ctx.command, identity, {"target": target, "artifact": bundle["path"]}) as op:
-        return op.complete(run_phase(ctx, identity, bundle, Result(command=ctx.command), None, op))
+    with track(ctx, ctx.command, identity, {"target": target, "artifact": bundle["path"]}, validated=True) as op:
+        return op.complete(run_phase(ctx, execution, bundle, Result(command=ctx.command), None, op))
 
 
 # --- sync ------------------------------------------------------------------------------
@@ -729,7 +706,8 @@ def local_work_conflicts(ctx, identity, adopt=False):
     return conflicts
 
 
-def do_sync_phase(ctx, identity, prepared, op, target, forwarded):
+def do_sync_phase(ctx, execution, op, target, forwarded):
+    identity = execution.identity
     conflicts = local_work_conflicts(ctx, identity, bool(ctx.parsed.get("adopt_local_changes")))
     if conflicts:
         raise ScaffoldError("PREPARATION_CONFLICT",
@@ -740,8 +718,8 @@ def do_sync_phase(ctx, identity, prepared, op, target, forwarded):
               "chromium_head": freshness.resolve_head(identity.src, ctx.log)}
     arguments = sync_arguments(ctx, target, forwarded, identity)
     op.step("sync", arguments=arguments, before=before,
-            **step_module.sync_step(identity, arguments, tools_module.package_argv(prepared.toolchain, arguments)).record())
-    argv, code = run_package_step(ctx, identity, prepared, arguments)
+            **step_module.sync_step(identity, arguments, tools_module.package_argv(execution.toolchain, arguments)).record())
+    argv, code = run_package_step(ctx, execution, arguments)
     if code != 0:
         raise ScaffoldError("CHILD_FAILED", "The sync command exited with status %d." % code,
                             details={"argv": argv, "phase": "sync"}, child_exit_code=code)
@@ -783,12 +761,11 @@ def cmd_sync(ctx):
                                 "writes": ["source tree and dependencies"], "steps": [step.to_dict() for step in steps]}}
         result.text = step_module.render_plan("sync", steps)
         return result
-    prepared = prepare_environment(ctx, identity, "mac", "sync")
-    ctx = prepared.ctx
-    with track(ctx, "sync", identity, {"targets": targets}) as op:
-        phase = do_sync_phase(ctx, identity, prepared, op, mobile, parsed.forwarded)
+    execution = prepare(ctx, identity, "mac", "sync")
+    with track(ctx, "sync", identity, {"targets": targets}, validated=True) as op:
+        phase = do_sync_phase(ctx, execution, op, mobile, parsed.forwarded)
         result = Result(command="sync", child_exit_code=0, data={"sync": phase, "targets": targets},
-                        checks=[check.to_dict() for check in prepared.checks])
+                        checks=[check.to_dict() for check in execution.checks])
         result.text = "Sync completed for %s." % ", ".join(targets)
         return op.complete(result)
 
@@ -825,10 +802,9 @@ def cmd_drift(ctx):
 
 def cmd_patches_update(ctx):
     identity = ctx.identity()
-    prepared = prepare_environment(ctx, identity, "mac")
-    ctx = prepared.ctx
-    with track(ctx, "patches update", identity, {}) as op:
-        argv, code = run_package_step(ctx, identity, prepared, ["run", "update_patches", *ctx.parsed.forwarded])
+    execution = prepare(ctx, identity, "mac")
+    with track(ctx, "patches update", identity, {}, validated=True) as op:
+        argv, code = run_package_step(ctx, execution, ["run", "update_patches", *ctx.parsed.forwarded])
         if code != 0:
             raise ScaffoldError("CHILD_FAILED", "update_patches exited with status %d." % code,
                                 details={"argv": argv}, child_exit_code=code)

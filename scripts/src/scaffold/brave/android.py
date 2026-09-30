@@ -94,8 +94,10 @@ def build_environment(ctx):
     return extra
 
 
-def prepare_support(ctx, identity, prepared, op, effective):
+def prepare_support(ctx, execution, op, effective):
     """Refresh support patches/resources when needed; returns True when the checkout was changed."""
+    identity = execution.identity
+    ctx = execution.context(ctx)
     plan = android_deps.plan_preparation(ctx, identity, ctx.log)
     wc = android_deps.working_copy(identity)
     writes = android_deps.planned_writes(identity, wc, plan.scripts, ctx.log) if plan.action == "refresh" else []
@@ -107,7 +109,7 @@ def prepare_support(ctx, identity, prepared, op, effective):
     refreshed = False
     if plan.action == "refresh":
         op.step("android-support-refresh", scripts=list(plan.scripts), **described)
-        android_deps.refresh(ctx, identity, prepared.loaded, plan, ctx.log)
+        android_deps.refresh(ctx, identity, execution.environ, plan, ctx.log)
         refreshed = True
     return refreshed
 
@@ -212,12 +214,13 @@ def run_plan(ctx, identity, artifact):
     return result
 
 
-def run_android(ctx, identity):
+def run_android(ctx, identity, validated=False):
     configuration = (ctx.parsed.get("configuration") or "debug").capitalize()
     artifact = select_apk(ctx, identity, configuration, "arm64")
     if ctx.parsed.get("plan"):
         return run_plan(ctx, identity, artifact)
-    with track(ctx, ctx.command, identity, {"target": "android", "artifact": artifact["path"]}) as op:
+    with track(ctx, ctx.command, identity, {"target": "android", "artifact": artifact["path"]},
+               validated=validated) as op:
         op.step("run", artifact=artifact["path"])
         return op.complete(restart_apk(ctx, identity, artifact, Result(command=ctx.command), None, op))
 

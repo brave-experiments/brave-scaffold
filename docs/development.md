@@ -31,6 +31,8 @@ Tooling code, launchers, and tests live under `scripts/`; there is no root
 | `common/checks.py` | Check records and readiness aggregation |
 | `common/platforms.py` | Targets and the capability table |
 | `brave/registry.py` | The command table: parsing, help, and dispatch all read it |
+| `brave/execution.py` | The selected checkout's execution context: identity, approved environment, resolved tools |
+| `brave/patch_inventory.py`, `brave/sync_scope.py` | Which repositories Core patches and a sync can reset, and what their metadata records |
 | `brave/cmd_*.py`, `brave/doctor.py` | Command handlers |
 
 Handlers receive a context and return a `Result` or raise `ScaffoldError`; the

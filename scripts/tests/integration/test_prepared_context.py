@@ -38,6 +38,37 @@ class MacRunEnvironmentTests(BuildTestCase):
 
 
 @unittest.skipIf(SKIP, "needs direnv on a macOS host")
+class SyncBuildEnvironmentTests(BuildTestCase):
+    def test_sync_and_build_children_see_the_same_approved_environment(self):
+        extend_environment(self, "export SCAFFOLD_SHARED_VALUE=from-the-approved-environment")
+        hook = self.sandbox.hook("""
+import json
+with open(os.environ["FAKE_ENV_DUMP"], "a") as stream:
+    stream.write(json.dumps([argv[2], os.environ.get("SCAFFOLD_SHARED_VALUE")]) + "\\n")
+""" + Path(self.hook).read_text().split("\n", 1)[1])
+        dump = self.sandbox.root / "env-dump.jsonl"
+        result = self.sandbox.bdev("--json", "--config", self.config, "--checkout", "main", "sync-build",
+                                   env=self.sandbox.env(FAKE_HOOK=hook, FAKE_ENV_DUMP=str(dump),
+                                                        SCAFFOLD_SHARED_VALUE="from-the-caller"))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        seen = [json.loads(line) for line in dump.read_text().splitlines()]
+        self.assertEqual(seen, [["sync", "from-the-approved-environment"], ["build", "from-the-approved-environment"]])
+
+    def test_tools_that_a_sync_made_unusable_stop_the_build_that_follows(self):
+        version = self.core / "third_party" / "node" / "node-mac-arm64" / "bin" / "version"
+        hook = self.sandbox.hook("""
+if "sync" in argv:
+    open(os.path.join(os.environ["BRAVE_CORE_DIR"], "third_party", "node", "node-mac-arm64", "bin", "version"), "w").write("v22.1.0")
+""" + Path(self.hook).read_text().split("\n", 1)[1])
+        result = self.sandbox.bdev("--json", "--config", self.config, "--checkout", "main", "sync-build",
+                                   env=self.sandbox.env(FAKE_HOOK=hook))
+        document = json.loads(result.stdout)
+        self.assertEqual((result.returncode, document["error"]["code"]), (3, "LOCAL_TOOL_MISSING"))
+        self.assertEqual([call["argv"][1:3] for call in self.node_calls()], [["run", "sync"]], "the build never started")
+        self.assertEqual(version.read_text(), "v22.1.0")
+
+
+@unittest.skipIf(SKIP, "needs direnv on a macOS host")
 class AndroidEnvironmentTests(AndroidTestCase):
     def setUp(self):
         super().setUp()

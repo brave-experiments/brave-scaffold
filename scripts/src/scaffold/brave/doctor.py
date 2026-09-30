@@ -9,6 +9,7 @@ from __future__ import annotations
 import os
 import shutil
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 from ..common import env as env_module
@@ -19,6 +20,7 @@ from ..common.checks import (BLOCKER, MARKER_LEGEND, MARKERS, NOT_CHECKED, PASS,
 from ..common.platforms import host_architecture, host_platform
 from ..common.procs import run_capture
 from ..common.results import Result, ScaffoldError, error_result, repair
+from . import execution as execution_module
 from . import rbe_checks as rbe_checks_module
 
 # Scopes delivered so far. Each scope lists the check groups it evaluates.
@@ -71,32 +73,54 @@ def host_mac_checks(ctx, scope):
     return checks
 
 
-def checkout_checks(ctx, scope):
-    """Selection, layout, environment, and local tools for one checkout."""
-    def unchecked(reason, repairs=None):
-        return [_check(name, NOT_CHECKED, reason, scope, affects=("checkout commands",), repairs=repairs or [])
-                for name in ("checkout-layout", "environment", "local-tools")]
+@dataclass
+class CheckoutState:
+    """What one doctor run established about the selected checkout, so every group judges the same thing."""
 
+    identity: object = None
+    execution: object = None  # the approved environment, loaded and validated
+    selection_error: object = None
+    worktrees: tuple = ()
+    environment_error: object = None
+
+
+def checkout_state(ctx):
     try:
         identity = ctx.identity(required=True, validate=False)
     except ScaffoldError as error:
         if error.code in ("CHECKOUT_REQUIRED", "CHECKOUT_AMBIGUOUS"):
-            selection = _check("checkout-selection", NOT_CHECKED, error.message, scope,
-                               affects=("checkout commands",), repairs=error.repairs, **error.details)
-            return [selection, *unchecked("No checkout is selected.")]
+            return CheckoutState(selection_error=error)
         raise
-    checks = [_check("checkout-selection", PASS, "%s (selected by %s)" % (identity.core, identity.selection_source),
-                     scope, core=str(identity.core))]
     worktrees = identity_module.find_linked_worktrees(identity.core, identity.src, identity.outer)
     if worktrees:
+        return CheckoutState(identity, worktrees=tuple(worktrees))
+    try:
+        return CheckoutState(identity, execution_module.load(ctx, identity))
+    except ScaffoldError as error:
+        return CheckoutState(identity, environment_error=error)
+
+
+def checkout_checks(ctx, scope, state):
+    """Selection, layout, environment, and local tools for one checkout."""
+    def unchecked(reason, repairs=None, names=("checkout-layout", "environment", "local-tools")):
+        return [_check(name, NOT_CHECKED, reason, scope, affects=("checkout commands",), repairs=repairs or [])
+                for name in names]
+
+    if state.selection_error is not None:
+        error = state.selection_error
+        selection = _check("checkout-selection", NOT_CHECKED, error.message, scope,
+                           affects=("checkout commands",), repairs=error.repairs, **error.details)
+        return [selection, *unchecked("No checkout is selected.")]
+    identity = state.identity
+    checks = [_check("checkout-selection", PASS, "%s (selected by %s)" % (identity.core, identity.selection_source),
+                     scope, core=str(identity.core))]
+    if state.worktrees:
         checks.append(_check("checkout-layout", BLOCKER,
                              "Git linked worktrees are unsupported; use a separate full checkout.", scope,
-                             affects=("checkout commands",), worktrees=worktrees))
-        checks += [_check(name, NOT_CHECKED, "Skipped for an unsupported layout.", scope)
-                   for name in ("environment", "local-tools")]
-        return checks
+                             affects=("checkout commands",), worktrees=list(state.worktrees)))
+        return checks + unchecked("Skipped for an unsupported layout.", names=("environment", "local-tools"))
     checks.append(_check("checkout-layout", PASS, "Full checkout", scope))
-    checks.append(_environment_check(ctx, identity, scope))
+    checks.append(_environment_check(state, scope))
     _, tool_checks = tools_module.inspect_toolchain(identity, ctx.log)
     for check in tool_checks:
         check.scopes = (scope,)
@@ -109,10 +133,9 @@ def checkout_checks(ctx, scope):
     return checks
 
 
-def _environment_check(ctx, identity, scope):
-    try:
-        env_module.load_environment(identity, ctx.environ, ctx.log)
-    except ScaffoldError as error:
+def _environment_check(state, scope):
+    error = state.environment_error
+    if error is not None:
         return _check("environment", BLOCKER, error.message, scope, affects=("checkout commands",),
                       repairs=error.repairs, code=error.code, **error.details)
     return _check("environment", PASS, "Approved environment loads and selects this checkout.", scope,
@@ -145,9 +168,28 @@ def shell_checks(ctx, scope):
     return checks
 
 
-GROUP_FUNCTIONS = {"machine": machine_checks, "host-mac": host_mac_checks, "checkout": checkout_checks,
-                   "shell": shell_checks, "mac-build": rbe_checks_module.mac_build_checks,
+GROUP_FUNCTIONS = {"machine": machine_checks, "host-mac": host_mac_checks, "shell": shell_checks, "mac-build": rbe_checks_module.mac_build_checks,
                    "rbe": rbe_checks_module.rbe_checks}
+
+
+# These describe the machine, the shell, or Git, not the checkout, so the caller's environment is the right one.
+# Every other group is judged in the environment a command on the selected checkout would run in.
+MACHINE_GROUPS = ("machine", "shell", "signing")
+
+
+def group_checks(ctx, group, scope, state):
+    """One group's checks, in the caller's environment or the selected checkout's approved one."""
+    if group == "checkout":
+        return checkout_checks(ctx, scope, state)
+    function = GROUP_FUNCTIONS[group]
+    if group in MACHINE_GROUPS or state.identity is None and state.selection_error is not None:
+        return function(ctx, scope)
+    if state.execution is None:
+        reason = ("The checkout's approved environment could not be loaded, so this would be judged in the caller's "
+                  "environment instead of the one commands run in." if state.environment_error is not None
+                  else "Skipped for an unsupported layout.")
+        return [_check("readiness:" + group, NOT_CHECKED, reason, scope, affects=("checkout commands",))]
+    return function(state.execution.context(ctx), scope)
 
 
 def register_group(name, function):
@@ -179,8 +221,9 @@ def run_doctor(ctx):
         for group in scopes_map[scope]:
             groups.setdefault(group, []).append(scope)
     checks = []
+    state = checkout_state(ctx) if any(group not in MACHINE_GROUPS for group in groups) else CheckoutState()
     for group, group_scopes in groups.items():
-        for check in GROUP_FUNCTIONS[group](ctx, group_scopes[0]):
+        for check in group_checks(ctx, group, group_scopes[0], state):
             check.scopes = tuple(group_scopes)
             checks.append(check)
     result = Result(command="doctor", data={"scopes": scopes})

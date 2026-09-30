@@ -104,7 +104,7 @@ class Operation:
         return result
 
 
-def describe_start(ctx, identity):
+def describe_start(ctx, identity, validated=False):
     """Evidence stored with every operation: environment identity (no values), source state, log destinations."""
     evidence = {"logs": {"commands": "stderr" if ctx.log.enabled else "disabled",
                          "child_output": "stderr" if ctx.json_mode else "terminal"}}
@@ -115,7 +115,7 @@ def describe_start(ctx, identity):
             digest = hashlib.sha256(envrc.read_bytes()).hexdigest()
         except OSError:
             digest = None
-        evidence["environment"] = {"file": str(envrc), "sha256": digest, "validated": bool(getattr(ctx, "prepared", False)),
+        evidence["environment"] = {"file": str(envrc), "sha256": digest, "validated": validated,
                                    "selects": {"BRAVE_CORE_DIR": str(identity.core),
                                                "BRAVE_SRC_ROOT": str(identity.src)}}
     status = run_capture(["git", "-C", str(identity.core), "status", "--porcelain"], str(identity.core), None, ctx.log,
@@ -130,13 +130,14 @@ def describe_start(ctx, identity):
 
 
 @contextlib.contextmanager
-def track(ctx, command, identity, details):
+def track(ctx, command, identity, details, validated=False):
     """The operation lifecycle: record before mutation, then finish with the actual outcome.
 
     Expected failures and cancellations finish the record (with the operation ID attached to the error) and
     are re-raised; a process that dies leaves the record incomplete. Call `op.complete(result)` on success.
+    `validated` records that the checkout's approved environment was loaded and checked first.
     """
-    op = Operation(command, identity, details, ctx.state_root, describe_start(ctx, identity))
+    op = Operation(command, identity, details, ctx.state_root, describe_start(ctx, identity, validated))
     ctx.log.listeners.append(op.command_dispatched)
     try:
         yield op

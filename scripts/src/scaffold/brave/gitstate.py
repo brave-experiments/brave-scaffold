@@ -28,7 +28,9 @@ def _require_root(repo, log):
     describe the wrong files.
     """
     top = _git(repo, ["rev-parse", "--show-toplevel"], log, timeout=30)
-    if top.returncode != 0 or os.path.realpath(top.stdout.strip()) != os.path.realpath(repo):
+    reported = top.stdout.strip()
+    if (top.returncode != 0 or top.truncated or "\0" in reported
+            or os.path.realpath(reported) != os.path.realpath(repo)):
         raise ScaffoldError("PREPARATION_CONFLICT",
                             "%s is not readable as a Git repository, so its local changes could not be inspected; "
                             "nothing was changed." % repo, details={"repository": str(repo)})

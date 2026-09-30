@@ -28,7 +28,6 @@ class Context:
     log: CommandLog = None
     scaffold_root: object = None
     selected: object = None
-    prepared: bool = False
 
     def load_config(self, may_create=False):
         explicit = self.parsed.get("config")
