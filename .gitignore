@@ -1,0 +1,24 @@
+# Host and Python state
+.DS_Store
+__pycache__/
+*.py[cod]
+/scripts/.venv/
+/scripts/.pytest_cache/
+/scripts/.coverage
+/scripts/htmlcov/
+
+# Machine configuration and generated state
+/bdev.toml
+/environments/
+/.bdev/
+/.worktrees/
+/.claude/settings.local.json
+
+# Local repositories
+/brave-browser*/
+/support/
+/bot/
+
+# External implementation planning stays outside this repository
+/spec.md
+/implementation-notes.md
