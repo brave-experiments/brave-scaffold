@@ -249,7 +249,8 @@ class RemoteBuildReadinessTests(BuildTestCase):
 class NonCompilingModeTests(BuildTestCase):
     """Core can exit zero without compiling; an app already at the expected path is not a new build."""
 
-    MODES = (["--prepare_only"], ["--xcode_gen", "ios"], ["--xcode_gen=ios"])
+    MODES = (["--prepare_only"], ["--xcode_gen", "ios"], ["--xcode_gen=ios"], ["--ninja=n:"], ["--ninja", "n:"],
+             ["--ninja=n"], ["--offline", "--ninja", "n:"])
 
     def output_states(self):
         directory = self.sandbox.config.parent / ".bdev" / "outputs"
@@ -270,7 +271,8 @@ class NonCompilingModeTests(BuildTestCase):
                 self.assertEqual(document["warnings"][0]["code"], "ARTIFACT_UNRESOLVED")
                 build = document["data"]["build"]
                 self.assertEqual((build["child_succeeded"], build["artifact_status"]), (True, "unresolved"))
-                self.assertIn(mode[0].split("=")[0], build["explanation"])
+                option = next(token for token in mode if token.startswith(("--prepare", "--xcode", "--ninja")))
+                self.assertIn(option.split("=")[0], build["explanation"])
                 self.assertEqual(self.build_argv()[-len(mode):], mode, "the option still reaches the package command")
                 (state,) = self.output_states()
                 self.assertEqual(state["success"]["operation_id"], first, "the earlier build record is kept")
@@ -284,6 +286,38 @@ class NonCompilingModeTests(BuildTestCase):
                 self.assertEqual((result.returncode, document["error"]["code"], document["child_exit_code"]),
                                  (5, "ARTIFACT_UNRESOLVED", 0))
                 self.assertEqual([r for r in self.sandbox.records() if r["tool"] != "node"], [])
+
+    def test_a_ninja_dry_run_leaves_the_earlier_build_record_and_freshness_alone(self):
+        first = self.build_once()
+        (self.core / "browser").mkdir(exist_ok=True)
+        (self.core / "browser" / "changed_since_the_build.cc").write_text("new work\n")
+        self.sandbox.commit_all("main")
+        binary = self.output_app() / "Contents" / "MacOS" / "Brave Browser Development"
+        stamp = binary.stat().st_mtime_ns
+        result, document = self.document("build", "--offline", "--ninja=n:", env=self.env(FAKE_NO_APP="1"))
+        self.assertEqual(document["data"]["build"]["artifact_status"], "unresolved")
+        self.assertEqual(binary.stat().st_mtime_ns, stamp)
+        (state,) = self.output_states()
+        self.assertEqual(state["success"]["operation_id"], first)
+        freshness = self.document("run")[1]["data"]["run"]["freshness"]
+        self.assertEqual(freshness["status"], "stale", "the source changed after the recorded build")
+
+    def test_a_ninja_tool_run_may_change_the_output_so_the_earlier_record_needs_revalidation(self):
+        self.build_once()
+        self.document("build", "--ninja", "t:clean", env=self.env(FAKE_NO_APP="1"))
+        self.assertTrue(self.output_states()[0]["needs_revalidation"])
+
+    def test_a_gn_override_of_the_architecture_or_target_is_not_the_advertised_build(self):
+        self.build_once()
+        for args in (["--gn=target_cpu:x64"], ["--gn", 'target_cpu:"x64"'], ["--gn=target_os:android"]):
+            with self.subTest(args=args):
+                result, document = self.document("build", *args, env=self.env(FAKE_NO_APP="1"))
+                self.assertEqual(document["data"]["build"]["artifact_status"], "unresolved")
+                self.assertEqual(document["artifacts"], [])
+        result, document = self.document("build", "--gn=target_cpu:arm64")
+        self.assertEqual(document["data"]["build"]["artifact_status"], "verified", "a matching value is fine")
+        result, document = self.document("build", "android", "--gn=target_os:mac")
+        self.assertEqual(document["error"]["code"], "SELECTOR_CONFLICT")
 
     def test_preparing_without_compiling_does_not_clear_or_add_uncertainty_about_the_output(self):
         self.build_once()

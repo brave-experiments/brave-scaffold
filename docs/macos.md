@@ -50,12 +50,15 @@ Chromium's `src/out`, not Core: `-C Custom` selects `<src>/out/Custom`.
 | --- | --- |
 | Child exits nonzero | `CHILD_FAILED`, exit 5, `child_exit_code` set |
 | Child succeeds and the application is found in the resolved output | `ok`, the application listed in `artifacts` |
-| Child succeeds but the output cannot be identified (for example `--target brave_unit_tests` builds no application, or `--prepare_only` and `--xcode_gen` exit without compiling: an application already at the expected path is not treated as this build's output) | `build`, `sync-build`: `ok` with an `ARTIFACT_UNRESOLVED` warning and no artifact. `build-run`, `sync-build-run`: `ARTIFACT_UNRESOLVED`, exit 5, nothing stopped or launched |
+| Child succeeds but the output cannot be identified (for example `--target brave_unit_tests` builds no application, or `--prepare_only`, `--xcode_gen`, and non-building Ninja options such as `--ninja n:` (a dry run) or `--ninja t:<tool>` exit without compiling: an application already at the expected path is not treated as this build's output) | `build`, `sync-build`: `ok` with an `ARTIFACT_UNRESOLVED` warning and no artifact. `build-run`, `sync-build-run`: `ARTIFACT_UNRESOLVED`, exit 5, nothing stopped or launched |
 | Output identified but missing or unusable | `ARTIFACT_MISSING` or `ARTIFACT_MISMATCH`, exit 5 |
 
 Nothing falls back to another artifact. A build that exits without compiling keeps the
-earlier build record for that output unchanged; only modes that write into the output
-directory (`--xcode_gen`) mark it as needing revalidation.
+earlier build record for that output unchanged (`--prepare_only`, and Ninja dry runs, help, and version);
+modes that may write into the output directory (`--xcode_gen`, `--ninja t:<tool>` such as `clean`) mark it as
+needing revalidation. A forwarded `--gn target_os:<value>` or `--gn target_cpu:<value>` that differs from the
+build's target or architecture also leaves the output identity unresolved, because the build is then not the one
+its output directory and record describe; against an explicit target argument it is a `SELECTOR_CONFLICT`.
 
 ## Test
 

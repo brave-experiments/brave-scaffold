@@ -26,6 +26,10 @@ OS_ALIASES = {"mac": "mac", "macos": "mac", "android": "android", "ios": "ios", 
               "win": "win", "windows": "win"}
 VALUE_OPTIONS = ("--target_os", "--target_arch", "--target", "--channel", "--target_android_output_format")
 INFO_FLAGS = ("-h", "--help", "-V", "--version")
+# Core turns `--ninja <key>:<value>` into `-<key> <value>` for Ninja. These keys make Ninja report or rewrite
+# without compiling: a dry run, a tool such as `clean` or `targets`, help, and the version.
+NINJA_NOT_COMPILING = ("n", "t", "h", "version")
+NINJA_LEAVES_OUTPUT = ("n", "h", "version")
 
 
 @dataclass
@@ -40,8 +44,10 @@ class Forwarded:
     remoteexec: bool | None = None
     info_only: bool = False
     skips_compilation: str | None = None
+    leaves_output: bool = False
     output_format: str | None = None
     gn_keys: set = field(default_factory=set)
+    gn_values: dict = field(default_factory=dict)
     problems: list = field(default_factory=list)
 
 
@@ -57,6 +63,14 @@ def interpret(tokens):
             found.offline = True
         elif token == "--prepare_only":
             found.skips_compilation = token
+            found.leaves_output = True
+        elif token == "--ninja" or token.startswith("--ninja="):
+            value = token.partition("=")[2] if "=" in token else (tokens[index + 1] if index + 1 < len(tokens) else "")
+            index += 0 if "=" in token else 1
+            key = value.partition(":")[0]
+            if key in NINJA_NOT_COMPILING:
+                found.skips_compilation = "--ninja %s" % key
+                found.leaves_output = found.leaves_output or key in NINJA_LEAVES_OUTPUT
         elif token == "--xcode_gen" or token.startswith("--xcode_gen="):
             found.skips_compilation = "--xcode_gen"
             index += 0 if "=" in token else 1
@@ -80,7 +94,9 @@ def interpret(tokens):
         elif token == "--gn" or token.startswith("--gn="):
             value = token.partition("=")[2] if "=" in token else (tokens[index + 1] if index + 1 < len(tokens) else "")
             index += 0 if "=" in token else 1
-            found.gn_keys.add(value.split(":", 1)[0])
+            key, _, setting = value.partition(":")
+            found.gn_keys.add(key)
+            found.gn_values[key] = setting.strip().strip('"\'')
         elif token.split("=")[0] in VALUE_OPTIONS:
             name, equals, value = token.partition("=")
             if not equals:
@@ -207,10 +223,17 @@ def resolve_effective(src, forwarded_tokens, target, configuration, explicit_tar
     if not fwd.offline and fwd.remoteexec is None:
         generated.append("--offline" if explicit_offline else "--use_remoteexec=true")
     unresolved = list(fwd.problems)
+    for key, expected, normalize in (("target_os", effective_target, normalize_os),
+                                     ("target_cpu", arch, normalize_arch)):
+        if key in fwd.gn_values and normalize(fwd.gn_values[key]) != expected:
+            if key == "target_os" and explicit_target:
+                raise conflict("The target", explicit_target, fwd.gn_values[key], "bdev build %s" % explicit_target)
+            unresolved.append("--gn %s:%s overrides the %s this build is recorded under (%s)" % (
+                key, fwd.gn_values[key], key, expected))
     if fwd.info_only:
         unresolved.append("the forwarded arguments ask the package command for information, not a build")
     if fwd.skips_compilation:
-        unresolved.append("%s prepares the build without compiling it" % fwd.skips_compilation)
+        unresolved.append("%s makes the build exit without compiling the application" % fwd.skips_compilation)
     if fwd.build_dir is not None and not fwd.build_dir:
         unresolved.append("-C has an empty value")
     if effective_target == "android" and fwd.output_format not in (None, "apk"):
@@ -221,6 +244,6 @@ def resolve_effective(src, forwarded_tokens, target, configuration, explicit_tar
     return Effective(target=effective_target, configuration=effective_configuration, arch=arch, output_dir=output,
                      build_dir_arg=build_dir_arg, generated=generated, forwarded=list(forwarded_tokens),
                      build_target=fwd.target, channel=fwd.channel, offline=offline, sources=sources,
-                     unresolved=unresolved, changes_output=fwd.skips_compilation != "--prepare_only",
+                     unresolved=unresolved, changes_output=not fwd.leaves_output,
                      chosen_gn_keys=frozenset(fwd.gn_keys | ({"use_remoteexec"} if fwd.remoteexec is not None
                                                              else set())))

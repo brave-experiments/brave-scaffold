@@ -48,6 +48,29 @@ class NonCompilingModeTests(unittest.TestCase):
             self.assertEqual((found.skips_compilation, found.build_config), ("--xcode_gen", "Release"), tokens)
         self.assertIsNone(buildopts.interpret(["--force_gn_gen", "Debug"]).skips_compilation)
 
+    def test_ninja_options_that_do_not_build_are_recognised_in_every_accepted_form(self):
+        for tokens in (["--ninja=n:"], ["--ninja", "n:"], ["--ninja=n"], ["--ninja", "t:targets"], ["--ninja=h:"]):
+            with self.subTest(tokens=tokens):
+                self.assertIsNotNone(buildopts.interpret(tokens).skips_compilation)
+        for tokens in (["--ninja=j:8"], ["--ninja", "d:stats"], ["--ninja=k:0"]):
+            with self.subTest(tokens=tokens):
+                self.assertIsNone(buildopts.interpret(tokens).skips_compilation)
+
+    def test_a_dry_run_leaves_the_output_alone_but_a_ninja_tool_may_not(self):
+        self.assertFalse(resolve(["--ninja=n:"]).changes_output)
+        self.assertTrue(resolve(["--ninja", "t:clean"]).changes_output)
+        self.assertEqual(len(resolve(["--ninja=n:"]).unresolved), 1)
+
+    def test_gn_overrides_of_the_target_and_architecture_are_reconciled_with_the_build_identity(self):
+        self.assertEqual(resolve(["--gn=target_cpu:arm64"]).unresolved, [])
+        self.assertEqual(resolve(["--gn", 'target_cpu:"arm64"', "--target_arch=arm64"]).unresolved, [])
+        self.assertEqual(len(resolve(["--gn=target_cpu:x64"]).unresolved), 1)
+        self.assertEqual(len(resolve(["--gn=target_os:android"]).unresolved), 1)
+        self.assertEqual(resolve(["--gn=target_cpu:x64", "--target_arch=x64"]).unresolved, [])
+        with self.assertRaises(ScaffoldError) as caught:
+            resolve(["--gn=target_os:mac"], target="android", explicit_target="android")
+        self.assertEqual(caught.exception.code, "SELECTOR_CONFLICT")
+
     def test_only_prepare_only_leaves_the_output_directory_alone(self):
         self.assertFalse(resolve(["--prepare_only"]).changes_output)
         self.assertTrue(resolve(["--xcode_gen=ios"]).changes_output)
