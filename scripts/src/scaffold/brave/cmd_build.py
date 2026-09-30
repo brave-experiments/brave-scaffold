@@ -400,16 +400,21 @@ def post_parse_test(spec, parsed):
     parsed.forwarded = positionals + parsed.forwarded
 
 
-def cmd_test(ctx):
-    parsed = ctx.parsed
-    target, _ = effective_target(parsed.get("target"), ctx.config)
+def require_mac_tests(target, source, suite):
+    """Android tests are deferred; the effective target decides, wherever it was chosen."""
     if target != "mac":
         raise ScaffoldError("UNSUPPORTED_CAPABILITY",
                             "Android tests are not available in this release; nothing was prepared or built.",
-                            details={"target": target},
-                            repairs=[repair(["bdev", "test", "mac", parsed.get("suite")],
-                                            note="Run the suite on macOS instead.")])
+                            details={"target": target, "target_source": source},
+                            repairs=[repair(["bdev", "test", "mac", suite], note="Run the suite on macOS instead.")])
+
+
+def cmd_test(ctx):
+    parsed = ctx.parsed
+    if buildopts.interpret(parsed.forwarded).target_os is None:
+        require_mac_tests(effective_target(parsed.get("target"), ctx.config)[0], "scaffold", parsed.get("suite"))
     identity, effective = select_build(ctx, parsed.get("target"), parsed.forwarded)
+    require_mac_tests(effective.target, effective.sources["target"], parsed.get("suite"))
     script_args = [parsed.get("suite")]
     if parsed.get("filter"):
         script_args.append("--filter=%s" % parsed.get("filter"))

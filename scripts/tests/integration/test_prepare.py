@@ -163,6 +163,27 @@ class TestCommandTests(BuildTestCase):
         self.assertFalse((self.sandbox.root / "direnv-used").exists())
         self.assertEqual(self.node_calls(), [])
 
+    def test_a_forwarded_android_target_is_unsupported_before_anything_is_loaded(self):
+        write_executable(self.sandbox.bin / "direnv", "#!/bin/sh\necho used >> '%s'\nexit 1\n" %
+                         (self.sandbox.root / "direnv-used"))
+        for args in (["test", "brave_browser_tests", "--target_os=android"],
+                     ["test", "brave_browser_tests", "--target_os", "android", "extra"],
+                     ["test", "brave_browser_tests", "--filter", "A.*", "--", "--target_os=android"]):
+            with self.subTest(args=args):
+                result, document = self.document(*args)
+                self.assertEqual((result.returncode, document["error"]["code"]), (2, "UNSUPPORTED_CAPABILITY"))
+        result, document = self.document("test", "mac", "brave_browser_tests", "--target_os=android")
+        self.assertEqual(document["error"]["code"], "SELECTOR_CONFLICT", "an explicit macOS request still conflicts")
+        self.assertFalse((self.sandbox.root / "direnv-used").exists())
+        self.assertEqual([r for r in self.sandbox.records() if r["tool"] != "node"], [])
+        self.assertEqual(self.node_calls(), [])
+
+    def test_an_explicit_forwarded_mac_target_overrides_an_android_default(self):
+        self.sandbox.config.write_text(self.sandbox.config.read_text() + '\n[defaults]\nplatform = "android"\n')
+        result, document = self.document("test", "brave_unit_tests", "--target_os=mac")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("--target_os=mac", self.build_argv())
+
     def test_failed_suite_reports_the_child_exit(self):
         result, document = self.document("test", "brave_unit_tests", env=self.env(FAKE_EXIT="2"))
         self.assertEqual((result.returncode, document["error"]["code"], document["child_exit_code"]),

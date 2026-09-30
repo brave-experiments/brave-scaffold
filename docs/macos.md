@@ -69,8 +69,10 @@ The suite is required and comes first; `mac` is optional and only recognized
 before the suite. `--filter` narrows tests inside the suite and never supplies a
 missing suite. Other arguments go to `bpm run test` after the generated ones.
 Android tests are not available; asking for them (or omitting the target while
-`defaults.platform` is `android`) fails with `UNSUPPORTED_CAPABILITY` before
-anything is loaded or built.
+`defaults.platform` is `android`, or forwarding `--target_os=android`) fails with
+`UNSUPPORTED_CAPABILITY` before anything is loaded or built. The effective target
+decides: forwarding `--target_os=mac` overrides an Android default, while
+`bdev test mac <suite> --target_os=android` is a `SELECTOR_CONFLICT`.
 
 ## Run and restart
 
