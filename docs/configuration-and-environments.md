@@ -1,66 +1,141 @@
 # Configuration and environments
 
-The repository includes a configuration template. The CLI, configuration reader,
-and environment setup are not implemented yet; these files do not activate tools.
+`brave-scaffold.toml` is the project-level configuration for Brave Scaffold. It
+is machine-local and ignored by Git. [`brave-scaffold.example.toml`](../brave-scaffold.example.toml)
+is the checked-in template; copy it, or let `bdev setup` and `bdev checkout add`
+create the file. Keep machine paths out of the tracked example.
 
-Copy `brave-scaffold.example.toml` to `brave-scaffold.toml` and replace its placeholder Core path with
-the absolute path to your checkout's `src/brave` directory. `brave-scaffold.toml` is ignored
-by Git. Keep machine paths out of the tracked example.
+## Integration stays outside Core
 
-`brave-scaffold.toml` is the project-level configuration for Brave Scaffold.
-`bdev` is its main command, not the owner of the configuration file. Other
-scaffold tools and Brave project integrations may add documented sections when
-implemented. Do not add speculative fields or extra configuration layers now.
+Scaffold configuration, environment files, and records live in the scaffold
+repository (`brave-scaffold.toml`, `environments/`, `.bdev/`). Setup, `env init`,
+`doctor`, `context`, and `env check` write nothing inside Brave Core: no `.envrc`,
+tracked or untracked file, Git configuration, hook, or local exclusion.
 
-## Tooling interpreter
+This is different from the normal checkout writes of work you request. Commands
+such as `bdev tools setup` (and, when they ship, builds and syncs) change the
+checkout as their purpose; each command's help states its side effects.
 
-The planned tooling runtime is a standard-library virtual environment under
-`scripts/.venv`. Create it explicitly from the scaffold root with Python 3.14 or
-newer, without installing pip or other packages:
+## Fields
 
-```sh
-python3.14 -m venv --without-pip scripts/.venv
+| Field | Meaning | Default |
+| --- | --- | --- |
+| `schema_version` | Configuration format version. Must be `1`. | required |
+| `logging.commands` | Print each dispatched command and its working directory to stderr. | `true` |
+| `defaults.platform` | Target used when no target is named: `mac`, `macos`, or `android`. | the host platform |
+| `checkouts[].core` | Absolute path to the checkout's `src/brave` directory. Stored once. | required |
+| `checkouts[].alias` | Optional name, usable with `--checkout`. It does not make a default checkout. | none |
+| `checkouts[].direnv_dir` | Directory holding the checkout's `.envrc`. Relative paths resolve beside the configuration file. | set by `env init` |
+
+Unknown fields, wrong types, and duplicate aliases, Core paths, or environment
+directories are rejected with the offending field and a valid example.
+
+## Which configuration file is used
+
+`--config <file>` wins. Otherwise the tools use the `brave-scaffold.toml` of the
+installation being run. Generated environments call their installation by
+absolute path and pass their configuration explicitly, so another `bdev` earlier
+on `PATH` cannot redirect them. A missing default file does not stop `--help`,
+`capabilities`, or path-based discovery.
+
+## Selecting a checkout
+
+1. `--checkout <name-or-path>` wins. A token containing `/`, starting with `.` or
+   `~`, or absolute is a path (relative to your current directory); anything else
+   is an alias. A path may name Core, Chromium `src`, or the outer checkout.
+2. Otherwise the checkout enclosing your current directory is used, including
+   nested directories.
+3. Otherwise the command stops and lists candidates. There is no default
+   checkout, and inherited variables such as `BRAVE_CORE_DIR` never select one.
+
+If an outer checkout holds several source workspaces, name the Core directory.
+Symlinks are resolved, so an alias and a symlinked path give one identity.
+
+An alias is optional. Running commands still needs a record that pairs the Core
+path with an approved environment; `bdev checkout add` and `bdev env init` update
+the same record.
+
+## Two or more checkouts
+
+Use one full checkout per branch or agent workspace, each with its own record:
+
+```toml
+schema_version = 1
+
+[[checkouts]]
+alias = "main"
+core = "/work/browser/_bad_scm/main/src/brave"
+direnv_dir = "environments/main"
+
+[[checkouts]]
+alias = "review"
+core = "/work/browser-review/_bad_scm/main/src/brave"
+direnv_dir = "environments/review"
 ```
 
-An absolute path to another compatible Python interpreter is also valid. Python
-itself is a machine prerequisite; launchers and direnv activation will not install
-it. Creating this environment does not implement or activate the pending CLI.
+Git linked worktrees are not supported as browser checkouts. Chromium's size,
+materialized patches, dependencies, and build outputs make a worktree an
+unsuitable substitute for an independent source tree. Selecting one fails with
+`UNSUPPORTED_CAPABILITY` before any environment loads; `bdev context` and
+`bdev doctor` still describe the layout. Shared Git object caches are fine; shared
+working files are not. Nothing is moved, converted, or deleted for you.
 
-Launchers will invoke this installation's `scripts/.venv/bin/python` directly,
-check its version, and ignore inherited Python home/search-path overrides for the
-scaffold process. They will not fall back to a Python on PATH or require manual
-activation. Checkout-local `vpython3` remains a separate runtime for browser work.
+## Environments
 
-If the scaffold moves or the base interpreter disappears, recreate the
-scaffold-owned virtual environment explicitly. Missing, broken, or incompatible
-runtime errors must explain that repair; they must not change browser toolchains.
+Each checkout has a scaffold-owned directory containing an `.envrc`. `bdev env
+init --checkout <name>` creates it from a template that calls
+`bdev env export`, which prints the checkout's exports: the source directories,
+the checkout-local `depot_tools` on `PATH`, and `VPYTHON3`. Activation performs no
+clone, install, sync, or build. `PYTHONPATH` is added only with
+`--with-pythonpath`. Checkout-specific Node and package managers are never put on
+your global `PATH`; commands use them by absolute path in a private child process.
 
-## Checkout configuration
+`env init` never overwrites a file it did not generate (it shows suggested
+content instead) and refuses a directory inside the checkout.
 
-The initial configuration contract is:
+### Approval
 
-| Field | Meaning |
-| --- | --- |
-| `schema_version` | Configuration format version; currently `1` |
-| `logging.commands` | Full effective command and working-directory logging; defaults to `true` |
-| `defaults.platform` | Optional platform override; absent means the current host platform |
-| `checkouts[].alias` | Optional name for a checkout; does not select a default checkout |
-| `checkouts[].core` | Absolute canonical path to that checkout's Core Git root |
-| `checkouts[].direnv_dir` | Directory containing the checkout's `.envrc`, loaded through direnv before command execution; relative paths resolve beside `brave-scaffold.toml` |
+You review and approve each environment:
 
-Add another `[[checkouts]]` table for each checkout. Each checkout needs its own
-Core path and environment directory. Store Core's path once; surrounding source
-paths will be derived and validated by the CLI.
+```sh
+direnv allow <environment-dir>
+```
 
-Checkout selection will use an explicit selector or the current working
-directory. If neither identifies one checkout, the caller must supply a precise
-location. An alias named `main` does not change that rule.
+The scaffold never runs `direnv allow`, edits approval policy, or edits shell
+configuration. Any change to the file, including regeneration after moving the
+scaffold, invalidates the approval. Commands check the approval of exactly the
+configured file; a parent `.envrc` does not count.
 
-An environment mapping is configuration only. It does not create an `.envrc`,
-load it, or approve it. Environment setup will generate files outside Core and
-show their contents for review before the user runs `direnv allow`. Do not copy
-activation files into Core or change shell configuration to prepare these files.
+### How commands load it
 
-General support-repository and skill catalog configuration is not defined here.
-Add those fields with the corresponding feature and its validation rather than
-inventing fields that no configuration reader supports.
+Every checkout command loads the mapped environment itself with `direnv exec`,
+whether or not a shell hook is active. Before loading, tool-owned variables
+(`BRAVE_CORE_DIR`, `BRAVE_SRC_ROOT`, `BRAVE_LAUNCHER_CHECKOUT_DIR`, and similar)
+are removed from the inherited environment so stale exports cannot pick a
+checkout. After loading, the result must agree with the selected checkout or the
+command stops with `CHECKOUT_ENV_CONFLICT`. Loading evaluates the approved
+`.envrc`, which is code you reviewed; the scaffold's own template only derives
+exports.
+
+### Optional shell use
+
+`bdev shell --checkout <name>` starts a child shell in Core with the environment
+loaded; exiting restores your shell unchanged. An interactive direnv hook and an
+`.envrc` in the outer checkout directory are optional conveniences you may add
+yourself. If you do, do not use `source_env` to pull in the mapped environment:
+it skips the approval check. Never put such a file inside Core.
+
+## Python runtime
+
+Tooling runs on the scaffold-owned virtual environment at `scripts/.venv`
+(Python 3.14 or newer, created with `--without-pip`). It is separate from the
+checkout's `vpython3`, which runs checkout tasks.
+
+## Checkout-local tools
+
+Package commands use the Node, package manager, and `vpython3` inside the
+checkout. There is no fallback to global tools. Inspection (`doctor`, `context`,
+`env check`) is read-only and never installs or updates anything. If a payload is
+missing or stale, the command stops and names the explicit repair,
+`bdev tools setup --checkout <name>`, which runs the checkout's own payload
+installer. Run it only when you intend the checkout to change.

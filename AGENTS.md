@@ -43,6 +43,18 @@ operations.
 - Log full effective commands and their working directories by default, with
   known secrets redacted. Keep command logs separate from structured stdout.
 
+## Where to read next
+
+Contributors: [docs/development.md](docs/development.md) covers the layout, tests,
+and how to add commands. Agents calling the tools:
+[docs/agent-workflows.md](docs/agent-workflows.md) covers authority, human
+approval, and reporting. Implementation lives in `scripts/src/scaffold/`; tests in
+`scripts/tests/` run with `cd scripts && .venv/bin/python -m unittest discover -s tests -t .`.
+
+Approval boundaries: builds, tests, launches, syncs, tool repair, and cleanup on a
+real checkout or device need the user's authorization for that target. A repair
+suggestion or passing check grants none. Only the user runs `direnv allow`.
+
 ## Agent instructions and skills
 
 `AGENTS.md` is the instruction source. Keep `CLAUDE.md` as a relative symlink to

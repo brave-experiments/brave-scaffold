@@ -4,7 +4,6 @@
 # You can obtain one at https://mozilla.org/MPL/2.0/.
 
 # Copy to brave-scaffold.toml and replace the example Core path before use.
-# The CLI and environment setup are not implemented yet.
 schema_version = 1
 
 [logging]
@@ -20,7 +19,7 @@ commands = true
 alias = "main"
 core = "/work/browser/_bad_scm/workspace/src/brave"
 # Directory containing the .envrc that supplies this checkout's tool paths.
-# The CLI will load it with direnv before running checkout commands.
+# Commands load it with direnv before running checkout tools.
 # Relative to brave-scaffold.toml: this example loads environments/main/.envrc.
-# Setup must create the file, then you must review it and run direnv allow.
+# `bdev env init` creates the file; you review it and run direnv allow.
 direnv_dir = "environments/main"
