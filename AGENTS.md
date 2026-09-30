@@ -17,6 +17,12 @@ Use the configured human Git identity; never substitute an agent identity.
 
 ## Product boundaries
 
+Brave Scaffold is entirely supplementary to Brave Core and optional to use.
+Adopting or using it must require no changes to Brave Core. Preserve Core's
+supported standalone workflow. State this clearly in the README and setup guides;
+distinguish integration from the normal writes of explicitly requested browser
+operations.
+
 - Keep tooling implementation, launchers, dependencies, and tests under `scripts/`.
   Do not create root-level `src/` or `tests/` directories for tooling.
 - Use Python 3.14 or newer. Prefer standard-library code and tests without

@@ -4,6 +4,15 @@ Local tools for building, testing, running, and inspecting Brave checkouts acros
 platforms. Browser checkouts and support repositories may live anywhere and are
 selected through local configuration.
 
+Brave Scaffold (`brave-scaffold`) is entirely supplementary to Brave Core
+(`brave-core`). Using it is optional. Adopting or using the scaffold requires no
+changes to Brave Core's source, configuration, or development workflow. Brave
+Core's own supported commands remain usable without the scaffold.
+
+Scaffold configuration and integration files stay outside Brave Core. Explicitly
+requested builds, syncs, and source preparation still perform their normal
+checkout writes; those are the requested work, not scaffold installation changes.
+
 This repository currently contains project guidance and agent discovery setup.
 Build and setup commands are not implemented yet.
 
