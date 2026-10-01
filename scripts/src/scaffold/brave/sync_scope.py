@@ -145,13 +145,14 @@ def overlaps(path, writes):
     return any(path == write or path.is_relative_to(write) or write.is_relative_to(path) for write in writes)
 
 
-def local_work(identity, scope, expected, baseline, log=None, *, reset_repositories=None, writes=(), unknown_writes=(), reset_upstream=True):
+def local_work(identity, scope, expected, baseline, log=None, *, reset_repositories=None, writes=(), unknown_writes=(), reset_upstream=True, incoming_trees=None):
     """Protect only work threatened by reset, patch, hooks, or unknown mutation scope.
 
     A non-reset gclient update uses Git's clean checks and non-forced checkout/rebase;
     it can refuse local work but does not discard it. Unmanaged Core is never reset.
     Generated worktree bytes never excuse a staged change in a reset repository.
     """
+    incoming_trees = incoming_trees or {}
     resets = set(scope.repositories) if reset_repositories is None else set(reset_repositories)
     conflicts = [{"path": problem, "reason": "incomplete evidence"} for problem in scope.problems]
     for repository in scope.repositories:
@@ -163,14 +164,19 @@ def local_work(identity, scope, expected, baseline, log=None, *, reset_repositor
                                   "reason": "local commits would be discarded by gclient reset --upstream; "
                                             "retain them on a branch or select a non-reset sync"})
         label = _label(identity, repository)
+        collision_trees = None
         for relative in sorted(changes.all):
             path = repository / relative
+            known = not path.is_symlink() and (path in expected or (relative in baseline.get(label, {})
+                                             and baseline[label][relative] == sha256_or_none(path)))
+            # Known working output cannot excuse staged bytes, but otherwise
+            # needs no comparison against thousands of patch/hook write paths.
+            if known and relative not in changes.staged:
+                continue
             threatened = repository in resets
             output = overlaps(path, writes)
             if not threatened and not output and not unknown_writes:
                 continue
-            known = not path.is_symlink() and (path in expected or (relative in baseline.get(label, {})
-                                             and baseline[label][relative] == sha256_or_none(path)))
             if relative in changes.staged and (threatened or unknown_writes):
                 reason = "staged changes would be discarded by gclient reset" if threatened else \
                     "staged work could be discarded by " + "; ".join(unknown_writes)
@@ -188,10 +194,37 @@ def local_work(identity, scope, expected, baseline, log=None, *, reset_repositor
             elif relative in changes.untracked:
                 if known:
                     continue
-                reason = "untracked work could collide with gclient reset; incoming paths are unknown"
+                if not unknown_writes and repository in incoming_trees:
+                    if collision_trees is None:
+                        collision_trees = reset_paths(repository, incoming_trees[repository], log)
+                    if collision_trees is not None and not path_collision(relative, collision_trees):
+                        continue
+                reason = "untracked work could collide with gclient reset; incoming paths are unknown or overlap"
             elif known:
                 continue
             else:
                 reason = "tracked local changes would be discarded by gclient reset; save wanted edits first"
             conflicts.append({"path": _label(identity, path), "reason": reason})
     return conflicts
+
+
+def reset_paths(repository, incoming, log=None):
+    """Read both trees touched by a reviewed detached-HEAD reset and checkout."""
+    branch = gitstate._git(repository, ['symbolic-ref', '--quiet', 'HEAD'], log)
+    if branch.returncode != 1:
+        return None
+    reader, revision = incoming
+    paths = set()
+    for repo, ref in ((repository, 'HEAD'), (reader, revision)):
+        result = gitstate._git(repo, ['ls-tree', '-rz', '--name-only', ref], log)
+        if result.returncode or result.truncated or '\ufffd' in result.stdout:
+            return None
+        paths.update(path for path in result.stdout.split('\0') if path)
+    return paths
+
+
+def path_collision(relative, tracked_paths):
+    # Be conservative on case-insensitive filesystems, including macOS.
+    relative = relative.casefold()
+    return any(relative == tracked or relative.startswith(tracked + '/') or tracked.startswith(relative + '/')
+               for tracked in map(str.casefold, tracked_paths))

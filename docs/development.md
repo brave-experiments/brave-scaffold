@@ -121,6 +121,20 @@ its digest. Never infer a hook's output scope from its name or silently accept a
 new script. Include pre-DEPS hooks and recursive DEPS files; `--nohooks` does not
 skip pre-DEPS hooks.
 
+`incoming_hooks.py` reads incoming DEPS and hook sources through local Git
+objects, including an existing local origin cache when the checkout lacks the
+revision. It evaluates only supported expressions; it does not execute DEPS.
+Parent and custom variables control recursive dependency and hook conditions. Unsupported
+expressions and missing active dependencies leave the scope unknown.
+
+Generated copies require exact source bytes. The reclient probe renders reviewed
+configuration text in memory, with filesystem writes and child execution denied;
+it never calls the setup/download entry point. DevTools sibling overrides require
+actual hardlinks from the reviewed producer. Untracked preservation uses both
+the current and incoming tree only for detached repositories and reviewed,
+non-updating depot_tools reset code; it never exempts a hook write. Source hashes must follow a review
+of the writer, not merely match whatever is currently installed.
+
 The same model supplies plans and execution guards. Patch metadata identifies
 materialized bytes even when the patch input has changed. A sync baseline accepts
 new output, not unchanged developer work. Regression fixtures must distinguish

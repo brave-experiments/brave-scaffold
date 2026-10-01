@@ -84,7 +84,7 @@ def local_work_conflicts(ctx, identity, model):
     conflicts = sync_scope.local_work(identity, scope, expected,
                                       sync_scope.read_baseline(identity, ctx.state_root), ctx.log,
                                       reset_repositories=model.resets, writes=model.writes, unknown_writes=model.unknown,
-                                      reset_upstream=model.chromium != "skipped")
+                                      reset_upstream=model.chromium != "skipped", incoming_trees=model.incoming_trees)
     # Sync always calls version.py update, even when every patch is current.
     version_conflicts, _ = patches.write_set_conflicts(identity, [], {},
         {str(path.relative_to(identity.src)): patches.sha256_or_none(path) for path in expected
@@ -118,8 +118,9 @@ def do_sync_phase(ctx, execution, op, target, forwarded):
     conflicts = local_work_conflicts(ctx, identity, model)
     if conflicts:
         raise ScaffoldError("PREPARATION_CONFLICT",
-                            "Sync could overwrite local work in %d place(s); nothing was changed." % len(conflicts),
-                            details={"files": conflicts[:50], "total": len(conflicts), "scope": model.detail()},
+                            "Sync blocked: %d Chromium/dependency paths need preservation checks; nothing was changed. "
+                            "These paths are relative to the Chromium source root, not brave-core." % len(conflicts),
+                            details={"files": conflicts[:50], "total": len(conflicts), "scope": model.detail(), "path_base": str(identity.src), "core": str(identity.core)},
                             repairs=[repair(["bdev", "drift", "--diff", "--checkout", str(identity.core)])])
     before_files = sync_scope.snapshot(identity, sync_scope.sync_repositories(identity), ctx.log, include_core=True)
     before = {"core_head": freshness.resolve_head(identity.core, ctx.log),

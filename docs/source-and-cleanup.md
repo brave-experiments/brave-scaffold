@@ -54,20 +54,39 @@ hooks. The guard checks stale patch targets, both version files, metadata writes
 and reviewed hook output scopes. Changed patch inputs can reapply their old,
 identified patch output; an additional developer edit to that output still stops
 preparation. Regular hooks can be skipped with `--nohooks`. gclient's pre-DEPS
-hooks still run and remain guarded. Conditional hook outputs are included
-conservatively. New hook inventories or changed hook sources need inspection;
+hooks still run and remain guarded. Conditional hook outputs are included conservatively, except when every hook in
+a reviewed group is proven disabled by the effective dependency variables. New hook inventories or changed hook sources need inspection;
 they do not gain authority to replace local work.
 
 A conflict identifies each threatened file, the operation, and a next step.
 Unrelated staged and untracked work can remain in repositories that will not be
-reset or overwritten. When a reset's incoming paths are unknown, its untracked
-files remain blocked. Scaffold does not stash, discard, or roll back edits.
+reset or overwritten. Untracked files can stay in a detached repository when the reviewed reset code,
+current and incoming Git trees, and hook scopes prove those paths cannot be
+replaced. The check includes parent paths and case differences. Unknown incoming
+paths, a branch reset, changed reset code, or lean sync retain the conservative
+untracked-file guard. When depot_tools would auto-update, the reset code may
+change after inspection. Setting `DEPOT_TOOLS_UPDATE=0` for the invocation can
+keep a reviewed existing version in use; it does not bypass a required depot_tools
+reinstallation, changed source checks, or file conflicts. Scaffold does not stash, discard, or roll back edits.
 Options that delete unused dependencies or unversioned trees remain blocked when
 their complete deletion scope is unknown. CI's automatic dependency deletion and
 custom gclient solution/deletion settings also stop before dispatch.
 
 Known generated working bytes can be identified by patch metadata, verified
 preparation receipts, exact version-writer output, or a successful sync record.
+The guard also recognizes byte-for-byte branding copies, reviewed reclient
+configuration output, and verified DevTools source/override hardlinks. Stale
+branding copies need a prior Core checkout for the recorded successful Chromium
+sync, the same reviewed copier, and exact Git blob content. Missing history does
+not grant permission to replace a file. A filename or
+generated-file header alone proves nothing. An additional edit remains protected.
+For an incoming Chromium revision, the guard reads available local Git objects
+and follows enabled recursive dependency pins to check the incoming hooks. It
+does not fetch, change refs, or switch the checkout during inspection. Missing
+revisions and unreviewed sources remain explicit uncertainties.
+
+Conflict paths are relative to the Chromium source root. A clean `brave-core`
+status does not describe the separate Chromium and dependency repositories.
 They never excuse staged content threatened by a reset. A successful sync records
 new output and retains matching prior output evidence. It does not adopt unchanged
 local edits that the operation preserved. Older records without a successful-sync

@@ -73,7 +73,49 @@ const unsafeRetained = retained && (
     || Object.keys(s).some(k => !['name', 'url', 'managed', 'custom_deps', 'custom_vars'].includes(k)))
 )
 const customGlobals = Object.keys(config.gclientGlobalVars).some(k => !['cache_dir', 'target_os', 'target_cpu'].includes(k))
+const generatedCopies = new Map()
+if (process.env.SCAFFOLD_INSPECT_GENERATED === '1') {
+  const extra = require('fs-extra')
+  // Capture the reviewed branding copier's exact source/destination mapping.
+  // Force its checksum condition to visit existing identical copies as well.
+  // Node permissions still deny all real writes and child execution.
+  extra.copySync = (source, destination) => generatedCopies.set(JSON.stringify([source, destination]), [source, destination])
+  util.calculateFileChecksum = filename => String(filename)
+  const branding = await load('branding.js')
+  const originalTarget = config.targetOS
+  const originalChannel = config.channel
+  const originalGit = util.runGit
+  // The Android copier lists untracked resources only to remove extras. No
+  // deletion is performed by this mapping probe, and children remain denied.
+  util.runGit = (directory, args) => {
+    if (path.resolve(directory) === path.resolve(core, '..', 'chrome/android/java/res')
+        && JSON.stringify(args) === JSON.stringify(['ls-files', '--others', '--exclude-standard'])) return ''
+    throw new Error('Unreviewed branding Git call')
+  }
+  config.targetOS = 'mac'
+  branding.update()
+  config.targetOS = 'android'
+  for (const channel of ['', 'development', 'beta', 'dev', 'nightly']) {
+    config.channel = channel
+    branding.update()
+  }
+  config.targetOS = originalTarget
+  config.channel = originalChannel
+  util.runGit = originalGit
+}
 process.stdout.write(JSON.stringify({
+  generated_copies: [...generatedCopies.values()],
+  dependency_variables: {
+    host_os: process.platform === 'darwin' ? 'mac' : process.platform,
+    host_cpu: process.arch === 'ia32' ? 'x86' : process.arch,
+    checkout_mac: process.platform === 'darwin' || targets.includes('mac'),
+    checkout_linux: process.platform === 'linux' || targets.includes('linux'),
+    checkout_win: process.platform === 'win32' || targets.includes('win'),
+    checkout_android: targets.includes('android'),
+    checkout_ios: targets.includes('ios'),
+    ...(retained ? existing.solutions?.find(s => s.name === 'src')?.custom_vars : config.chromiumCustomVars),
+  },
+  custom_dependencies: retained ? existing.solutions?.find(s => s.name === 'src')?.custom_deps : config.chromiumCustomDeps,
   chromium_ref: config.getProjectRef('chrome'),
   gclient_changed: gclientChanged,
   gclient_timestamp: fs.existsSync(config.gclientFile) ? fs.statSync(config.gclientFile).mtimeMs.toString() : null,
@@ -84,6 +126,7 @@ process.stdout.write(JSON.stringify({
   chromium_option: options.sync_chromium ?? null,
   force: Boolean(options.init || options.force),
   hooks: !options.nohooks,
+  lean_sync: Boolean(options.lean_sync),
   core_unmanaged: !retained || (existing.solutions?.some(s => s.name === 'src/brave' && s.managed === false)
     && braveConfig.solutions?.some(s => s.name === '.' && s.managed === false)),
   delete_trees: Boolean(config.gclientGlobalVars.delete_unversioned_trees),
