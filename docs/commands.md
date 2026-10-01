@@ -26,8 +26,7 @@ look, and what the codes mean. Only delivered commands appear here.
   These options must precede the first program argument for `bpm` and `vpython3`;
   use `--` to forward a conflicting option to a package command.
 - Set `[logging] verbosity = "normal"` (or `"quiet"` / `"verbose"`) in configuration
-  for a persistent default. CLI verbosity wins. The legacy `commands = false` hides
-  console command lines unless an explicit verbosity setting overrides it.
+  for a persistent default. CLI verbosity wins.
 - Each configured invocation saves a mode-0600 log under `.bdev/logs/` beside its
   configuration, at every verbosity level. `--plan` previews create no log files.
   Pure `env export` also creates no log and remains silent on stderr. The final stderr line reports elapsed

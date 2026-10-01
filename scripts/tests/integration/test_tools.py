@@ -95,8 +95,8 @@ class PackageExecutionTests(SandboxTest):
         received = self.sandbox.records()[0]["argv"]
         self.assertIn("--token=hunter2", received, "redaction applies to logs only")
 
-    def test_command_log_opt_out_keeps_results(self):
-        self.sandbox.config.write_text(self.sandbox.config.read_text() + "\n[logging]\ncommands = false\n")
+    def test_quiet_configuration_keeps_results(self):
+        self.sandbox.config.write_text(self.sandbox.config.read_text() + "\n[logging]\nverbosity = \"quiet\"\n")
         result = self.sandbox.bdev("--json", "--config", self.config, "--checkout", "main", "run", "x",
                                    tool="bpm")
         self.assertNotIn("Current directory", result.stderr)

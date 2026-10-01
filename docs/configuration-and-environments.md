@@ -16,13 +16,25 @@ This is different from the normal checkout writes of work you request. Commands
 such as `bdev tools setup` (and, when they ship, builds and syncs) change the
 checkout as their purpose; each command's help states its side effects.
 
+## Console output
+
+Set the default in `brave-scaffold.toml`:
+
+```toml
+[logging]
+verbosity = "normal"
+```
+
+Choose `quiet`, `normal`, or `verbose`. Command-line `--quiet`, `--verbose`, or
+`--verbosity normal` overrides the file for that invocation. Saved diagnostic
+logs do not depend on the selected console level.
+
 ## Fields
 
 | Field | Meaning | Default |
 | --- | --- | --- |
 | `schema_version` | Configuration format version. Must be `1`. | required |
 | `logging.verbosity` | Console detail: `quiet`, `normal`, or `verbose`; CLI flags override it. | `"normal"` |
-| `logging.commands` | Legacy switch for console command lines. `false` hides them; explicit verbosity overrides it. Saved logs are unaffected. | `true` |
 | `defaults.platform` | Target used when no target is named: `mac`, `macos`, or `android`. | the host platform |
 | `defaults.android_device` | Device id used when several Android devices are usable and `--device` is not given. | none |
 | `checkouts[].core` | Absolute path to the checkout's `src/brave` directory. Stored once. | required |

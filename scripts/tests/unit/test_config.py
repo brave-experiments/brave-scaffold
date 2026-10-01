@@ -35,7 +35,7 @@ class ConfigTests(unittest.TestCase):
                            '[[checkouts]]\nalias = "main"\ncore = "/work/a/src/brave"\ndirenv_dir = "environments/main"\n')
         self.assertEqual(config.default_platform, "macos")
         self.assertEqual(config.checkouts[0].direnv_dir, self.dir / "environments" / "main")
-        self.assertTrue(config.commands_logging)
+        self.assertEqual(config.verbosity, "normal")
 
     def test_missing_default_file_is_empty_but_an_explicit_missing_file_is_an_error(self):
         self.assertFalse(config_module.load_config(self.path).exists)
@@ -45,7 +45,7 @@ class ConfigTests(unittest.TestCase):
     def test_unknown_fields_wrong_types_and_versions_name_the_field_and_an_example(self):
         self.fails("schema_version = 2\n", "schema_version")
         self.fails("schema_version = 1\nbogus = 1\n", "bogus")
-        self.fails("schema_version = 1\n[logging]\ncommands = 'yes'\n", "logging.commands")
+        self.fails("schema_version = 1\n[logging]\ncommands = true\n", "logging.commands")
         self.fails('schema_version = 1\n[defaults]\nplatform = "linux"\n', "defaults.platform")
         error = self.fails('schema_version = 1\n[[checkouts]]\ncore = "relative/path"\n', "checkouts[0].core")
         self.assertIn("example", error.details)
@@ -63,7 +63,7 @@ class ConfigTests(unittest.TestCase):
         self.fails(base + '[[checkouts]]\ncore = "/y/src/brave"\ndirenv_dir = "e/a"\n', "checkouts[1].direnv_dir")
 
     def test_upsert_adds_then_extends_one_record_without_touching_other_text(self):
-        original = '# my notes\nschema_version = 1\n\n[logging]\ncommands = false\n\n' \
+        original = '# my notes\nschema_version = 1\n\n[logging]\nverbosity = "quiet"\n\n' \
                    '[[checkouts]]\ncore = "/x/src/brave"\n\n[[checkouts]]\nalias = "b"\ncore = "/y/src/brave"\n'
         self.path.write_text(original)
         self.assertEqual(config_module.upsert_checkout(self.path, "/x/src/brave", alias="a"), "updated")
@@ -75,7 +75,7 @@ class ConfigTests(unittest.TestCase):
         config = config_module.load_config(self.path)
         self.assertEqual([(c.alias, c.direnv_dir_text) for c in config.checkouts],
                          [("a", "environments/a"), ("b", None)])
-        self.assertFalse(config.commands_logging)
+        self.assertEqual(config.verbosity, "quiet")
         self.assertIn('alias = "b"\ncore = "/y/src/brave"\n', text)
 
     def test_upsert_creates_the_file_and_refuses_to_replace_a_different_alias(self):

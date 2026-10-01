@@ -195,7 +195,7 @@ class RecordLifecycleTests(RecordCase, BuildTestCase):
                           record["details"]["arch"]), ("mac", "Debug", "arm64"))
         self.assertEqual(record["child_exit_code"], 0)
         self.assertTrue(record["commands"])
-        self.sandbox.config.write_text(self.sandbox.config.read_text() + "\n[logging]\ncommands = false\n")
+        self.sandbox.config.write_text(self.sandbox.config.read_text() + "\n[logging]\nverbosity = \"quiet\"\n")
         _, document = self.document("build")
         record = self.record_of(document)
         self.assertEqual(record["logs"]["commands"], "diagnostic")

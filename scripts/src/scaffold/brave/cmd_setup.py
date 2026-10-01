@@ -23,7 +23,7 @@ from ..common.procs import run_capture, run_streaming
 from ..common.results import Result, ScaffoldError
 from . import gitstate, records
 
-MINIMAL_CONFIG = "schema_version = 1\n\n[logging]\ncommands = true\n"
+MINIMAL_CONFIG = 'schema_version = 1\n\n[logging]\nverbosity = "normal"\n'
 GENERATED_MARKER = env_module.GENERATED_MARKER
 
 

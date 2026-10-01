@@ -19,13 +19,13 @@ from scaffold.common.results import Result, ScaffoldError
 
 
 class VerbosityTests(unittest.TestCase):
-    def invoke(self, level, code, **environment):
+    def invoke(self, level, code, use_config=False, **environment):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         root = Path(directory.name)
         path = root / 'config.toml'
-        path.write_text('schema_version = 1\n[logging]\nverbosity = "normal"\n')
-        parsed = cli.Parsed(values={'config': str(path), 'verbosity': level})
+        path.write_text('schema_version = 1\n[logging]\nverbosity = "%s"\n' % (level if use_config else 'normal'))
+        parsed = cli.Parsed(values={'config': str(path), **({} if use_config else {'verbosity': level})})
         out, err = io.StringIO(), io.StringIO()
         def handler(ctx):
             procs.run_capture([sys.executable, '-c', "import os; print(os.environ['PROBE_PAYLOAD'])"],
@@ -161,3 +161,12 @@ class VerbosityTests(unittest.TestCase):
             for i in range(4):
                 log.progress('dependency %d' % i)
         self.assertEqual(stream.getvalue().splitlines(), ['dependency 0', 'dependency 3'])
+
+    def test_file_alone_selects_each_console_level(self):
+        for level in ('quiet', 'normal', 'verbose'):
+            with self.subTest(level=level):
+                rc, out, err, saved = self.invoke(level, "print('from' + ' child')", use_config=True)
+                self.assertEqual(rc, 0)
+                self.assertEqual('from child' in out, level != 'quiet')
+                self.assertEqual('PROBE_PAYLOAD' in err, level == 'verbose')
+                self.assertIn('from child', saved)
