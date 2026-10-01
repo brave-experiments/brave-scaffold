@@ -161,6 +161,9 @@
         "revisions_after": {
           "type": "object"
         },
+        "overwrite_backup": {
+          "type": "string"
+        },
         "scope": {
           "type": "object",
           "required": [

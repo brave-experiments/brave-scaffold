@@ -27,6 +27,8 @@ SOURCE = Opt("--source", "source", metavar="URL_OR_PATH", help="Support reposito
 REF = Opt("--ref", "ref", metavar="REF", help="Support repository branch, tag, or commit for this checkout only.")
 ADOPT = Opt("--adopt-local-changes", "adopt_local_changes", takes_value=False,
             help="Disabled: blanket adoption cannot establish which local changes may be discarded.")
+OVERWRITE = Opt("--overwrite-local-changes", "overwrite_local_changes", takes_value=False,
+                help="Back up and overwrite the listed local file changes for this sync only.")
 DIFF = Opt("--diff", "diff", takes_value=False, help="Print the Git diff of each drifted file.")
 TARGET = Positional("target", help="mac or android (default: configured platform, else this host).")
 BUILD_SIDE_EFFECTS = ("Writes the build output under the checkout's src/out, applies Core patches when they are "
@@ -98,17 +100,18 @@ def build_registry():
                     examples=("bdev br",)),
         CommandSpec("sync", "Run the supported Core source sync.", cmd_build.cmd_sync,
                     positionals=(Positional("targets", help="Comma-separated targets: mac, android."),),
-                    options=(PLAN, ADOPT), forward=True,
+                    options=(PLAN, ADOPT, OVERWRITE), forward=True,
                     side_effects="Updates the checkout's sources and dependencies. Stops first if local work "
-                                 "could be overwritten. Mobile targets keep the checkout's existing target_os values.",
+                                 "could be overwritten; interactive use offers backup and overwrite approval. "
+                                 "Mobile targets keep the checkout's existing target_os values.",
                     examples=("bdev sync", "bdev sync mac,android --plan")),
         CommandSpec("sync-build", "Sync, then build; stops at the first failed phase.", cmd_build.cmd_sync_build,
-                    aliases=("sb",), positionals=(TARGET,), options=(CONFIGURATION, OFFLINE, FORCE_GN, PLAN, ADOPT),
+                    aliases=("sb",), positionals=(TARGET,), options=(CONFIGURATION, OFFLINE, FORCE_GN, PLAN, ADOPT, OVERWRITE),
                     forward=True, side_effects="Sync effects, then build effects.", examples=("bdev sb",),
                     notes="Extra arguments go to the build phase only."),
         CommandSpec("sync-build-run", "Sync, build, then restart the browser with the built output.",
                     cmd_build.cmd_sync_build_run, aliases=("sbr",), positionals=(TARGET,),
-                    options=(CONFIGURATION, OFFLINE, FORCE_GN, PLAN, DEVICE, ADOPT), forward=True,
+                    options=(CONFIGURATION, OFFLINE, FORCE_GN, PLAN, DEVICE, ADOPT, OVERWRITE), forward=True,
                     side_effects="Sync, build, and restart effects.", examples=("bdev sbr",),
                     notes="Extra arguments go to the build phase only."),
         CommandSpec("test", "Compile if needed and run one test suite (macOS).", cmd_build.cmd_test,

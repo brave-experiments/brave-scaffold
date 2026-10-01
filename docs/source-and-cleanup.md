@@ -67,7 +67,7 @@ paths, a branch reset, changed reset code, or lean sync retain the conservative
 untracked-file guard. When depot_tools would auto-update, the reset code may
 change after inspection. Setting `DEPOT_TOOLS_UPDATE=0` for the invocation can
 keep a reviewed existing version in use; it does not bypass a required depot_tools
-reinstallation, changed source checks, or file conflicts. Scaffold does not stash, discard, or roll back edits.
+reinstallation, changed source checks, or file conflicts. Scaffold does not stash or roll back edits. It removes local changes only after the overwrite approval below.
 Options that delete unused dependencies or unversioned trees remain blocked when
 their complete deletion scope is unknown. CI's automatic dependency deletion and
 custom gclient solution/deletion settings also stop before dispatch.
@@ -91,6 +91,54 @@ They never excuse staged content threatened by a reset. A successful sync record
 new output and retains matching prior output evidence. It does not adopt unchanged
 local edits that the operation preserved. Older records without a successful-sync
 origin remain on disk but cannot excuse local work.
+
+### Approving overwrites
+
+When sync finds local file changes it may overwrite, an interactive terminal lists
+each file once with its reasons and asks:
+
+```text
+Overwrite these changes? [y/N] (d: show diffs):
+```
+
+Enter `d` to see the working and staged diffs, `y` to approve, or anything else
+to stop. An empty answer or end of input stops without changing files. The prompt
+uses stderr. JSON output and commands without an interactive terminal never prompt;
+they stop with the file list unless you explicitly use:
+
+```sh
+bdev sync --checkout main --overwrite-local-changes
+```
+
+Review `bdev sync --plan` first when using the flag. Approval covers only the
+listed files for this invocation. `sync-build` and `sync-build-run` accept the
+same option for their sync phase. `--plan` never backs up or overwrites files,
+even with the option.
+
+Before removing changes, sync checks the scope, file bytes, modes, HEAD and staged
+entries again. If they changed during review, it stops for a new review. It saves
+the approved working files, binary-capable Git diffs, staged diffs and a manifest
+under `.bdev/backups/<operation-id>/sync-overwrite/`, outside Core. The result and
+operation record include the backup path, which is also printed before overwriting.
+Backups remain after success, failure or interruption and are not pruned with
+operation records. They hold original file content, which may include secrets;
+keep them private.
+
+Sync restores approved tracked files and staged entries to HEAD and removes
+approved untracked files, then repeats its preservation checks before running
+Core's sync. Other changes stay in place. This can remove Android support edits;
+the Android build must prepare support again afterwards. It does not grant a
+permanent exception for these files or record them as generated output.
+
+To recover, consult `manifest.json` for repository paths and numbered backup
+directories. Each `worktree/` directory contains the original existing files and
+modes; missing files are recorded in the manifest. `staged.patch` can restore the
+saved staged changes with `git apply --cached` against the recorded HEAD. Review
+current files before restoring; recovery is manual and never runs automatically.
+
+Unknown write scope, local commits, merge conflicts, and symlink or non-file
+conflicts still block sync, even with overwrite approval. Dependency deletion
+options with unknown scope remain blocked.
 
 `--adopt-local-changes` remains disabled. It saves no approval baseline and starts
 no sync. No separate approval mechanism is needed to preserve work outside the

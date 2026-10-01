@@ -11,7 +11,7 @@ from pathlib import Path
 
 from ..common import tools as tools_module
 from ..common.results import ScaffoldError, repair
-from . import android_deps, freshness, packages, patches, steps as step_module, sync_scope, sync_model
+from . import android_deps, freshness, packages, patches, steps as step_module, sync_scope, sync_model, sync_overwrite
 
 
 def gclient_targets(identity):
@@ -115,13 +115,31 @@ def do_sync_phase(ctx, execution, op, target, forwarded):
     reject_deletion_options(identity, forwarded)
     arguments = sync_arguments(ctx, target, forwarded, identity)
     model = sync_model.inspect(identity, execution.toolchain, arguments, execution.environ, ctx.log)
-    conflicts = local_work_conflicts(ctx, identity, model)
+    conflicts = sync_overwrite.unique_conflicts(local_work_conflicts(ctx, identity, model))
+    backup = None
+
+    def recheck():
+        current_model = sync_model.inspect(identity, execution.toolchain, arguments, execution.environ, ctx.log)
+        current_conflicts = local_work_conflicts(ctx, identity, current_model)
+        if current_model.detail() != model.detail():
+            raise ScaffoldError("PREPARATION_CONFLICT", "Sync scope changed during review; nothing was overwritten.")
+        return current_conflicts
+
     if conflicts:
+        backup = sync_overwrite.approve(ctx, identity, model, conflicts, op,
+                                       recheck)
+    if conflicts and backup is None:
         raise ScaffoldError("PREPARATION_CONFLICT",
                             "Sync blocked: %d Chromium/dependency paths need preservation checks; nothing was changed. "
                             "These paths are relative to the Chromium source root, not brave-core." % len(conflicts),
-                            details={"files": conflicts[:50], "total": len(conflicts), "scope": model.detail(), "path_base": str(identity.src), "core": str(identity.core)},
-                            repairs=[repair(["bdev", "drift", "--diff", "--checkout", str(identity.core)])])
+                            details={"files": conflicts, "total": len(conflicts), "scope": model.detail(), "path_base": str(identity.src), "core": str(identity.core)},
+                            repairs=[repair(["bdev", "sync", "--checkout", str(identity.core), "--overwrite-local-changes"],
+                                            note="Review the listed files first; backs up their changes before overwriting.")])
+    if backup is not None:
+        remaining = local_work_conflicts(ctx, identity, model)
+        if remaining:
+            raise ScaffoldError("PREPARATION_CONFLICT", "Sync still has preservation conflicts after backing up approved files.",
+                                details={"files": remaining, "backup": backup})
     before_files = sync_scope.snapshot(identity, sync_scope.sync_repositories(identity), ctx.log, include_core=True)
     before = {"core_head": freshness.resolve_head(identity.core, ctx.log),
               "chromium_head": freshness.resolve_head(identity.src, ctx.log)}
@@ -139,14 +157,15 @@ def do_sync_phase(ctx, execution, op, target, forwarded):
         sync_scope.checkpoint(identity, ctx.state_root, ctx.log, before=before_files)
     except ScaffoldError as error:
         op.note("sync-checkpoint", outcome="not recorded", reason=error.message)
-    return {"argv": argv, "revisions_before": before, "revisions_after": after, "scope": model.detail()}
+    return {"argv": argv, "revisions_before": before, "revisions_after": after, "scope": model.detail(),
+            **({"overwrite_backup": backup} if backup else {})}
 
 
 def plan_step(ctx, identity, arguments, toolchain, needs=()):
     """Read-only scope and preservation checks, repeated with the approved environment at execution."""
     model = sync_model.inspect(identity, toolchain, arguments, ctx.environ, ctx.log)
     try:
-        conflicts = local_work_conflicts(ctx, identity, model)
+        conflicts = sync_overwrite.unique_conflicts(local_work_conflicts(ctx, identity, model))
     except ScaffoldError as error:
         conflicts = [{"path": error.details.get("repository", str(identity.core)), "reason": error.message}]
     return step_module.sync_step(identity, arguments,

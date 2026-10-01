@@ -92,6 +92,12 @@ look, and what the codes mean. Only delivered commands appear here.
 | `bdev vpython3 [options] [--] <args>` | Checkout-local Python | Whatever the program does |
 | `bpm [options] <package args>` | Checkout's package manager | Whatever the package command does |
 
+Sync commands offer an interactive overwrite prompt for known local file conflicts.
+For noninteractive use, `--overwrite-local-changes` explicitly approves backing up
+and removing the listed changes for that invocation. JSON output never prompts;
+`--plan` never overwrites. See [overwrite approval](source-and-cleanup.md#approving-overwrites)
+for backups, recovery, and conflicts that still block sync.
+
 ### Forwarding to package commands
 
 `build`, `test`, `sync`, `sync-build`, `sync-build-run`, `build-run`, and

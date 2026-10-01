@@ -44,6 +44,23 @@ class SyncScopeTests(BuildTestCase):
         self.assert_sync_stops("chrome/unpatched.cc")
         self.assertEqual((self.src / "chrome" / "unpatched.cc").read_text(), "my experiment\n")
 
+    def test_overwrite_plan_never_changes_files_or_saves_backups(self):
+        wanted = self.src / "chrome" / "unpatched.cc"
+        wanted.write_text("my work\n")
+        result, document = self.document("sync", "--force", "--overwrite-local-changes", "--plan")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(wanted.read_text(), "my work\n")
+        self.assertEqual(self.node_calls(), [])
+        self.assertFalse((self.sandbox.config.parent / '.bdev/backups').exists())
+        self.assertEqual(document['data']['plan']['steps'][-1]['status'], 'blocked')
+
+    def test_overwrite_cannot_bypass_unknown_scope(self):
+        (self.workspace / ".gclient_entries").write_text("entries = not python\n")
+        result, document = self.document("sync", "--force", "--overwrite-local-changes")
+        self.assertEqual(result.returncode, 4, result.stderr)
+        self.assertIn('unknown sync write scope', document['error']['message'])
+        self.assertEqual(self.node_calls(), [])
+
     def test_a_staged_chromium_edit_stops_the_sync(self):
         (self.src / "chrome" / "unpatched.cc").write_text("staged\n")
         git(self.src, "add", "chrome/unpatched.cc")
