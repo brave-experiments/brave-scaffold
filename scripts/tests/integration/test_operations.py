@@ -32,6 +32,18 @@ class RecordCase:
 
 @unittest.skipIf(SKIP, "needs direnv on a macOS host")
 class RecordLifecycleTests(RecordCase, BuildTestCase):
+    def test_json_build_logs_each_dependency_command_and_directory(self):
+        from scaffold.common.procs import format_command_block
+        repositories = [self.sandbox.add_dependency("main", relative) for relative in ("v8", "third_party/ffmpeg")]
+        result, document = self.document("build")
+        self.assertEqual((result.returncode, document["status"]), (0, "ok"))
+        for repository in repositories:
+            for args in (["rev-parse", "--verify", "--quiet", "HEAD^{commit}"],
+                         ["status", "--porcelain", "-z", "--untracked-files=no"]):
+                argv = ["git", "--literal-pathspecs", "-C", str(repository), *args]
+                self.assertIn(format_command_block(argv, str(repository)), result.stderr)
+        self.assertNotIn("Command:", result.stdout)
+
     def test_a_failed_test_run_is_recorded_with_its_dispatch_child_status_and_id(self):
         result, document = self.document("test", "brave_unit_tests", env=self.env(FAKE_EXIT="2"))
         self.assertEqual(document["error"]["code"], "CHILD_FAILED")

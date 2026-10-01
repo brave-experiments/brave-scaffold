@@ -6,7 +6,6 @@
 
 from __future__ import annotations
 
-import contextlib
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -16,11 +15,6 @@ from ..common.results import ScaffoldError
 
 
 EVIDENCE_BYTES = 64 << 20
-
-
-def sweep(log, description):
-    """Summarise the terminal blocks of a pass over many repositories (every command is still recorded)."""
-    return log.sweep(description) if log is not None else contextlib.nullcontext()
 
 
 def _git(repo, args, log, timeout=120):

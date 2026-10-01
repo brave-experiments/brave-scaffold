@@ -73,19 +73,18 @@ def dependency_state(identity, log=None):
     if not scope.complete:
         return None, None
     heads, changes = hashlib.sha256(), hashlib.sha256()
-    with gitstate.sweep(log, "revision and tracked changes of each dependency repository"):
-        for repo in sorted(item for item in scope.repositories if item not in (identity.src, identity.core)):
-            head = gitstate.head_commit(repo, log)
-            try:
-                changed = gitstate.tracked_changes(repo, log)
-            except ScaffoldError:
-                return None, None
-            if head is None:
-                return None, None
-            label = os.path.relpath(repo, identity.src)
-            heads.update(("%s=%s\n" % (label, head)).encode())
-            for name in sorted(changed):
-                changes.update(("%s/%s=%s\n" % (label, name, _file_signature(repo / name))).encode())
+    for repo in sorted(item for item in scope.repositories if item not in (identity.src, identity.core)):
+        head = gitstate.head_commit(repo, log)
+        try:
+            changed = gitstate.tracked_changes(repo, log)
+        except ScaffoldError:
+            return None, None
+        if head is None:
+            return None, None
+        label = os.path.relpath(repo, identity.src)
+        heads.update(("%s=%s\n" % (label, head)).encode())
+        for name in sorted(changed):
+            changes.update(("%s/%s=%s\n" % (label, name, _file_signature(repo / name))).encode())
     return heads.hexdigest(), changes.hexdigest()
 
 

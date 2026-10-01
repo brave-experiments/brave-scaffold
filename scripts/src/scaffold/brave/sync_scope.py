@@ -89,14 +89,13 @@ def snapshot(identity, scope, log=None, include_core=False):
     A deleted file has a checksum of None. Raises when Git cannot inspect a repository completely.
     """
     found = {}
-    with gitstate.sweep(log, "tracked changes in each repository"):
-        for repository in scope.repositories:
-            if repository == identity.core and not include_core:
-                continue
-            files = {relative: sha256_or_none(repository / relative)
-                     for relative in gitstate.tracked_changes(repository, log)}
-            if files:
-                found[_label(identity, repository)] = files
+    for repository in scope.repositories:
+        if repository == identity.core and not include_core:
+            continue
+        files = {relative: sha256_or_none(repository / relative)
+                 for relative in gitstate.tracked_changes(repository, log)}
+        if files:
+            found[_label(identity, repository)] = files
     return found
 
 

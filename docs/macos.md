@@ -125,9 +125,8 @@ answer within its time bound, a dependency repository cannot be inspected, or th
 dependency list is unreadable), or a record written before an input was compared,
 makes the result `unknown`. A match is reported as `current` with the limits stated in
 its evidence: untracked files are not tracked, and nothing hashes the whole tree.
-Checking every dependency repository runs one Git status per repository; the
-terminal shows the first command and a count, and the operation record keeps all of
-them.
+Checking each dependency repository logs every effective Git command and its
+working directory. The operation record keeps the same redacted commands.
 
 `sync-build` and `sync-build-run` (aliases `sb`, `sbr`) run the sync phase first and
 send extra arguments to the build phase only. See
