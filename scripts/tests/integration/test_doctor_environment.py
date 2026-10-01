@@ -52,6 +52,7 @@ class DoctorEnvironmentTests(BuildTestCase):
         self.assertTrue(sdk and all(check["status"] == "not_checked" for check in sdk), sdk)
 
     def test_machine_checks_still_run_without_a_selected_checkout(self):
+        self.sandbox.write_config([])
         result = self.sandbox.bdev("--json", "--config", self.config, "doctor", "mac", env=self.env(),
                                    cwd=self.sandbox.root)
         document = json.loads(result.stdout)

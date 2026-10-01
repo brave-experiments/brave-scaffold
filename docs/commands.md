@@ -264,11 +264,17 @@ JSON keeps the status words), marked required or optional. Without a scope it
 runs every delivered scope. A blocker in a required check gives
 `READINESS_BLOCKED`; otherwise an unevaluated required check gives
 `READINESS_INCOMPLETE`; both exit `3`. Optional problems are warnings and do not
-fail readiness. Machine checks run even when no checkout is selected; the
-checkout checks are then `not_checked`. Checking a selected checkout evaluates its
+fail readiness. Outside a checkout, doctor inspects every configured checkout and runs shared
+runtime, shell, and signing checks once. Each checkout uses its own approved
+environment and gets a separate report; any required failure makes the overall
+command fail. JSON includes per-checkout reports in `data.checkouts`, with
+checkout-qualified names in the top-level checks and error summary.
+An explicit `--checkout` limits inspection to that checkout; running inside a
+checkout selects it instead. With no configured or selected checkout, machine
+checks still run and checkout checks are `not_checked`. Checking a selected checkout evaluates its
 approved environment. Text reports group checks by area, show shared checks once,
-and end with a readiness summary and distinct repair suggestions. Without a
-selected checkout, dependent checks appear as one selection notice in text;
+and end with a readiness summary and distinct repair suggestions. With no
+configured or selected checkout, dependent checks appear as one selection notice in text;
 JSON retains each unevaluated check. Select one explicitly with
 `bdev --checkout <alias> doctor`. Signing checks inspect configuration; they do
 not prove that a signing attempt will succeed.

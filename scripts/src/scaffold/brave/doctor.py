@@ -10,14 +10,14 @@ import os
 import shutil
 import shlex
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from ..common import env as env_module
 from ..common import identity as identity_module
 from ..common import tools as tools_module
-from ..common.checks import (BLOCKER, MARKER_LEGEND, MARKERS, NOT_CHECKED, PASS, UNSUPPORTED, WARNING, make_check,
-                             readiness_error)
+from ..common.checks import (BLOCKER, MARKER_LEGEND, MARKERS, NOT_CHECKED, PASS, UNSUPPORTED, WARNING,
+                             CheckResult, make_check, readiness_error)
 from ..common.platforms import host_architecture, host_platform
 from ..common.procs import run_capture
 from ..common.results import Result, ScaffoldError, error_result, repair
@@ -282,6 +282,58 @@ def run_doctor(ctx):
     for scope in scopes:
         for group in scopes_map[scope]:
             groups.setdefault(group, []).append(scope)
+    if (any(group not in MACHINE_GROUPS for group in groups)
+            and not ctx.parsed.get("checkout") and ctx.config.checkouts
+            and ctx.identity(required=False, validate=False) is None):
+        return all_checkout_reports(ctx, scopes, groups)
+    return evaluate_checks(ctx, scopes, groups)
+
+
+def all_checkout_reports(ctx, scopes, groups):
+    """Inspect registered checkouts independently; shared caller-environment checks run once."""
+    shared = {group: values for group, values in groups.items() if group in MACHINE_GROUPS}
+    dependent = {group: values for group, values in groups.items() if group not in MACHINE_GROUPS}
+    result = evaluate_checks(ctx, scopes, shared)
+    reports = []
+    texts = [result.text.removesuffix("\n\n" + MARKER_LEGEND).replace(
+        "🩺 Brave setup doctor", "🩺 Brave setup doctor — shared checks", 1)]
+    for record in ctx.config.checkouts:
+        label = record.alias or record.core
+        try:
+            identity = identity_module.build_identity(record.core_real, ctx.config, "configured", alias=record.alias)
+            report = evaluate_checks(replace(ctx, selected=identity), scopes, dependent)
+            report.context = identity.to_context()
+        except ScaffoldError as error:
+            check = _check("checkout-inspection", BLOCKER, error.message, scopes[0],
+                           repairs=error.repairs, code=error.code, **error.details)
+            report = error_result("doctor", readiness_error([check]))
+            report.checks = [check.to_dict()]
+            report.text = render_text(scopes, [check])
+        reports.append({"alias": record.alias, "core": str(record.core_real),
+                        "status": report.status, "exit_code": report.exit_code,
+                        "checks": report.checks, "error": report.error, "warnings": report.warnings})
+        texts.append(report.text.removesuffix("\n\n" + MARKER_LEGEND).replace(
+            "🩺 Brave setup doctor", "Checkout: %s — %s" % (label, record.core_real), 1))
+        for check in report.checks:
+            tagged = dict(check, name="%s/%s" % (label, check["name"]))
+            tagged["evidence"] = dict(check["evidence"], checkout=str(record.core_real), alias=record.alias)
+            result.checks.append(tagged)
+        result.warnings.extend(dict(warning, message="%s: %s" % (label, warning["message"]))
+                               for warning in report.warnings)
+    combined = [CheckResult(**check) for check in result.checks]
+    error = readiness_error(combined)
+    result.data["checkouts"] = reports
+    if error:
+        result.status, result.exit_code = "error", error.exit_code
+        result.error = {"code": error.code, "message": error.message,
+                        "details": error.details, "repairs": error.repairs}
+    texts.append("Overall: %s." % ("readiness blocked" if error and error.code == "READINESS_BLOCKED" else
+                                     "readiness incomplete" if error else "required checks passed"))
+    result.text = "\n\n".join([*texts, MARKER_LEGEND])
+    return result
+
+
+def evaluate_checks(ctx, scopes, groups):
     checks = []
     state = checkout_state(ctx) if any(group not in MACHINE_GROUPS for group in groups) else CheckoutState()
     for group, group_scopes in groups.items():

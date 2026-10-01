@@ -40,6 +40,34 @@ class DoctorTests(SandboxTest):
         repairs = document["error"]["repairs"]
         self.assertEqual(len(repairs), len({json.dumps(step, sort_keys=True) for step in repairs}))
 
+    def two_checkouts(self):
+        second = self.sandbox.make_checkout("second")
+        self.sandbox.prepare_environment("second")
+        self.sandbox.write_config([("main", self.core, "environments/main"),
+                                   ("second", second, "environments/second")])
+        return second
+
+    def test_outside_checkout_checks_all_and_keeps_failures_separate(self):
+        second = self.two_checkouts()
+        (self.core / "third_party/node/node-mac-arm64/bin/node").unlink()
+        before = tree_snapshot(second.parents[3])
+        result, document = self.doctor("mac")
+        self.assertEqual(result.returncode, 3)
+        reports = document["data"]["checkouts"]
+        self.assertEqual([(r["alias"], r["status"]) for r in reports], [("main", "error"), ("second", "ok")])
+        self.assertEqual(sum(c["name"] == "scaffold-runtime" for c in document["checks"]), 1)
+        self.assertIn("main/local-tools", document["error"]["details"]["blocking"])
+        self.assertIsNone(document["context"]["checkout"])
+        self.assertEqual(before, tree_snapshot(second.parents[3]))
+
+    def test_explicit_and_cwd_selection_limit_inspection(self):
+        second = self.two_checkouts()
+        for args, cwd in [(("mac", "--checkout", "second"), self.sandbox.root), (("mac",), second)]:
+            result, document = self.doctor(*args, cwd=cwd)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertNotIn("checkouts", document["data"])
+            self.assertEqual(document["context"]["checkout"], str(second))
+
     def test_all_required_checks_pass(self):
         result, document = self.doctor("mac", "--checkout", "main")
         self.assertEqual((result.returncode, document["status"], document["error"]), (0, "ok", None))
@@ -66,6 +94,7 @@ class DoctorTests(SandboxTest):
         self.assertTrue(local["repairs"])
 
     def test_unchecked_required_checks_are_incomplete_but_machine_evidence_remains(self):
+        self.sandbox.write_config([])
         result, document = self.doctor("mac", cwd=self.sandbox.root)
         self.assertEqual((result.returncode, document["error"]["code"]), (3, "READINESS_INCOMPLETE"))
         statuses = self.statuses(document)
@@ -76,6 +105,7 @@ class DoctorTests(SandboxTest):
         self.assertIn("--checkout", json.dumps(selection["evidence"]))
 
     def test_blocker_takes_precedence_over_unchecked(self):
+        self.sandbox.write_config([])
         env = self.sandbox.env(PATH=str(self.sandbox.bin) + ":/nonexistent")
         result, document = self.doctor("mac", cwd=self.sandbox.root, env=env)
         self.assertEqual(document["error"]["code"], "READINESS_BLOCKED")
@@ -111,6 +141,7 @@ class DoctorTests(SandboxTest):
         self.assertEqual([r for r in self.sandbox.records() if r["tool"] == "installer"], [])
 
     def test_text_mode_matches_the_json_verdict(self):
+        self.sandbox.write_config([])
         result = self.sandbox.bdev("--config", self.config, "doctor", "mac", cwd=self.sandbox.root)
         self.assertEqual(result.returncode, 3)
         self.assertIn("Readiness incomplete:", result.stdout)

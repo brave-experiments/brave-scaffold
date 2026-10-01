@@ -115,6 +115,7 @@ class RbeCheckTests(SandboxTest):
         self.assertEqual(self.status(document)["services-key"], "pass")
 
     def test_no_checkout_keeps_machine_evidence_and_marks_config_unchecked(self):
+        self.sandbox.write_config([])
         result, document = self.doctor("rbe", cwd=self.sandbox.root)
         self.assertEqual((result.returncode, document["error"]["code"]), (3, "READINESS_INCOMPLETE"))
         unchecked = next(c for c in document["checks"] if c["name"] == "rbe-config")
