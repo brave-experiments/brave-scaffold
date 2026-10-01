@@ -197,22 +197,37 @@ installer. Run it only when you intend the checkout to change.
 
 ### Supported tool layout
 
-The scaffold reads one checkout layout and reports anything else as missing or unverifiable
-instead of guessing:
+The scaffold reads these checkout-local layouts and reports anything else as
+missing or unverifiable:
 
 | Piece | Where it looks |
 | --- | --- |
 | Package manager | `devEngines.packageManager` in Core's `package.json` (`npm` or `pnpm`). No declaration means an older npm checkout; a malformed or unsupported one is `DEPENDENCY_INCOMPATIBLE`. |
-| Node | `third_party/node/node-mac-<arm64\|x64>/bin/node`, inside the checkout. |
+| Node | `third_party/node/node-mac-<arm64\|x64>/bin/node`, or the versioned npm layout below, inside Core. |
 | npm | Inside the Node payload (`lib/node_modules/npm`); npm needs no separate payload. |
 | pnpm | `third_party/node/node_modules/pnpm`; only pnpm checkouts need it. |
 | `vpython3` | `vendor/depot_tools` in Core, else `third_party/depot_tools` in Chromium. Core's sync installs it. |
 | Verification | The checkout's own `tools/cr/extra_deps.py` says whether each required payload entry is deployed at its pinned version. Without it, or without the entry, the payload counts as unverified: a compatible version alone is not proof. |
 | Repair | `bdev tools setup` runs `tools/cr/tarball_installer.py` for exactly the entries the declared manager needs (Node for npm; Node and pnpm for pnpm), then inspects the same set again. It does not install `vpython3` or Android tools. |
 
-Older npm checkouts are supported when they carry the payload metadata and installer above.
-A checkout from before that metadata existed cannot be verified, so it is refused rather than
-run on tools whose pinning is unknown; how to support such checkouts is an open decision.
+Declaration-absent npm checkouts also support the versioned archive layout:
+`third_party/node/mac_arm64/node-v<version>-darwin-arm64` (x64 uses
+`mac/node-v<version>-darwin-x64`). `tools/cr/install_extra_deps.py` must declare
+one non-overlay Node archive in a literal `EXTRA_DEPS` entry for that host,
+with its SHA-256. Inspection reads that literal without importing the installer,
+checks its `_hash.stamp` against the declared SHA, and requires the actual Node
+version to match the archive version. Explicit `tools setup` invokes that
+checkout's `install_extra_deps.py` for its single Node entry, then repeats the
+checks. npm ships inside the Node archive; no pnpm payload is needed. Other
+layouts or missing pins remain unverified.
+
+Missing local `vpython3` requires manual restoration of depot_tools. Preserve
+local work, then restore a missing `vpython3` from that depot_tools repository's
+own HEAD. If the directory is absent or is not a Git repository, use Core's
+standalone setup to create a local depot_tools checkout. Scaffold sync and tools
+setup both need this interpreter before loading an environment, so neither is
+an automatic repair for its absence. The error supplies manual steps with an
+empty repair argv and `requires_user_action: true`.
 
 A tool counts as local only if it resolves, after following every link, inside the
 checkout itself: Node and the package manager inside Core, `vpython3` inside Chromium's source

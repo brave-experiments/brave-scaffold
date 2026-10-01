@@ -356,13 +356,90 @@ class ToolRepairTests(SandboxTest):
         self.assertEqual((result.returncode, document["error"]["code"], document["child_exit_code"]),
                          (5, "CHILD_FAILED", 7))
 
-    def test_a_missing_local_python_points_at_the_sync_that_installs_depot_tools(self):
+    def test_missing_local_python_gives_manual_restoration_without_a_circular_repair(self):
         core = self.checkout("modern")
-        shutil.rmtree(core / "vendor" / "depot_tools")
+        (core / "vendor/depot_tools/vpython3").unlink()
         result = self.sandbox.bdev("--json", "vpython3", "--checkout", "modern", "--config", self.config, "--", "a.py")
-        argv = [step["argv"][:3] for step in json.loads(result.stdout)["error"]["repairs"]]
-        self.assertNotIn(["bdev", "tools", "setup"], argv, "tools setup installs Node and the package manager only")
-        self.assertIn(["bdev", "sync", "--checkout"], argv)
+        document = json.loads(result.stdout)
+        self.assertEqual(result.returncode, 3, result.stderr)
+        (step,) = document["error"]["repairs"]
+        self.assertEqual(step["argv"], [], "no scaffold command can load this broken environment")
+        self.assertTrue(step["requires_user_action"])
+        self.assertIn("vpython3", step["note"])
+        self.assertIn(str(core / "vendor/depot_tools"), step["note"])
+        self.assertIn("restore", step["note"].lower())
+        self.assertEqual(self.sandbox.records(), [])
+
+
+@unittest.skipUnless(shutil.which("direnv"), "direnv is required")
+class VersionedNpmPayloadTests(SandboxTest):
+    ARCHIVE = "node-v24.17.0-darwin-arm64.tar.gz"
+    KEY = "src/brave/third_party/node/mac_arm64"
+    SHA = "4fc3266a3702eebc39cc37661cf4eeceeade307e242ab64e4d7ce7949197e11f"
+
+    def setUp(self):
+        super().setUp()
+        self.core = self.sandbox.make_checkout("older", declaration=False, payload_metadata=False,
+                                               node_version="v24.17.0")
+        self.destination = self.core / "third_party/node/mac_arm64"
+        self.destination.mkdir()
+        self.node_dir = self.destination / self.ARCHIVE.removesuffix(".tar.gz")
+        (self.core / "third_party/node/node-mac-arm64").rename(self.node_dir)
+        shutil.rmtree(self.core / "third_party/node/node_modules")
+        (self.core / "tools/cr/tarball_installer.py").unlink()
+        self.stamp = self.destination / ("." + self.ARCHIVE.replace(".", "_") + "_hash.stamp")
+        self.stamp.write_text(self.SHA + "\n")
+        manifest = {self.KEY: {"bucket": "https://brave-build-deps-public.s3.brave.com/nodejs/",
+                             "condition": 'host_os == "mac" and host_cpu == "arm64"',
+                             "objects": [{"object_name": self.ARCHIVE, "sha256sum": self.SHA}]}}
+        installer = ("#!%(python)s\nimport json, os, sys\nEXTRA_DEPS = " + repr(manifest) + "\n" +
+                     "if __name__ != '__main__': raise RuntimeError('inspection must not import installer')\n" +
+                     "assert sys.argv[1:] == [" + repr(self.KEY) + "]\n" +
+                     "with open(os.environ['FAKE_RECORD'], 'a') as stream:\n" +
+                     "    stream.write(json.dumps({'tool': 'installer', 'argv': sys.argv[1:]}) + '\\n')\n" +
+                     "open(" + repr(str(self.stamp)) + ", 'w').write(" + repr(self.SHA + "\n") + ")\n")
+        write_executable(self.core / "tools/cr/install_extra_deps.py", installer)
+        self.sandbox.prepare_environment("older")
+        self.config = str(self.sandbox.config)
+
+    def package(self):
+        return self.sandbox.bdev("--json", "--config", self.config, "--checkout", "older",
+                                 "run", "test", "--filter=x", tool="bpm")
+
+    def test_declaration_absent_versioned_payload_uses_its_own_npm_and_stamp(self):
+        result = self.package()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        (call,) = self.sandbox.records()
+        self.assertEqual(call["argv"], [str(self.node_dir / "lib/node_modules/npm/bin/npm-cli.js"),
+                                      "run", "test", "--", "--filter=x"])
+
+    def test_stale_versioned_payload_can_follow_the_emitted_repair(self):
+        self.stamp.write_text("stale\n")
+        result = self.package()
+        self.assertEqual(result.returncode, 3, result.stderr)
+        step = json.loads(result.stdout)["error"]["repairs"][0]
+        repaired = self.sandbox.bdev("--json", "--config", self.config, *step["argv"][1:])
+        self.assertEqual(repaired.returncode, 0, repaired.stderr)
+        installs = [r["argv"] for r in self.sandbox.records() if r["tool"] == "installer"]
+        self.assertEqual(installs, [[self.KEY]])
+        self.assertEqual(self.package().returncode, 0)
+
+    def test_repair_does_not_write_through_a_versioned_destination_link(self):
+        outside = self.sandbox.root / "external-payload"
+        self.destination.rename(outside)
+        self.destination.symlink_to(outside)
+        before = (outside / self.stamp.name).read_bytes()
+        result = self.sandbox.bdev("--json", "--config", self.config, "--checkout", "older", "tools", "setup")
+        self.assertEqual(result.returncode, 4, result.stderr)
+        self.assertEqual(json.loads(result.stdout)["error"]["code"], "OWNERSHIP_CONFLICT")
+        self.assertEqual((outside / self.stamp.name).read_bytes(), before)
+        self.assertEqual(self.sandbox.records(), [])
+
+    def test_the_actual_node_version_must_match_the_archive_pin(self):
+        (self.node_dir / "bin/version").write_text("v24.18.0")
+        result = self.package()
+        self.assertEqual(result.returncode, 3, result.stderr)
+        self.assertEqual(self.sandbox.records(), [])
 
 
 @unittest.skipUnless(shutil.which("direnv"), "direnv is required")

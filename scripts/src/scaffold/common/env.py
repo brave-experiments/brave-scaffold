@@ -48,10 +48,15 @@ def resolves_inside(path, root):
 
 
 def depot_tools_repair(identity):
-    """Core's sync installs depot_tools (`tools setup` deploys only Node and the package manager)."""
-    return repair(["bdev", "sync", "--checkout", str(identity.core)],
-                  note="Core's sync installs the checkout's depot_tools. It changes sources and dependencies; run it "
-                       "only when authorized.")
+    """Environment loading needs local Python, so a scaffold sync cannot restore it."""
+    destination = identity.core / "vendor/depot_tools"
+    alternate = identity.src / "third_party/depot_tools"
+    return repair([], requires_user_action=True,
+                  note="Restore checkout-local depot_tools manually at %s or %s. Preserve local work first. "
+                       "For an existing depot_tools Git repository, restore its missing vpython3 from its own HEAD. "
+                       "If neither directory is a repository, use Core's standalone setup to create a local "
+                       "depot_tools checkout. Scaffold sync and tools setup cannot load the environment until "
+                       "local vpython3 is restored; do not substitute a global interpreter." % (destination, alternate))
 
 
 def find_depot_tools(identity):

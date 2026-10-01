@@ -161,6 +161,7 @@
       ],
       "properties": {
         "argv": {
+          "description": "An empty argv denotes manual steps supplied in note, with requires_user_action true.",
           "type": "array",
           "items": {
             "type": "string"

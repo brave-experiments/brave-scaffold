@@ -75,13 +75,18 @@ satisfies this and never causes a failure by itself.
 *Next (changes files in the checkout):* `bdev tools setup --checkout <name>`
 runs the checkout's payload installer. Run it only when the checkout may change.
 `bdev doctor` and `bdev context` show the same checks without changing anything.
+If local `vpython3` is missing, follow the manual depot_tools restoration in
+[tool layouts](configuration-and-environments.md#supported-tool-layout); sync
+and tools setup need that interpreter and cannot restore it through the broken
+environment.
 
 A tool that resolves (through links, including a linked payload directory or ancestor)
 outside the checkout is treated as missing, and so is a checkout with no local `vpython3` even
 when the approved environment names one elsewhere.
 
 If the message says the pinned payload cannot be verified, the checkout's payload
-metadata (`tools/cr/extra_deps.py`) is missing or unreadable. A compatible version
+metadata (`tools/cr/extra_deps.py`, or a literal versioned npm archive entry in
+`tools/cr/install_extra_deps.py`) is missing or unreadable. A compatible version
 number alone does not prove the pinned payload, so the command stops rather than
 running unverified tools. Node is verified for every checkout; pnpm additionally for
 pnpm checkouts (an older npm checkout is never judged by pnpm's metadata). If the

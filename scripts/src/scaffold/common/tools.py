@@ -10,6 +10,7 @@ checkout's shim launchers, which can download or fall back to global tools.
 
 from __future__ import annotations
 
+import ast
 import json
 import os
 import re
@@ -144,33 +145,67 @@ def _all_comparators(have, comparators):
 # --- payload layout ---------------------------------------------------------------
 
 
-def node_layout(core):
+def versioned_node_payload(core, arch):
+    """The versioned npm payload declared by a checkout's EXTRA_DEPS installer.
+
+    Read only literal metadata. Importing the installer would load depot_tools
+    and could run setup code during inspection.
+    """
+    installer = Path(core) / "tools/cr/install_extra_deps.py"
+    key = "src/brave/third_party/node/" + ("mac_arm64" if arch == "arm64" else "mac")
+    if not resolves_inside(installer, core):
+        return None
+    try:
+        tree = ast.parse(installer.read_text(encoding="utf-8"))
+        assignment = next(node for node in tree.body if isinstance(node, ast.Assign)
+                          and any(isinstance(target, ast.Name) and target.id == "EXTRA_DEPS" for target in node.targets))
+        entry = ast.literal_eval(assignment.value)[key]
+        objects = entry["objects"]
+        if len(objects) != 1 or "overlayed_on" in objects[0]:
+            return None
+        archive, digest = objects[0]["object_name"], objects[0]["sha256sum"]
+        match = re.fullmatch(r"node-(v\d+\.\d+\.\d+)-darwin-" + arch + r"\.tar\.gz", archive)
+        condition = 'host_os == "mac" and host_cpu == "%s"' % arch
+        if match is None or not re.fullmatch(r"[a-f0-9]{64}", digest) or entry.get("condition") != condition:
+            return None
+    except (OSError, UnicodeError, SyntaxError, StopIteration, ValueError, KeyError, TypeError):
+        return None
+    destination = Path(core) / "third_party/node" / ("mac_arm64" if arch == "arm64" else "mac")
+    stamp = destination / ("." + archive.replace(".", "_") + "_hash.stamp")
+    return {"node_dir": destination / archive.removesuffix(".tar.gz"), "node_entry_key": key,
+            "installer": installer, "stamp": stamp, "sha256": digest, "version": match.group(1)}
+
+
+def node_layout(core, manager):
     """Payload paths for the observed bootstrap layout on this host."""
     if host_platform() != "mac":
         raise ScaffoldError("UNSUPPORTED_CAPABILITY",
                             "Checkout-local tool resolution is available on macOS hosts only.")
     suffix = "mac-arm64" if host_architecture() == "arm64" else "mac-x64"
     base = Path(core) / "third_party" / "node"
+    legacy = versioned_node_payload(core, "arm64" if suffix == "mac-arm64" else "x64") \
+        if manager == "npm" and not (Path(core) / "tools/cr/extra_deps.py").exists() else None
+    node_dir = legacy["node_dir"] if legacy else base / ("node-" + suffix)
     return {
-        "node_dir": base / ("node-" + suffix),
-        "node": base / ("node-" + suffix) / "bin" / "node",
-        "node_bin": base / ("node-" + suffix) / "bin",
-        "npm_entry": base / ("node-" + suffix) / "lib" / "node_modules" / "npm" / "bin" / "npm-cli.js",
-        "npm_package": base / ("node-" + suffix) / "lib" / "node_modules" / "npm" / "package.json",
+        "node_dir": node_dir,
+        "node": node_dir / "bin" / "node",
+        "node_bin": node_dir / "bin",
+        "npm_entry": node_dir / "lib" / "node_modules" / "npm" / "bin" / "npm-cli.js",
+        "npm_package": node_dir / "lib" / "node_modules" / "npm" / "package.json",
         "pnpm_entry": base / "node_modules" / "pnpm" / "bin" / "pnpm.mjs",
         "pnpm_package": base / "node_modules" / "pnpm" / "package.json",
-        "node_entry_key": "src/brave/third_party/node/node-" + suffix,
+        "node_entry_key": legacy["node_entry_key"] if legacy else "src/brave/third_party/node/node-" + suffix,
+        "installer": legacy["installer"] if legacy else Path(core) / "tools/cr/tarball_installer.py",
+        "versioned_payload": legacy,
         "pnpm_entry_key": "src/brave/third_party/node/node_modules",
     }
 
 
-def payload_escapes(identity):
-    """Where the checkout's Node payload directory really is, when that is outside the checkout; else None.
-
-    Repair installs into this directory, so a link that leaves the checkout would make it write there.
-    """
-    payload = Path(identity.core) / "third_party" / "node"
-    return os.path.realpath(payload) if os.path.lexists(payload) and not resolves_inside(payload, identity.core) else None
+def payload_escapes(identity, entries):
+    """An installation destination that resolves outside the frozen Core root, or None."""
+    destinations = [Path(identity.core) / "third_party/node", *(identity.workspace / key for key in entries)]
+    return next((os.path.realpath(path) for path in destinations
+                 if os.path.lexists(path) and not resolves_inside(path, identity.core)), None)
 
 
 def _package_version(path):
@@ -194,6 +229,14 @@ def payload_entries(layout, manager):
 
 def payload_freshness(identity, layout, manager, log=None):
     """Ask the checkout's payload metadata whether the entries the package manager needs are deployed. Read-only."""
+    legacy = layout["versioned_payload"]
+    if legacy:
+        try:
+            deployed = resolves_inside(legacy["stamp"], identity.core) and \
+                legacy["stamp"].read_text(encoding="utf-8").strip() == legacy["sha256"]
+        except (OSError, UnicodeError):
+            deployed = False
+        return {"node": "current" if deployed else "stale"}
     entries = payload_entries(layout, manager)
     result = {}
     for label, key in entries:
@@ -247,7 +290,7 @@ def inspect_toolchain(identity, log=None):
         add("vpython3", PASS, "Checkout-local vpython3", path=str(depot / "vpython3"))
 
     try:
-        layout = node_layout(identity.core)
+        layout = node_layout(identity.core, declaration.manager)
     except ScaffoldError as error:
         add("local-node", BLOCKER, error.message)
         return None, checks
@@ -264,6 +307,9 @@ def inspect_toolchain(identity, log=None):
         node_version = version.stdout.strip() if version.returncode == 0 else None
         if node_version is None:
             add("local-node", BLOCKER, "Checkout-local Node did not report a version.", path=str(layout["node"]))
+        elif layout["versioned_payload"] and node_version != layout["versioned_payload"]["version"]:
+            add("local-node", BLOCKER, "Node %s differs from the pinned archive version %s." % (
+                node_version, layout["versioned_payload"]["version"]), path=str(layout["node"]), version=node_version)
         elif declaration.node_range:
             verdict = satisfies(node_version, declaration.node_range)
             if verdict is True:
@@ -306,7 +352,7 @@ def inspect_toolchain(identity, log=None):
         add("payload-freshness", BLOCKER, "Payload metadata reports stale or undeployed: %s" % ", ".join(stale),
             **freshness)
     elif unverified:
-        installer = Path(identity.core) / "tools" / "cr" / "tarball_installer.py"
+        installer = layout["installer"]
         checks.append(CheckResult(
             name="payload-freshness", status=BLOCKER, scopes=("tools",), evidence=freshness,
             summary="The pinned payload of %s cannot be verified: this checkout's payload metadata "

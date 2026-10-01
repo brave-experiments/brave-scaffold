@@ -49,7 +49,7 @@ sys.exit(int(os.environ.get("FAKE_EXIT", "0")))
 """
 FAKE_VPYTHON = """#!%(python)s
 import json, os, sys
-if len(sys.argv) > 1 and sys.argv[1].endswith("tarball_installer.py"):
+if len(sys.argv) > 1 and sys.argv[1].endswith(("tarball_installer.py", "install_extra_deps.py")):
     os.execv(sys.executable, [sys.executable] + sys.argv[1:])
 record = os.environ.get("FAKE_RECORD")
 if record:

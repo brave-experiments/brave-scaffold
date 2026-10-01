@@ -75,21 +75,24 @@ def tools_setup(ctx):
     """Explicit provisioning of checkout-local payloads using the checkout's own installer."""
     identity = ctx.identity()
     loaded = env_module.load_environment(identity, ctx.environ, ctx.log)
-    layout = tools_module.node_layout(identity.core)
-    installer = identity.core / "tools" / "cr" / "tarball_installer.py"
+    declaration = tools_module.read_declaration(identity.core)
+    layout = tools_module.node_layout(identity.core, declaration.manager)
+    installer = layout["installer"]
     if not installer.is_file():
         raise ScaffoldError(
             "DEPENDENCY_INCOMPATIBLE",
             "This checkout has no supported payload installer (%s); tool repair is not available for it." % installer,
             details={"checkout": str(identity.core)})
-    escaped = tools_module.payload_escapes(identity)
+    if not env_module.resolves_inside(installer, identity.core):
+        raise ScaffoldError("OWNERSHIP_CONFLICT", "The payload installer resolves outside the selected checkout.",
+                            details={"installer": str(installer)})
+    entries = [key for _, key in tools_module.payload_entries(layout, declaration.manager)]
+    escaped = tools_module.payload_escapes(identity, entries)
     if escaped:
         raise ScaffoldError(
             "OWNERSHIP_CONFLICT",
-            "third_party/node resolves outside the checkout (%s), so repairing it would write there; nothing was "
+            "A payload destination resolves outside the checkout (%s), so repairing it would write there; nothing was "
             "changed." % escaped, details={"payload": str(identity.core / "third_party" / "node"), "resolves_to": escaped})
-    declaration = tools_module.read_declaration(identity.core)
-    entries = [key for _, key in tools_module.payload_entries(layout, declaration.manager)]
     with track(ctx, "tools setup", identity, {"installer": str(installer), "entries": entries}, validated=True) as op:
         ran = []
         for entry in entries:
