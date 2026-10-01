@@ -5,6 +5,7 @@
 """A source sync stops before it can reset local work anywhere gclient manages."""
 
 import hashlib
+import json
 import subprocess
 import unittest
 
@@ -176,6 +177,23 @@ if "sync" in argv:
                 self.assertEqual(self.node_calls(), [])
                 self.assertEqual(wanted.read_text(), "my work\n")
         self.assert_sync_stops("chrome/unpatched.cc")
+
+    def test_unknown_origin_baseline_cannot_approve_discarding_local_work(self):
+        from scaffold.brave import records
+        wanted = self.src / "chrome" / "unpatched.cc"
+        wanted.write_text("my work\n")
+        baseline = (self.sandbox.config.parent / ".bdev" / "state" / records.checkout_key(self.core)
+                    / "sync-baseline.json")
+        baseline.parent.mkdir(parents=True, exist_ok=True)
+        baseline.write_text(json.dumps({".": {"chrome/unpatched.cc": hashlib.sha256(wanted.read_bytes()).hexdigest()}}))
+        before = baseline.read_bytes()
+        self.hook = self.sandbox.hook("""
+if "sync" in argv:
+    open(os.path.join(os.path.dirname(os.environ["BRAVE_CORE_DIR"]), "chrome", "unpatched.cc"), "w").write("discarded\\n")
+""")
+        self.assert_sync_stops("chrome/unpatched.cc")
+        self.assertEqual(wanted.read_text(), "my work\n")
+        self.assertEqual(baseline.read_bytes(), before, "keep ambiguous historical evidence for review")
 
     def test_rejected_adoption_keeps_an_existing_successful_sync_baseline(self):
         from scaffold.brave import records

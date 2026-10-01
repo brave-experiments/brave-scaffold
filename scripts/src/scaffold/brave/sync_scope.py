@@ -115,23 +115,27 @@ def baseline_path(identity, root=None):
 
 
 def read_baseline(identity, root=None):
+    """Only identified successful-sync output can excuse local working bytes."""
     try:
-        return json.loads(baseline_path(identity, root).read_text(encoding="utf-8"))
+        data = json.loads(baseline_path(identity, root).read_text(encoding="utf-8"))
+        if isinstance(data, dict) and data.get("schema_version") == 1 \
+                and data.get("origin") == "successful-sync" and data.get("core") == str(identity.core) \
+                and isinstance(data.get("files"), dict):
+            return data["files"]
     except (OSError, ValueError):
-        return {}
-
-
-def write_baseline(identity, current, root=None):
-    atomic_write(baseline_path(identity, root), json.dumps(current, sort_keys=True, indent=1) + "\n")
+        pass
+    return {}
 
 
 def checkpoint(identity, root=None, log=None):
-    """Remember the tracked changes present after a sync that started with none of your work in the way.
+    """Remember the tracked changes left by a successful guarded sync.
 
-    Everything present then was already accounted for or was made by the sync and the steps it runs, so it is
-    Core's output. A later difference from this record is a change made since.
+    Legacy baselines lack origin evidence and remain on disk, but cannot excuse
+    local work: they may have been saved by rejected or failed blanket adoption.
     """
-    write_baseline(identity, snapshot(identity, sync_repositories(identity), log), root)
+    data = {"schema_version": 1, "origin": "successful-sync", "core": str(identity.core),
+            "files": snapshot(identity, sync_repositories(identity), log)}
+    atomic_write(baseline_path(identity, root), json.dumps(data, sort_keys=True, indent=1) + "\n")
 
 
 def local_work(identity, scope, expected, baseline, log=None):

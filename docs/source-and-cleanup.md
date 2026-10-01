@@ -48,7 +48,10 @@ existed has no such record; the first sync then lists every unknown changed file
 Review the list (`git status` in each named repository, `bdev drift`) and preserve
 wanted work before proceeding. `--adopt-local-changes` is disabled because blanket
 approval does not identify which bytes a sync may discard. It stops both plans and
-execution without saving a baseline. Successful syncs still record their output.
+execution without saving a baseline. Successful syncs still record their output,
+identified by checkout and successful-sync origin. Older baseline files lack that
+origin evidence; they stay on disk for review but cannot excuse local changes,
+because an earlier blanket adoption may have saved them before a failed sync.
 
 A hard reset can replace an untracked file or directory that obstructs an incoming
 tracked path. Save untracked work outside the affected repositories before syncing;
