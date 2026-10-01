@@ -134,15 +134,13 @@ def checkpoint(identity, root=None, log=None):
     write_baseline(identity, snapshot(identity, sync_repositories(identity), log), root)
 
 
-def local_work(identity, scope, expected, baseline, root=None, log=None, adopt=False):
+def local_work(identity, scope, expected, baseline, log=None):
     """Local work in the scope that a sync would reset, as conflict records.
 
     Core is checked for any change, untracked files included. Every other repository is checked for tracked
     files that differ from HEAD, except paths that still hold what a scaffold step wrote (`expected`) or what
     Core's tools had left when the last sync finished (`baseline`). Incomplete discovery is itself a conflict.
     Staged changes are checked separately and cannot be excused by working-file checksums.
-    With `adopt` the tracked changes present now are recorded as Core's output instead of being reported;
-    that never hides incomplete discovery or changes in Core.
     """
     conflicts = [{"path": problem, "reason": "incomplete evidence"} for problem in scope.problems]
     current = {}
@@ -163,9 +161,6 @@ def local_work(identity, scope, expected, baseline, root=None, log=None, adopt=F
                       for relative in sorted(changes.untracked)]
     conflicts += [{"path": _label(identity, path), "reason": "staged changes would be discarded by sync"}
                   for path in sorted(staged)]
-    if adopt and not conflicts:
-        write_baseline(identity, current, root)
-        baseline = current
     for label, files in current.items():
         base = identity.src if label == "." else identity.src / label
         for relative, digest in sorted(files.items()):

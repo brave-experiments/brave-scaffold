@@ -44,9 +44,11 @@ gclient manages. The command reads those repositories from gclient's own records
 Core's own tools change many tracked Chromium files besides patch targets (translations, images,
 the version file). After each successful sync the command records the tracked changes present, so those
 files count as Core's output until they change again. A checkout that was synced before the scaffold
-existed has no such record; the first sync then lists every such file. Review the list (`git status`
-in the named repository, `bdev drift`) and, only if none of it is your work, repeat with
-`--adopt-local-changes` to record it. An agent must not pass that option without your approval.
+existed has no such record; the first sync then lists every unknown changed file.
+Review the list (`git status` in each named repository, `bdev drift`) and preserve
+wanted work before proceeding. `--adopt-local-changes` is disabled because blanket
+approval does not identify which bytes a sync may discard. It stops both plans and
+execution without saving a baseline. Successful syncs still record their output.
 
 A hard reset can replace an untracked file or directory that obstructs an incoming
 tracked path. Save untracked work outside the affected repositories before syncing;

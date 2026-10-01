@@ -417,6 +417,8 @@ def plan_restart_after_build(ctx, effective, is_android, device_choice):
 
 
 def do_build(ctx, command, sync_first=False, run_after=False):
+    if sync_first:
+        sync_module.reject_blanket_adoption(ctx)
     parsed = ctx.parsed
     target_token = parsed.positionals[0] if parsed.positionals else None
     identity, effective = select_build(ctx, target_token, parsed.forwarded)
@@ -638,6 +640,7 @@ def cmd_run(ctx):
 
 
 def cmd_sync(ctx):
+    sync_module.reject_blanket_adoption(ctx)
     parsed = ctx.parsed
     tokens = [item.strip() for item in (parsed.positionals[0].split(",") if parsed.positionals else [])]
     targets = []

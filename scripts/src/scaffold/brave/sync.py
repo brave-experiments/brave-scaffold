@@ -49,7 +49,14 @@ def sync_arguments(ctx, target, forwarded, identity=None):
     return [*arguments, *forwarded]
 
 
-def local_work_conflicts(ctx, identity, adopt=False):
+def reject_blanket_adoption(ctx):
+    if ctx.parsed.get("adopt_local_changes"):
+        raise ScaffoldError("PREPARATION_CONFLICT",
+                            "Blanket adoption is disabled: it cannot prove which local changes a sync may discard. "
+                            "No approval baseline was saved and no sync was started.")
+
+
+def local_work_conflicts(ctx, identity):
     """Evidence of local work that a source sync could reset or overwrite.
 
     Covers every repository the sync can reset, and the files applying patches afterwards would replace.
@@ -61,8 +68,7 @@ def local_work_conflicts(ctx, identity, adopt=False):
     expected |= android_deps.recorded_results(identity, ctx.state_root)
     expected |= patches.core_written_paths(identity, ctx.state_root)
     conflicts = sync_scope.local_work(identity, sync_scope.sync_repositories(identity), expected,
-                                      sync_scope.read_baseline(identity, ctx.state_root), ctx.state_root, ctx.log,
-                                      adopt)
+                                      sync_scope.read_baseline(identity, ctx.state_root), ctx.log)
     if plan.action == "conflict":
         conflicts.extend(plan.conflicts)
     return conflicts
@@ -79,7 +85,7 @@ def do_sync_phase(ctx, execution, op, target, forwarded):
                             details={"options": deletion},
                             repairs=[repair(["bdev", "sync", "--checkout", str(identity.core)],
                                             note="Repeat without dependency-deletion options.")])
-    conflicts = local_work_conflicts(ctx, identity, bool(ctx.parsed.get("adopt_local_changes")))
+    conflicts = local_work_conflicts(ctx, identity)
     if conflicts:
         raise ScaffoldError("PREPARATION_CONFLICT",
                             "Sync could overwrite local work in %d place(s); nothing was changed." % len(conflicts),

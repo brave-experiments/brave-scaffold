@@ -26,7 +26,7 @@ DEVICE = Opt("--device", "device", metavar="ID", help="Android device id (requir
 SOURCE = Opt("--source", "source", metavar="URL_OR_PATH", help="Support repository to clone (default: the standard source).")
 REF = Opt("--ref", "ref", metavar="REF", help="Support repository branch, tag, or commit for this checkout only.")
 ADOPT = Opt("--adopt-local-changes", "adopt_local_changes", takes_value=False,
-            help="Treat the tracked changes now in Chromium and its dependencies as Core's output, not your work.")
+            help="Disabled: blanket adoption cannot establish which local changes may be discarded.")
 DIFF = Opt("--diff", "diff", takes_value=False, help="Print the Git diff of each drifted file.")
 TARGET = Positional("target", help="mac or android (default: configured platform, else this host).")
 BUILD_SIDE_EFFECTS = ("Writes the build output under the checkout's src/out, applies Core patches when they are "
