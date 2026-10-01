@@ -50,9 +50,9 @@ def build_registry():
         CommandSpec("capabilities", "List supported, limited, unverified, and unsupported combinations.",
                     cmd_setup.capabilities, examples=("bdev capabilities --json",)),
         CommandSpec("doctor", "Check readiness for a scope without repairing anything.", doctor.run_doctor,
-                    positionals=(Positional("scope", help="mac or shell; omit for all delivered scopes."),),
+                    positionals=(Positional("scope", help="mac, android, rbe, shell, or signing; omit for all scopes."),),
                     examples=("bdev doctor", "bdev doctor mac --checkout main"),
-                    notes="Checking a selected checkout evaluates its approved environment file."),
+                    notes="Checking a selected checkout evaluates its approved environment file. Refresh warnings do not guarantee a build can repair the files."),
         CommandSpec("setup", "Inspect prerequisites and prepare scaffold-owned configuration.", cmd_setup.setup, creates_config=True,
                     side_effects="Creates brave-scaffold.toml beside the scaffold when it is missing. "
                                  "Nothing inside Brave Core changes.",

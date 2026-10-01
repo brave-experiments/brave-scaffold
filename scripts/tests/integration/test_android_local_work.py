@@ -220,6 +220,11 @@ class ResourceRefreshTests(AndroidTestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         checks = {check["name"]: check for check in document["checks"]}
         self.assertEqual(checks["android-support-currency"]["status"], "warning")
+        message = checks["android-support-currency"]["summary"]
+        self.assertIn("Refresh needed", message)
+        self.assertIn("checks pass", message)
+        self.assertIn("without a backup", message)
+        self.assertNotIn("will refresh", message)
         self.assertEqual(self.release.read_text(), "local work\n")
         self.assertEqual(self.build()[0].returncode, 0)
         result, document = self.document("doctor", "android")

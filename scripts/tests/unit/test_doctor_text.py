@@ -81,7 +81,7 @@ class RenderTests(unittest.TestCase):
     def test_details_stay_readable_next_to_the_marker(self):
         text = self.report()
         self.assertIn("❌  broken: Needs work.", text)
-        self.assertIn("⚠️  careful (optional): Look at this.", text)
+        self.assertIn("⚠️  careful (affects mac): Look at this.", text)
         self.assertNotIn("BLOCKER", text)
 
 

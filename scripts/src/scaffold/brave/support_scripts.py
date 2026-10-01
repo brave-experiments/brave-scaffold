@@ -25,7 +25,8 @@ def require_contract(wc, script):
     if contract is None or contract["script"] != script:
         raise ScaffoldError(
             "PREPARATION_CONFLICT",
-            "%s has no reviewed script identity and complete write manifest; it was not executed." % script,
+            "%s is not a reviewed support script. Its file writes are unknown, so it was not executed. "
+            "Use a supported revision or have this script and its write list reviewed." % script,
             details={"files": [{"path": script, "reason": "unsupported script identity", "sha256": digest}]})
     return contract
 

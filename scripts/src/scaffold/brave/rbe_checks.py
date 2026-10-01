@@ -59,11 +59,12 @@ def _machine(ctx, scope):
     tool_environment["xcrun"] = shutil.which("xcrun", path=ctx.environ.get("PATH"))
     sdk = run_capture(["xcrun", "--show-sdk-version"], os.getcwd(), ctx.environ, ctx.log, timeout=30)
     version = sdk.stdout.strip()
+    sdk_ok = sdk.returncode == 0 and bool(version)
     checks.append(make_check(
-        "macos-sdk", PASS if sdk.returncode == 0 and version else BLOCKER,
-        "macOS SDK %s is visible through xcrun." % version if version else "The macOS SDK is not visible through xcrun.",
+        "macos-sdk", PASS if sdk_ok else BLOCKER,
+        "macOS SDK %s is visible through xcrun." % version if sdk_ok else "The macOS SDK is not visible through xcrun.",
         scope, affects=("mac build", "mac test"),
-        repairs=[] if version else [repair(["xcodebuild", "-runFirstLaunch"], requires_user_action=True,
+        repairs=[] if sdk_ok else [repair(["xcodebuild", "-runFirstLaunch"], requires_user_action=True,
                                             note="Select full Xcode and accept its license first.")]))
     metal = run_capture(["xcrun", "metal", "--version"], os.getcwd(), ctx.environ, ctx.log, timeout=30)
     mounted = sorted(Path(METAL_MOUNTS).glob("com.apple.MobileAsset.MetalToolchain-*")) \
@@ -72,7 +73,7 @@ def _machine(ctx, scope):
         checks.append(make_check("metal-toolchain", PASS, "xcrun metal works.", scope, required=False,
                                  affects=("mac build",), xcrun_works=True, version=metal.stdout.strip()))
     elif mounted:
-        checks.append(make_check("metal-toolchain", PASS, "A Metal toolchain component is mounted; builds select it.",
+        checks.append(make_check("metal-toolchain", PASS, "A Metal toolchain component is mounted, but xcrun metal failed. Compiler use in a build is unverified.",
                                  scope, required=False, affects=("mac build",)))
     else:
         checks.append(make_check(
@@ -133,7 +134,7 @@ def _rbe_config(ctx, identity, scope, required):
                           required=required, affects=affects, repairs=[] if ok else (repairs or []), **evidence)
 
     sync = [repair(["bpm", "--checkout", str(identity.core), "run", "sync"],
-                   note="Refreshes RBE sync artifacts; needs the internal VPN and changes the checkout.")]
+                   note="Can refresh RBE files if sync checks pass; needs the internal VPN and changes the checkout.")]
     try:
         env = read_env(env_file)
     except (OSError, ValueError, UnicodeDecodeError):
@@ -209,7 +210,7 @@ def _sync_artifacts(identity, scope, required, env, sync):
             stale.append(generated.parent.name)
     checks.append(make_check(
         "rbe-gn-outputs", WARNING if stale else PASS,
-        "Output directories not generated for RBE: %s. A forced GN regeneration at build time fixes this." % ", ".join(stale)
+        "Output directories not generated for RBE: %s. The build may regenerate GN settings if its checks pass." % ", ".join(stale)
         if stale else "No discovered output directory contradicts the RBE configuration.",
         scope, required=False, affects=("rbe build",), stale=stale))
     return checks

@@ -187,10 +187,10 @@ def local_work(identity, scope, expected, baseline, log=None, *, reset_repositor
                     continue
                 operations = sorted({operation for write, operation in writes.items() if overlaps(path, [write])}) \
                     if isinstance(writes, dict) else ["patch or hook output"]
-                reason = "; ".join(operations) + " could overwrite local work; save the edit first, or skip regular hooks with --nohooks"
+                reason = "; ".join(operations) + " could overwrite local work; save wanted files first; --nohooks helps only if a regular hook is the sole writer"
             elif unknown_writes and not known:
                 # Unknown hooks cannot establish preservation of developer working bytes.
-                reason = "; ".join(unknown_writes) + "; inspect the operation or repeat with --nohooks"
+                reason = "; ".join(unknown_writes) + "; inspect the write scope; --nohooks does not skip pre-DEPS hooks or other writes"
             elif relative in changes.untracked:
                 if known:
                     continue

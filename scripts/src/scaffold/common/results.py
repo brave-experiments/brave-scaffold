@@ -151,21 +151,73 @@ def error_result(command, error, context=None):
 def render_error_text(error):
     lines = ["❌ Error [%s]: %s" % (error["code"], error["message"])]
     details = error.get("details") or {}
-    for key, value in details.items():
-        if isinstance(value, (list, tuple)):
-            lines.append("  %s:" % key)
-            lines.extend("    %s" % _plain(item) for item in value)
-        else:
-            lines.append("  %s: %s" % (key, _plain(value)))
+    lines.extend(detail_lines(details))
     for step in error.get("repairs") or []:
         suffix = "  (requires you to act)" if step.get("requires_user_action") else ""
         note = "  # %s" % step["note"] if step.get("note") else ""
-        lines.append("  Next: %s%s%s" % (_shell_join(step["argv"]), suffix, note))
+        command = _shell_join(step["argv"])
+        if step.get("cwd"):
+            command = "cd %s && %s" % (_shell_join([step["cwd"]]), command)
+        line = "  Next: %s%s%s" % (command, suffix, note)
+        if line not in lines:
+            lines.append(line)
     return "\n".join(lines)
 
 
-def _plain(value):
-    return value if isinstance(value, str) else json.dumps(value, sort_keys=True)
+def detail_lines(details, limit=12):
+    """Bounded plain text; complete structured evidence stays in JSON and logs."""
+    lines = []
+    omitted = False
+
+    def add(line):
+        nonlocal omitted
+        if line in lines:
+            return
+        line = line.replace("\n", " ").replace("\r", " ")
+        if len(line) > 700:
+            line = line[:700] + "..."
+            omitted = True
+        if len(lines) < limit:
+            lines.append(line)
+        else:
+            omitted = True
+
+    def visit(label, value, depth=0):
+        nonlocal omitted
+        if depth > 2:
+            add("  %s: details available with --json" % label)
+        elif isinstance(value, dict):
+            if "path" in value and "reason" in value:
+                add("  %s: %s" % (value["path"], value["reason"]))
+                if value.keys() - {"path", "reason"}:
+                    omitted = True
+            elif {"name", "status", "summary"} <= value.keys():
+                from .checks import display_label
+                add("  %s [%s]: %s" % (display_label(value["name"]), value["status"], value["summary"]))
+                if value.keys() - {"name", "status", "summary"}:
+                    omitted = True
+            else:
+                for key, item in value.items():
+                    visit("%s / %s" % (label, key.replace("_", " ")), item, depth + 1)
+        elif isinstance(value, (list, tuple)):
+            if label in ("argv", "arguments", "options"):
+                add("  %s: %s" % (label, _shell_join(value)))
+            else:
+                for item in value:
+                    visit(label, item, depth + 1)
+        elif value is not None:
+            if label in ("blocking", "incomplete"):
+                from .checks import display_label
+                value = display_label(str(value))
+            add("  %s: %s" % (label, value))
+
+    # Show path bases and backup locations before a long file list fills the limit.
+    first = ("path_base", "checkout", "repository", "backup", "cwd")
+    for key in dict.fromkeys([*(key for key in first if key in details), *details]):
+        visit(key.replace("_", " "), details[key])
+    if omitted:
+        lines.append("  More details available with --json and in the diagnostic log.")
+    return lines
 
 
 def _shell_join(argv):

@@ -130,15 +130,20 @@ def do_sync_phase(ctx, execution, op, target, forwarded):
                                        recheck)
     if conflicts and backup is None:
         raise ScaffoldError("PREPARATION_CONFLICT",
-                            "Sync blocked: %d Chromium/dependency paths need preservation checks; nothing was changed. "
+                            "Sync blocked: %d Chromium/dependency paths could be overwritten or could not be checked; nothing was changed. "
                             "These paths are relative to the Chromium source root, not brave-core." % len(conflicts),
                             details={"files": conflicts, "total": len(conflicts), "scope": model.detail(), "path_base": str(identity.src), "core": str(identity.core)},
-                            repairs=[repair(["bdev", "sync", "--checkout", str(identity.core), "--overwrite-local-changes"],
-                                            note="Review the listed files first; backs up their changes before overwriting.")])
+                            repairs=([repair(["bdev", "sync", "--checkout", str(identity.core), "--plan"],
+                                             note="Review the unknown reset or write scope. Overwrite approval cannot "
+                                                  "bypass missing scope information.")]
+                                     if model.blocked or model.unknown else
+                                     [repair(["bdev", "sync", "--checkout", str(identity.core), "--overwrite-local-changes"],
+                                             note="Review the listed paths first. Backs up and overwrites only known "
+                                                  "local file changes; local commits and unknown paths still block sync.")]))
     if backup is not None:
         remaining = local_work_conflicts(ctx, identity, model)
         if remaining:
-            raise ScaffoldError("PREPARATION_CONFLICT", "Sync still has preservation conflicts after backing up approved files.",
+            raise ScaffoldError("PREPARATION_CONFLICT", "Sync is still blocked after backing up approved files; review the remaining paths.",
                                 details={"files": remaining, "backup": backup})
     before_files = sync_scope.snapshot(identity, sync_scope.sync_repositories(identity), ctx.log, include_core=True)
     before = {"core_head": freshness.resolve_head(identity.core, ctx.log),

@@ -15,7 +15,7 @@ import sys
 from pathlib import Path
 
 from ..common.redaction import redact_report
-from ..common.results import ScaffoldError
+from ..common.results import ScaffoldError, detail_lines
 from . import gitstate, sync_scope
 
 
@@ -111,8 +111,8 @@ def diff(selected, log):
 
 def confirm(ctx, conflicts, selected):
     print('Sync may overwrite these files (relative to ' + str(ctx.identity().src) + '):', file=sys.stderr)
-    for item in conflicts:
-        print('  ' + json.dumps(redact_report(item), ensure_ascii=False), file=sys.stderr)
+    for line in detail_lines({'files': redact_report(conflicts)}):
+        print(line, file=sys.stderr)
     if ctx.parsed.get('overwrite_local_changes'):
         return True
     if ctx.parsed.json_mode or not sys.stdin.isatty() or not sys.stderr.isatty():

@@ -134,8 +134,8 @@ class RbeCheckTests(SandboxTest):
         self.write_env()
         before = (tree_snapshot(self.core.parents[3]), tree_snapshot(self.sandbox.root / "config"))
         text = self.sandbox.bdev("--config", self.config, "doctor", "rbe", "--checkout", "main")
-        self.assertIn("rbe-reachability", text.stdout)
-        self.assertIn("❔  rbe-reachability", text.stdout)
+        self.assertIn("RBE network access", text.stdout)
+        self.assertIn("❔  RBE network access", text.stdout)
         self.assertEqual(before[0], tree_snapshot(self.core.parents[3]))
         after = tree_snapshot(self.sandbox.root / "config")
         logs = self.sandbox.root / "config" / ".bdev" / "logs"

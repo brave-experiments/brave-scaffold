@@ -224,16 +224,16 @@ def plan_patch_preparation(identity, log=None, root=None, extra_expected=None):
     inputs_changed = (receipt is None or receipt.get("patches_tree") != trees["patches"]
                       or receipt.get("rewrite_tree") != trees["rewrite"])
     if report.unverifiable:
-        return PatchPlan("conflict", "Local Chromium edits cannot be told apart from patch results because the "
+        return PatchPlan("conflict", "Chromium file differences cannot be traced to local edits or patch results because the "
                          "patch metadata is unusable.", report, trees,
                          [{"path": reason, "reason": "metadata"} for reason in report.unverifiable[:5]])
     if not report.files and report.complete and not dirty:
-        return PatchPlan("current", "Materialized files match the patch metadata.", report, trees)
+        return PatchPlan("current", "Files match the patch metadata.", report, trees)
     known = (receipt or {}).get("files", {})
     stale = [entry for entry in inventory.entries if entry.stale_reason()]
     conflicts, writes = write_set_conflicts(identity, stale, known, extra, log)
     if conflicts:
-        return PatchPlan("conflict", "Applying patches could overwrite local Chromium edits.", report, trees,
+        return PatchPlan("conflict", "Applying patches could overwrite Chromium files with changes not explained by saved patch records.", report, trees,
                          conflicts, receipt is not None, writes)
     reasons = []
     if report.files:

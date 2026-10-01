@@ -167,7 +167,7 @@ validate lean sync, every forwarded option, or every upstream source revision.
 
 ## Patch preparation
 
-Builds and tests apply Core patches only when the materialized Chromium files no
+Builds and tests apply Core patches only when the Chromium files no
 longer match the patch metadata, and only when that cannot lose local work.
 
 Core lists the repositories it patches in `patches/.repositories.cfg` (`//` is

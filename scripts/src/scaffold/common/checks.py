@@ -16,6 +16,34 @@ MARKER_LEGEND = "%s pass  %s blocker  %s warning  %s unsupported  %s not checked
     MARKERS[status] for status in (PASS, BLOCKER, WARNING, UNSUPPORTED, NOT_CHECKED))
 
 
+DISPLAY_LABELS = {
+    "scaffold-runtime": "Scaffold Python", "host-macos-arm64": "Host platform",
+    "xcode-developer-directory": "Xcode directory", "macos-sdk": "macOS SDK",
+    "metal-toolchain": "Metal compiler", "disk-space": "Free disk space",
+    "checkout-selection": "Selected checkout", "checkout-layout": "Checkout layout",
+    "local-tools": "Checkout tools", "services-key": "Brave services key",
+    "shell-hook": "Shell setup", "bdev-on-path": "bdev on PATH",
+    "android-gclient-target": "Android target_os",
+    "android-support-working-copy": "Android support repository",
+    "android-support-lfs": "Android support downloads",
+    "android-support-compatibility": "Android support compatibility",
+    "android-support-currency": "Android support files",
+    "rbe-env": "RBE settings", "rbe-siso-mode": "Siso mode",
+    "rbe-tls-files": "RBE certificate and key", "rbe-tls-expiry": "RBE certificate expiry",
+    "rbe-siso-cache": "Siso cache", "rbe-gclient": "RBE .gclient",
+    "rbe-sisorc": "RBE .sisorc", "rbe-sisoenv": "RBE .sisoenv",
+    "rbe-gn-outputs": "RBE output settings", "rbe-reachability": "RBE network access",
+    "git-signing-format": "Git signing format", "signer-program": "Git signing command",
+    "signing-key": "Signing key", "commit-signing-default": "Sign commits by default",
+    "op-ssh-sign": "1Password signer", "agent-socket": "SSH agent socket",
+}
+
+
+def display_label(name):
+    """Readable terminal labels; serialized check names remain stable."""
+    return DISPLAY_LABELS.get(name, name.replace("-", " ").replace(":", ": "))
+
+
 @dataclass
 class CheckResult:
     name: str
@@ -45,11 +73,11 @@ def aggregate(checks):
     blockers = [check for check in required if check.status in (BLOCKER, UNSUPPORTED)]
     if blockers:
         return "READINESS_BLOCKED", "%d required check(s) are blocked: %s" % (
-            len(blockers), ", ".join(check.name for check in blockers))
+            len(blockers), ", ".join(display_label(check.name) for check in blockers))
     unchecked = [check for check in required if check.status == NOT_CHECKED]
     if unchecked:
         return "READINESS_INCOMPLETE", "%d required check(s) could not be evaluated: %s" % (
-            len(unchecked), ", ".join(check.name for check in unchecked))
+            len(unchecked), ", ".join(display_label(check.name) for check in unchecked))
     return None
 
 

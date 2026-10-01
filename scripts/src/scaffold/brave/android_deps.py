@@ -296,7 +296,11 @@ def resources_current(identity, wc, receipt=None):
             previous = (receipt or {}).get("resources", {}).get(key, {})
             source_digest = (receipt or {}).get("resource_sources", {}).get(key)
             if not source_digest or source_digest != _sha(origin) or previous != resource_signature(origin, copied):
-                return False, "%s differs from its source without matching copy evidence" % key
+                if previous and previous != resource_signature(origin, copied):
+                    return False, "%s differs from its support source and changed since the last recorded copy" % key
+                if previous and source_digest and source_digest != _sha(origin):
+                    return False, "%s has a support source that changed since the last recorded copy" % key
+                return False, "%s differs from its support source; no saved copy record explains the difference (origin unknown)" % key
         if origin.is_dir():
             sentinel = next((name for name in SENTINELS if (origin / name).is_file()
                              and (origin / name).stat().st_size <= MAX_COMPARED_BYTES
@@ -484,7 +488,7 @@ def plan_preparation(ctx, identity, log=None):
     if pointers:
         raise ScaffoldError(
             "DEPENDENCY_INCOMPATIBLE",
-            "%d large file(s) in the support working copy are not materialized (still pointers), so its resources "
+            "%d large file(s) in the support working copy are still Git LFS pointers rather than downloaded files, so its resources "
             "cannot be copied. Nothing was fetched." % len(pointers),
             details={"working_copy": str(wc), "pointers": pointers[:20]},
             repairs=[repair(["bdev", "android", "setup", "--checkout", str(identity.core)],
@@ -590,11 +594,14 @@ def refresh(ctx, identity, loaded, plan, log=None):
 def conflict_error(plan, identity):
     return ScaffoldError(
         "PREPARATION_CONFLICT",
-        "Android support preparation is blocked: %s. Nothing was changed by the support scripts." % plan.reason,
+        "Android support preparation is blocked. Review the paths below. Nothing was changed by the support scripts.",
         details={"files": plan.conflicts[:50], "total": len(plan.conflicts), "checkout": str(identity.core)},
-        repairs=[repair(["bdev", "build", "android", "--checkout", str(identity.core)],
-                        note="Allow automatic refresh by omitting --skip-support-refresh. "
-                             "Inventory or script errors need a supported working copy or a reviewed adapter.")])
+        repairs=([repair(["bdev", "build", "android", "--checkout", str(identity.core)],
+                         note="Omit --skip-support-refresh only if you want the listed support files replaced.")]
+                 if plan.conflicts and all("--skip-support-refresh" in item["reason"] for item in plan.conflicts)
+                 else [repair(["bdev", "doctor", "android", "--checkout", str(identity.core)],
+                              note="Inspect support readiness. Missing repository data or unknown scripts must be "
+                                   "resolved before refresh can run; retrying a build alone will not fix them.")]))
 
 
 # --- GN overrides ----------------------------------------------------------------------------

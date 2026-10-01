@@ -63,10 +63,10 @@ class DoctorTests(SandboxTest):
     def test_matching_host_checks_appear_once_in_text_but_remain_in_json(self):
         self.two_checkouts()
         result = self.sandbox.bdev("--config", self.config, "doctor", "mac")
-        self.assertEqual(result.stdout.count("host-macos-arm64:"), 1)
-        self.assertEqual(result.stdout.count("macos-sdk:"), 1)
-        self.assertEqual(result.stdout.count("disk-space"), 1)
-        self.assertEqual(result.stdout.count("services-key"), 2)
+        self.assertEqual(result.stdout.count("Host platform:"), 1)
+        self.assertEqual(result.stdout.count("macOS SDK:"), 1)
+        self.assertEqual(result.stdout.count("Free disk space"), 1)
+        self.assertEqual(result.stdout.count("Brave services key"), 2)
         _, document = self.doctor("mac")
         for report in document["data"]["checkouts"]:
             self.assertIn("macos-sdk", [check["name"] for check in report["checks"]])

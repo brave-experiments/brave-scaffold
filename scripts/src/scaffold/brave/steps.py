@@ -19,7 +19,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 from ..common import env as env_module
-from ..common.checks import BLOCKER, NOT_CHECKED, WARNING, readiness_error
+from ..common.checks import BLOCKER, NOT_CHECKED, WARNING, display_label, readiness_error
 from ..common.redaction import redact_argv
 
 NO_CLEANUP = "None; the scaffold does not roll back or clean up after a failure."
@@ -97,12 +97,12 @@ def readiness_step(checks, note=""):
     error = readiness_error(checks)
     problems = (error.details["blocking"] + error.details["incomplete"]) if error else []
     warned = [check.name for check in checks if check.status == WARNING or check.status == NOT_CHECKED]
-    detail = ("blocked: " + ", ".join(problems)) if problems else None
+    detail = ("blocked: " + ", ".join(display_label(name) for name in problems)) if problems else None
     if warned and not problems:
-        detail = "optional or unchecked: " + ", ".join(warned)
+        detail = "warnings or unchecked: " + ", ".join(display_label(name) for name in warned)
     return Step("readiness", "Check the machine and checkout prerequisites for this request. %s" % note,
                 "blocked" if error else "ready", reads=["machine tools", "checkout configuration"], needs=["tools"],
-                on_failure="Nothing is prepared; each blocker names an explicit repair.", detail=detail)
+                on_failure="Nothing is prepared; review the reported blockers before retrying.", detail=detail)
 
 
 def patches_step(identity, plan, argv, after_sync=False):

@@ -88,7 +88,7 @@ def support_checks(ctx, scope):
         pointers = android_deps.lfs_pointers(wc, ctx.log)
         checks.append(make_check(
             "android-support-lfs", PASS if not pointers else BLOCKER,
-            "The support repository's large files are materialized." if not pointers else
+            "The support repository's large files are downloaded." if not pointers else
             "%d large file(s) are still pointers, so resources cannot be copied (for example %s)." % (
                 len(pointers), pointers[0]), scope, affects=("android build",), pointers=pointers[:20],
             repairs=[] if not pointers else [repair(
@@ -109,9 +109,15 @@ def support_checks(ctx, scope):
                              "The support revision's version gates accept this checkout.", scope,
                              affects=("android build",)))
     status = {"current": PASS, "refresh": WARNING, "conflict": BLOCKER}[plan.action]
-    message = plan.reason if plan.action != "refresh" else (
-        "The next build will refresh support automatically and may replace local files: " + plan.reason)
+    message = plan.reason
+    if plan.action == "refresh":
+        message = ("Refresh needed: " + plan.reason + ". A build can try refresh after its checks pass; "
+                   "support scripts may replace files without a backup. Save wanted files first. "
+                   "--skip-support-refresh stops a build that needs refresh.")
+    elif plan.action == "conflict":
+        message = "Build blocked: " + plan.reason + ". Review the listed problems before retrying."
     checks.append(make_check("android-support-currency", status, message, scope,
                              required=plan.action == "conflict", affects=("android build",),
-                             files=plan.conflicts))
+                             files=plan.conflicts, repairs=android_deps.conflict_error(plan, identity).repairs
+                             if plan.action == "conflict" else []))
     return checks

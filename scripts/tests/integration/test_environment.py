@@ -94,6 +94,22 @@ class EnvironmentTests(SandboxTest):
         self.assertEqual((directory / ".envrc").read_text(), "export CUSTOM=1\n")
         self.assertIn("preserved", result.stdout)
 
+    def test_linked_generated_environment_is_not_claimed_to_be_user_authored(self):
+        self.sandbox.make_checkout("main")
+        self.sandbox.prepare_environment("main", approve=False)
+        directory = self.sandbox.root / "config" / "environments" / "main"
+        target = directory / "saved.envrc"
+        envrc = directory / ".envrc"
+        envrc.rename(target)
+        before = target.read_text()
+        envrc.symlink_to(target)
+        result = self.sandbox.bdev("env", "init", "--checkout", "main", "--config", str(self.sandbox.config))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(envrc.is_symlink())
+        self.assertEqual(target.read_text(), before)
+        self.assertIn("symlink", result.stdout)
+        self.assertNotIn("not generated", result.stdout)
+
     def test_stale_selector_exports_do_not_override_the_selection(self):
         main = self.sandbox.make_checkout("main")
         other = self.sandbox.make_checkout("other")

@@ -68,6 +68,18 @@ look, and what the codes mean. Only delivered commands appear here.
   that refresh is needed. See [Android preparation](android.md#what-preparation-changes).
   Environments are never approved automatically. Suggested next steps in errors are suggestions.
 
+### Readable reports
+
+Doctor uses readable labels; JSON keeps stable check names. A note such as
+"affects android build" says which operation needs attention, even when the check
+is not required for the selected doctor scope. A refresh warning means refresh is
+needed and can be attempted after checks pass, not that it is guaranteed to run.
+
+Terminal errors show paths, reasons, and suggested commands, with a short limit on
+long evidence lists. Use `--json` for the full returned evidence. Diagnostic logs
+retain the structured error details. Repairs are suggestions and may need further
+checks or your action.
+
 ## Command index
 
 | Command | Purpose | Side effects |

@@ -90,8 +90,9 @@ Resource copying and signing stay within the declared destinations. Plans and ex
 use this same inventory. Missing repository discovery, unreadable patch formats, and
 unknown scripts block preparation before the support scripts change files.
 
-Refresh runs automatically when patches or resources are stale, support inputs change,
-or the checkout has no matching refresh record. It does not prompt or back up files.
+A build attempts refresh after its checks pass when patches or resources are stale,
+support inputs change, or the checkout has no matching refresh record. A later
+script or write-scope check can still stop refresh. It does not prompt or back up files.
 `applyPatches.sh` resets its patch targets and applies support patches, and edits the
 direct source paths its manifest lists. `copyMacRes.sh` copies and replaces resources
 and may sign files within its declared directories. Local edits in those paths may be
@@ -104,7 +105,10 @@ also applies to `build-run`, `sync-build`, and `sync-build-run`; it does not sup
 other preparation or sync steps. Current support needs no refresh and builds normally.
 `doctor android` uses the same preparation decision: current support passes, a needed
 refresh warns, and script, compatibility, or write-inventory errors block readiness.
-Doctor never refreshes support. Sync retains its separate overwrite approval process.
+A differing resource with no matching saved copy record has an unknown origin;
+that difference alone does not prove local edits. Doctor shows "Android support files";
+JSON keeps the check name `android-support-currency`. Doctor never refreshes support.
+Sync retains its separate overwrite approval process.
 
 After execution, a tracked change outside the declared scope is an adapter failure:
 the build stops, records nothing as prepared, and leaves the files for review.

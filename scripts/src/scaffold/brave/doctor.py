@@ -17,7 +17,7 @@ from ..common import env as env_module
 from ..common import identity as identity_module
 from ..common import tools as tools_module
 from ..common.checks import (BLOCKER, MARKER_LEGEND, MARKERS, NOT_CHECKED, PASS, UNSUPPORTED, WARNING,
-                             CheckResult, make_check, readiness_error)
+                             CheckResult, display_label, make_check, readiness_error)
 from ..common.platforms import host_architecture, host_platform
 from ..common.procs import run_capture
 from ..common.results import Result, ScaffoldError, error_result, repair
@@ -236,8 +236,8 @@ def render_text(scopes, checks, *, hidden=(), heading="🩺 Brave setup doctor",
     for section, items in sections.items():
         lines += ["", section]
         for check in items:
-            lines.append("%s  %s%s: %s" % (MARKERS[check.status], check.name,
-                                           "" if check.required else " (optional)", check.summary))
+            note = "" if check.required else " (affects %s)" % ", ".join(check.affects or check.scopes)
+            lines.append("%s  %s%s: %s" % (MARKERS[check.status], display_label(check.name), note, check.summary))
         if section == "Signing":
             lines.append("Signing configuration only; signing availability was not tested.")
     if missing:
@@ -267,7 +267,7 @@ def render_text(scopes, checks, *, hidden=(), heading="🩺 Brave setup doctor",
         command = shlex.join(step["argv"])
         if step.get("cwd"):
             command = "cd %s && %s" % (shlex.quote(step["cwd"]), command)
-        note = " — " + step["note"] if step.get("note") else ""
+        note = " - " + step["note"] if step.get("note") else ""
         approval = " (requires you to act)" if step.get("requires_user_action") else ""
         lines.append("Next: %s%s%s" % (command, approval, note))
     lines += ["", MARKER_LEGEND]

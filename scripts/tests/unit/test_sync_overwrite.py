@@ -101,7 +101,8 @@ class SyncOverwriteTests(SyncFixture):
         self.assertIn('Overwrite these changes? [y/N]', text)
         self.assertIn('working work', text)
         self.assertIn('staged work', text)
-        self.assertEqual(text.count('"path": "work.cc"'), 1)
+        self.assertEqual(text.count('  work.cc:'), 1)
+        self.assertNotIn('{"path"', text)
 
     def test_edit_during_confirmation_requires_new_review(self):
         def confirm(*args):
@@ -135,6 +136,19 @@ class SyncOverwriteTests(SyncFixture):
             with self.assertRaises(ScaffoldError):
                 sync.do_sync_phase(self.ctx, self.execution, self.op, 'mac', [])
         self.assertFalse((self.op.root / 'backups').exists())
+
+    def test_unknown_scope_advice_does_not_offer_overwrite_as_a_fix(self):
+        self.ctx.parsed = Parsed()
+        self.model.unknown.append('unknown hook writes')
+        with patch.object(sync_model, 'inspect', return_value=self.model), \
+                patch.object(sync_overwrite.sys.stdin, 'isatty', return_value=False):
+            with self.assertRaises(ScaffoldError) as caught:
+                sync.do_sync_phase(self.ctx, self.execution, self.op, 'mac', [])
+        repairs = caught.exception.repairs
+        self.assertTrue(repairs)
+        self.assertIn('--plan', repairs[0]['argv'])
+        self.assertNotIn('--overwrite-local-changes', repairs[0]['argv'])
+        self.assertEqual(self.target.read_text(), 'working work\n')
 
     def test_untracked_file_is_backed_up_before_removal(self):
         note = self.src / 'notes.txt'

@@ -139,7 +139,7 @@ class MacPlanTests(BuildTestCase):
         document = self.plan("build")
         steps = by_name(document)
         self.assertEqual(steps["readiness"]["status"], "blocked")
-        self.assertIn("rbe-siso-cache", steps["readiness"]["detail"])
+        self.assertIn("Siso cache", steps["readiness"]["detail"])
         self.assertEqual(steps["tools"]["status"], "blocked")
         self.assertEqual(steps["build"]["status"], "planned", "the command is still shown")
         self.assertIsNone(steps["build"]["argv"], "the final command cannot be resolved without local tools")
