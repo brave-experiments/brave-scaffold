@@ -77,7 +77,17 @@ bdev test brave_browser_tests -- --gtest_repeat=2
 
 The suite is required and comes first; `mac` is optional and only recognized
 before the suite. `--filter` narrows tests inside the suite and never supplies a
-missing suite. Other arguments go to `bpm run test` after the generated ones.
+missing suite. Both `--filter 'Example.*'` and `--filter='Example.*'` pass the
+pattern unchanged; colon-separated patterns select multiple groups in the same
+suite. Core's test command builds the selected suite before running it.
+
+Tests use the selected checkout's approved environment and checkout-local tools.
+They default to Debug arm64 with remote execution requested. `--configuration`,
+`--offline`, and forwarded output options such as `-C` select the effective build
+just as they do for `bdev build`. Build and test output streams live to the console
+and the diagnostic log. A failed package command returns scaffold exit 5 and saves
+the child's status as `child_exit_code` in JSON and the operation record.
+Other arguments go to `bpm run test` after the generated ones.
 Android tests are not available; asking for them (or omitting the target while
 `defaults.platform` is `android`, or forwarding `--target_os=android`) fails with
 `UNSUPPORTED_CAPABILITY` before anything is loaded or built. The effective target

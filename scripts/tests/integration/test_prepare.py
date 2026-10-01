@@ -8,6 +8,7 @@ import hashlib
 import json
 import subprocess
 import unittest
+from pathlib import Path
 
 from tests.integration.test_build import BUILD_HOOK, SKIP, BuildTestCase
 from tests.support import write_executable
@@ -128,6 +129,46 @@ class SyncTests(BuildTestCase):
 
 @unittest.skipIf(SKIP, "needs direnv on a macOS host")
 class TestCommandTests(BuildTestCase):
+    def test_profile_customization_filter_and_selected_output_reach_the_suite(self):
+        pattern = ("BraveProfileCustomizationFeatureDisabledWebUITest.*:"
+                   "BraveProfileCustomizationFeatureEnabledWebUITest.*:"
+                   "ProfileCustomizationFileChooserDisabledBrowserTest.*:"
+                   "ProfileCustomizationFileChooserEnabledBrowserTest.*:"
+                   "SigninTest.ProfileCustomizationTest")
+        self.hook = self.sandbox.hook('''
+assert argv[1:3] == ["run", "test"]
+assert argv[3] == "brave_browser_tests"
+assert "Release" in argv and "--offline" in argv
+assert argv[argv.index("-C") + 1] == "selected tests"
+assert os.environ["BRAVE_CORE_DIR"] == os.getcwd()
+print("suite build output", flush=True)
+print("suite test output", file=sys.stderr, flush=True)
+''')
+        result, document = self.document("test", "brave_browser_tests", "--filter=" + pattern,
+                                         "--configuration", "release", "--offline", "-C", "selected tests")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.build_argv().count("--filter=" + pattern), 1)
+        self.assertNotIn("--use_remoteexec=true", self.build_argv())
+        self.assertEqual(document["data"]["cwd"], str(self.core))
+        self.assertIn("suite build output", result.stderr)
+        self.assertIn("suite test output", result.stderr)
+        records = self.sandbox.config.parent / ".bdev" / "operations"
+        record = next(json.loads(path.read_text()) for path in records.glob("*.json")
+                      if json.loads(path.read_text())["operation_id"] == document["operation_id"])
+        self.assertEqual(record["details"]["effective"]["output_dir"], str(self.src / "out" / "selected tests"))
+        diagnostic = Path(record["logs"]["diagnostic"]).read_text()
+        self.assertIn("--filter=" + pattern, diagnostic)
+        self.assertIn("suite test output", diagnostic)
+
+    def test_unresolved_ninja_directory_does_not_crash_or_change_default_output_record(self):
+        self.assertEqual(self.document("build")[0].returncode, 0)
+        state = next((self.sandbox.config.parent / ".bdev" / "outputs").rglob("*.json"))
+        before = state.read_bytes()
+        result, document = self.document("test", "brave_browser_tests", "--ninja", "C:other-output")
+        self.assertEqual((result.returncode, document["child_exit_code"]), (0, 0), result.stderr)
+        self.assertEqual(state.read_bytes(), before)
+        self.assertEqual(self.build_argv()[-2:], ["--ninja", "C:other-output"])
+
     def test_suite_is_consumed_and_the_rest_is_forwarded_in_order(self):
         self.document("test", "brave_browser_tests", "--upstream-option", "value", "extra")
         argv = self.build_argv()

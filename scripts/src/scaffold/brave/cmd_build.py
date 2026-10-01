@@ -534,11 +534,20 @@ def cmd_test(ctx):
 
 
 def run_test_package(ctx, execution, effective, op, arguments):
+    ctx.log.phase("Building and running test suite %s (%s, %s)" % (
+        ctx.parsed.get("suite"), effective.configuration, effective.arch))
+    ctx.log.phase("Output directory: %s" % (effective.output_dir or "unresolved"))
+    ctx.log.phase("Build mode: " + ("local (remote execution disabled)" if effective.offline
+                                   else "online (RBE/Siso requested)"))
+    op.detail(effective={"target": effective.target, "configuration": effective.configuration,
+                         "arch": effective.arch, "output_dir": str(effective.output_dir) if effective.output_dir else None,
+                         "package_arguments": arguments})
     prepare_patches(ctx, execution, op)
     argv, state = run_output_step(ctx, execution, effective, op, arguments, "test",
                                   metal_environment(ctx, execution.environ, execution.checks)
                                   if effective.target == "mac" else {})
-    state.end_attempt_completed(op.id)
+    if state is not None:
+        state.end_attempt_completed(op.id)
     return argv
 
 
