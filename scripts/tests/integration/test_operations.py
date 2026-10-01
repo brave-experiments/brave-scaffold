@@ -64,7 +64,9 @@ class RecordLifecycleTests(RecordCase, BuildTestCase):
             time.sleep(0.05)
         record = self.only_record("build")
         process.kill()
-        process.communicate()
+        process.wait(timeout=10)
+        process.stdout.close()
+        process.stderr.close()
         self.assertEqual(record["state"], "incomplete", "a killed process leaves an incomplete record")
         self.assertTrue([c for c in record["commands"] if "build" in c["argv"]], "the package command was recorded")
 
@@ -121,6 +123,7 @@ class RecordLifecycleTests(RecordCase, BuildTestCase):
         for how in ("cancel", "kill"):
             with self.subTest(how=how):
                 self.sandbox.record.unlink(missing_ok=True)
+                earlier = {item["operation_id"] for item in self.records("test")}
                 process = subprocess.Popen(
                     [str(SCRIPTS / "bdev"), "--json", "--config", self.config, "--checkout", "main", "test",
                      "brave_unit_tests"], env=self.env(FAKE_SLEEP="60"), stdout=subprocess.PIPE,
@@ -130,10 +133,14 @@ class RecordLifecycleTests(RecordCase, BuildTestCase):
                     time.sleep(0.05)
                 if how == "cancel":
                     process.send_signal(signal.SIGTERM)
+                    process.communicate(timeout=60)
                 else:
                     process.kill()
-                stdout, _ = process.communicate(timeout=60)
-                record = self.records("test")[-1]
+                    process.wait(timeout=10)
+                    # A surviving child can hold inherited pipes until fixture cleanup.
+                    process.stdout.close()
+                    process.stderr.close()
+                (record,) = [item for item in self.records("test") if item["operation_id"] not in earlier]
                 expected = "interrupted" if how == "cancel" else "running"
                 self.assertEqual(self.steps(record)["test"]["status"], expected)
                 self.assertEqual(record["state"], "complete" if how == "cancel" else "incomplete")
