@@ -43,6 +43,20 @@ def format_command_block(argv, cwd):
     ])
 
 
+def format_duration(seconds):
+    """Show elapsed time with minutes and hours when needed."""
+    centiseconds = max(0, round(seconds * 100))
+    minutes, remainder = divmod(centiseconds, 6000)
+    hours, minutes = divmod(minutes, 60)
+    parts = []
+    if hours:
+        parts.append("%dh" % hours)
+    if hours or minutes:
+        parts.append("%dm" % minutes)
+    parts.append("%.2fs" % (remainder / 100))
+    return " ".join(parts)
+
+
 @dataclass
 class CommandLog:
     """Where command blocks go. Records every dispatched command."""
@@ -70,8 +84,8 @@ class CommandLog:
     def report_timings(self, total):
         if self.timings:
             measured = sum(seconds for _, seconds in self.timings)
-            parts = ["%s %.2fs" % pair for pair in self.timings]
-            parts.append("Other %.2fs" % max(0, total - measured))
+            parts = ["%s %s" % (name, format_duration(seconds)) for name, seconds in self.timings]
+            parts.append("Other %s" % format_duration(max(0, total - measured)))
             self.phase("Timings: " + "; ".join(parts))
 
     def open(self, root):

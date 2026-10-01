@@ -18,6 +18,23 @@ from scaffold.brave.app import run_command
 from scaffold.common.results import Result, ScaffoldError
 
 
+class DurationTests(unittest.TestCase):
+    def test_short_long_and_rounded_boundary_durations(self):
+        cases = ((0, "0.00s"), (0.31, "0.31s"), (191.29, "3m 11.29s"),
+                 (59.999, "1m 0.00s"), (3599.999, "1h 0m 0.00s"),
+                 (3723.45, "1h 2m 3.45s"), (90000, "25h 0m 0.00s"))
+        for seconds, expected in cases:
+            with self.subTest(seconds=seconds):
+                self.assertEqual(procs.format_duration(seconds), expected)
+
+    def test_phase_timings_use_readable_durations(self):
+        console = io.StringIO()
+        log = procs.CommandLog(stream=console, verbosity="normal")
+        log.timings = [("Package build", 191.29)]
+        log.report_timings(252.29)
+        self.assertIn("Package build 3m 11.29s; Other 1m 1.00s", console.getvalue())
+
+
 class VerbosityTests(unittest.TestCase):
     def invoke(self, level, code, use_config=False, **environment):
         directory = tempfile.TemporaryDirectory()

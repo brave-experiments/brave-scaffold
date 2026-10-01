@@ -15,7 +15,7 @@ from dataclasses import dataclass
 
 from ..common import config as config_module
 from ..common import identity as identity_module
-from ..common.procs import CommandLog
+from ..common.procs import CommandLog, format_duration
 from ..common.results import (Cancelled, EXIT_INTERNAL, Result, ScaffoldError, emit, error_result)
 
 
@@ -110,5 +110,5 @@ def run_command(command, parsed, handler, argv_environ=None, needs_config=True, 
         result.add_warning("LOG_WRITE_FAILED", "The diagnostic log could not be completed: %s" % error)
     emit(result, json_mode, stdout=stdout, stderr=stderr)
     if log.path:
-        log.message("⏱️  Elapsed: %.2fs\nLog: %s" % (elapsed, log.path))
+        log.message("⏱️  Elapsed: %s\nLog: %s" % (format_duration(elapsed), log.path))
     return result.exit_code
