@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 from ..common.cli import CommandSpec, Opt, Positional
-from . import android, clean, cmd_build, cmd_patches, cmd_setup, cmd_tools, doctor
+from . import android, clean, cmd_build, cmd_patches, cmd_setup, cmd_test_local, cmd_tools, doctor
 
 WITH_PYTHONPATH = Opt("--with-pythonpath", "with_pythonpath", takes_value=False,
                       help="Also export PYTHONPATH for Core's script directory.")
@@ -32,6 +32,9 @@ ADOPT = Opt("--adopt-local-changes", "adopt_local_changes", takes_value=False,
 OVERWRITE = Opt("--overwrite-local-changes", "overwrite_local_changes", takes_value=False,
                 help="Back up and overwrite the listed local file changes for this sync only.")
 DIFF = Opt("--diff", "diff", takes_value=False, help="Print the Git diff of each drifted file.")
+BASE = Opt("--base", "base", metavar="REF", help="Compare the branch with this ref (default: origin/master).")
+SCOPE = Opt("--scope", "scope", choices=("both", "committed", "worktree"), metavar="SCOPE",
+            help="Which changes to inspect: committed branch changes, the working tree, or both (default).")
 TARGET = Positional("target", help="mac or android (default: configured platform, else this host).")
 BUILD_SIDE_EFFECTS = ("Writes the build output under the checkout's src/out, applies Core patches when they are "
                       "out of date and no local edits are at risk, and may update the Metal toolchain setting for the "
@@ -138,6 +141,17 @@ def build_registry():
                               "bdev test android brave_junit_tests --filter='*BraveCommandLineInitUtilTest*'",
                               "bdev test android brave_java_unit_tests --filter='BraveAppearancePreferencesTest.*' "
                               "--device=emulator-5554")),
+        CommandSpec("test-local", "Run the tests this branch or working tree modifies, one suite after another.",
+                    cmd_test_local.cmd_test_local, options=(BASE, SCOPE, CONFIGURATION, OFFLINE, DEVICE, PLAN),
+                    side_effects=BUILD_SIDE_EFFECTS.replace("Never cleans, installs, or launches anything.",
+                                                            "Runs the tests, which may launch test browsers.")
+                    + " Reads Git state only to choose tests. Android phases need the android-testing-prototype "
+                      "support branch and apply the test overlay (see 'bdev test --help').",
+                    notes="Finds modified Android javatests and junit tests, C++ unit and browser tests, and desktop "
+                          "WebUI tests; builds the filters from the files; runs each suite with 'bdev test'. Phases "
+                          "run quick host suites first and all run even if one fails. Files it cannot map are listed "
+                          "and skipped. The filters run are in the log. --plan lists them without running.",
+                    examples=("bdev test-local", "bdev test-local --device=emulator-5554", "bdev test-local --scope worktree")),
         CommandSpec("run", "Restart the browser with an existing output; never builds.", cmd_build.cmd_run,
                     positionals=(TARGET,), options=(CONFIGURATION, ARTIFACT, PLAN, DEVICE),
                     side_effects="macOS: quits any running instance of the same application (from any checkout), "

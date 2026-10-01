@@ -17,6 +17,8 @@ BRANCH = "android-testing-prototype"
 ONE_DEVICE = "emulator-5554,device"
 
 TEST_HOOK = """
+if "--target_os=mac" in argv:
+    raise SystemExit(int(os.environ.get("FAKE_MAC_EXIT", "0")))
 core = os.environ["BRAVE_CORE_DIR"]
 src = os.path.dirname(core)
 build_dir = argv[argv.index("-C") + 1]

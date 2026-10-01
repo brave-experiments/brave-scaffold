@@ -1345,6 +1345,24 @@
           }
         }
       ]
+    },
+    "test-local": {
+      "type": "object",
+      "required": [
+        "discovery",
+        "phases"
+      ],
+      "properties": {
+        "discovery": {
+          "type": "object"
+        },
+        "phases": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        }
+      }
     }
   }
 }

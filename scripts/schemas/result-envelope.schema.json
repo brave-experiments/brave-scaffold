@@ -730,6 +730,22 @@
           }
         }
       }
+    },
+    {
+      "if": {
+        "properties": {
+          "command": {
+            "const": "test-local"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "$ref": "command-data.schema.json#/$defs/test-local"
+          }
+        }
+      }
     }
   ]
 }
