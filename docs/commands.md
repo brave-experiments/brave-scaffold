@@ -19,7 +19,8 @@ look, and what the codes mean. Only delivered commands appear here.
   child output, and the final result. Package commands use the short `pnpm` or `npm`
   name on the console; the log keeps their exact Node and payload paths. Internal
   probes go to the saved log.
-  Routine Android Java bytecode rewrite messages appear only with `--verbose`; the
+  Routine Android Java bytecode rewrite messages, in app builds and Android tests, appear
+  only with `--verbose`; the
   diagnostic log keeps them at every verbosity level.
   `--verbose` also prints probes; `--quiet` hides progress and child output, but keeps
   scaffold warnings, errors, and results. A failed child shows its last 40 lines

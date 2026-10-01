@@ -252,6 +252,22 @@ class SupportBranchTests(AndroidTestsTestCase):
         self.assertEqual(json.loads(result.stdout)["error"]["code"], "DEPENDENCY_INCOMPATIBLE")
 
 
+class OutputTests(AndroidTestsTestCase):
+    def test_bytecode_rewrite_details_are_shown_only_in_verbose_output_for_tests_and_apps(self):
+        detail = "redirecting constructor from upstream/Class to brave/Class"
+        code = 'if "test" in argv or "build" in argv:\n    print("%s")\n    print("[12/20] progress")\n' % detail
+        self.hook = self.sandbox.hook("import json\n" + code + TEST_HOOK + ANDROID_HOOK)
+        self.on_test_branch()
+        for command in (("test", "android", "brave_junit_tests"), ("build", "android")):
+            for verbosity in ("normal", "verbose"):
+                with self.subTest(command=command, verbosity=verbosity):
+                    result = self.sandbox.bdev("--json", "--config", self.config, "--checkout", "main", *command,
+                                               "--verbosity", verbosity, env=self.env(FAKE_ADB_DEVICES=ONE_DEVICE))
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertEqual(detail in result.stderr, verbosity == "verbose")
+                    self.assertIn("[12/20] progress", result.stderr)
+
+
 class OutcomeTests(AndroidTestsTestCase):
     def test_an_unsupported_suite_is_refused_first(self):
         result, document = self.run_tests("brave_browser_tests")

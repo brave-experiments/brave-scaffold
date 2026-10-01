@@ -26,6 +26,12 @@ BYTECODE_DETAIL = re.compile(
     r"|delete .+ from .+$|add .+ annotation to .+ in .+$)")
 
 
+def compiles_java(arguments):
+    """Builds, and Android tests, which compile before they run; other test output is left whole."""
+    arguments = list(arguments)
+    return arguments[:2] == ["run", "build"] or (arguments[:2] == ["run", "test"] and "--target_os=android" in arguments)
+
+
 def bytecode_detail(text):
     return bool(BYTECODE_DETAIL.match(text.rstrip("\r\n")))
 
@@ -65,5 +71,5 @@ def run(ctx, execution, arguments, extra_env=None):
         return argv, run_streaming(argv, str(execution.identity.core), env, ctx.log, json_mode=ctx.json_mode,
                                    preserve_stdout=ctx.command == "bpm",
                                    verbose_output=bytecode_detail if ctx.command != "bpm" and
-                                   list(arguments[:2]) == ["run", "build"] else None,
+                                   compiles_java(arguments) else None,
                                    display_argv=[execution.toolchain.manager, *argv[2:]])
