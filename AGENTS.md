@@ -132,7 +132,8 @@ Conventional Commits: `type(optional-scope): description`, for example
 Describe what changed and why in plain words. The required unsigned marker is
 the sole prefix exception: `🚧 docs: explain setup`.
 
-Commit at logical breakpoints after validation. Do not amend, rebase, or rewrite existing commits without a request.
+At the end of every turn that changes files, commit that turn's validated change as a
+Conventional Commit, staging only its files. Also commit at logical breakpoints within a turn. Do not amend, rebase, or rewrite existing commits without a request.
 Do not push unless explicitly requested.
 
 Attempt a signed commit first. If signing fails or times out, confirm HEAD did
