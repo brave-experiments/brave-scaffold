@@ -178,18 +178,21 @@ def restart_apk(ctx, identity, artifact, result, device=None, op=None):
                             note="aapt2 comes from the Android support resources, which the build prepares before "
                                  "compiling; this builds too. It is not part of 'bdev tools setup'.")])
     adapter, device, source = device or preflight_device(ctx)
-    progress = None
-    if op is not None:
-        for step in (step_module.install_apk_step(device["id"], artifact["path"]),
-                     step_module.stop_package_step(device["id"], artifact["package"]),
-                     step_module.launch_package_step(device["id"], artifact["package"])):
-            op.start(step.name, **step.record())
-        progress = op.succeed
+    descriptions = {step.name: step for step in (
+        step_module.install_apk_step(device["id"], artifact["path"]),
+        step_module.stop_package_step(device["id"], artifact["package"]),
+        step_module.launch_package_step(device["id"], artifact["package"]))}
+
+    def start_phase(name):
+        if op is not None:
+            op.start(name, **descriptions[name].record())
+
     output_dir = artifact.get("output_dir") or str(Path(artifact["path"]).parent.parent)
     assessment = output_freshness.artifact_freshness(ctx, identity, output_dir, android=True)
     output_freshness.add_freshness_warning(result, assessment)
     outcome = adb.restart_package(adapter, device["id"], artifact["path"], artifact["package"], ctx.environ, ctx.log,
-                                  progress=progress)
+                                  progress=op.succeed if op is not None else None, started=start_phase,
+                                  failed=op.fail if op is not None else None)
     if op is not None:
         op.succeed("run", artifact=artifact["path"])
     result.data = {**(result.data or {}), "run": {"artifact": artifact, "freshness": assessment,

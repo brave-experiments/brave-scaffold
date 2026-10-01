@@ -102,36 +102,53 @@ def _adb(adb, device, args, environ, log, timeout=120):
     return run_capture([adb, "-s", device, *args], os.getcwd(), environ, log, timeout=timeout)
 
 
-def restart_package(adb, device, apk, package, environ, log=None, verify_seconds=VERIFY_SECONDS, progress=None):
+def restart_package(adb, device, apk, package, environ, log=None, verify_seconds=VERIFY_SECONDS,
+                    progress=None, started=None, failed=None):
     """Install over the existing app (data is kept), stop only this package, launch, verify.
 
-    `progress(name)` is called as each of "install-apk", "stop-package", and "launch-package" succeeds.
+    Callbacks record only actual starts and observed outcomes. Launch succeeds
+    only after PID confirmation; its command and verification exits are separate.
     """
-    progress = progress or (lambda name: None)
+    progress = progress or (lambda name, **outcome: None)
+    started = started or (lambda name: None)
+    failed = failed or (lambda name, **outcome: None)
+    started("install-apk")
     installed = _adb(adb, device, ["install", "-d", "-r", "-g", apk], environ, log, timeout=600)
     if installed.returncode != 0 or "Success" not in installed.stdout:
+        failed("install-apk", exit=installed.returncode)
         output = (installed.stdout + installed.stderr).strip()
         raise ScaffoldError("LAUNCH_FAILED", "Installing %s on %s failed: %s" % (apk, device, output[-500:]),
-                            details={"device": device, "exit": installed.returncode})
-    progress("install-apk")
+                            details={"device": device, "phase": "install-apk", "exit": installed.returncode},
+                            child_exit_code=installed.returncode)
+    progress("install-apk", exit=installed.returncode)
+    started("stop-package")
     stopped = _adb(adb, device, ["shell", "am", "force-stop", package], environ, log)
     if stopped.returncode != 0:
+        failed("stop-package", exit=stopped.returncode)
         raise ScaffoldError("LAUNCH_FAILED", "Stopping %s on %s failed, so it was not restarted: %s" % (
             package, device, stopped.stderr.strip()[-300:] or "exit %d" % stopped.returncode),
-            details={"device": device, "package": package, "exit": stopped.returncode})
-    progress("stop-package")
+            details={"device": device, "package": package, "phase": "stop-package", "exit": stopped.returncode},
+            child_exit_code=stopped.returncode)
+    progress("stop-package", exit=stopped.returncode)
+    started("launch-package")
     launched = _adb(adb, device, ["shell", "monkey", "-p", package, "1"], environ, log)
     if launched.returncode != 0:
+        failed("launch-package", exit=launched.returncode)
         raise ScaffoldError("LAUNCH_FAILED", "Launching %s on %s failed." % (package, device),
-                            details={"device": device, "stderr": launched.stderr.strip()[-500:]})
-    progress("launch-package")
+                            details={"device": device, "phase": "launch-package", "exit": launched.returncode,
+                                     "stderr": launched.stderr.strip()[-500:]}, child_exit_code=launched.returncode)
     deadline = time.monotonic() + verify_seconds
     while True:
         probe = _adb(adb, device, ["shell", "pidof", package], environ, log, timeout=30)
         pid = probe.stdout.strip()
         if probe.returncode == 0 and pid:
+            progress("launch-package", exit=launched.returncode, verification_exit=probe.returncode,
+                     pid=pid.split()[0])
             return {"device": device, "package": package, "pid": pid.split()[0]}
         if time.monotonic() >= deadline:
+            failed("launch-package", exit=launched.returncode, verification_exit=probe.returncode)
             raise ScaffoldError("LAUNCH_FAILED", "%s was launched on %s but no process appeared." % (package, device),
-                                details={"device": device, "package": package})
+                                details={"device": device, "package": package, "phase": "launch-package",
+                                         "exit": launched.returncode, "verification_exit": probe.returncode},
+                                child_exit_code=launched.returncode)
         time.sleep(0.5)

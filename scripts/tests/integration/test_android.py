@@ -393,6 +393,18 @@ class DeviceTests(AndroidTestCase):
         result, document = self.run_android("mac", command="deploy")
         self.assertEqual(document["error"]["code"], "INVALID_INPUT")
 
+    def test_failed_install_records_only_the_attempted_child_phase(self):
+        result, document = self.run_android("android", "--device", "emulator-5554", FAKE_ADB_INSTALL_FAIL="7")
+        self.assertEqual(result.returncode, 5, result.stderr)
+        record = json.loads((self.sandbox.config.parent / ".bdev/operations" /
+                             (document["operation_id"] + ".json")).read_text())
+        phases = [step for step in record["steps"] if step["name"] in
+                  ("install-apk", "stop-package", "launch-package")]
+        self.assertEqual([step["name"] for step in phases], ["install-apk"])
+        self.assertEqual((phases[0]["status"], phases[0]["outcome"]["exit"]), ("failed", 7))
+        self.assertEqual(document["child_exit_code"], 7)
+        self.assertFalse(any("force-stop" in argv or "monkey" in argv for argv in self.adb_calls()))
+
     def test_missing_apk_and_failed_install_or_launch(self):
         apk = self.src / "out" / "android_Debug_arm64" / "apks" / "BraveMonoarm64.apk"
         result, document = self.run_android("android", "--device", "emulator-5554", FAKE_ADB_INSTALL_FAIL="1")
@@ -544,6 +556,13 @@ class PackageIdentityTests(AndroidTestCase):
         self.assertEqual((result.returncode, document["error"]["code"]), (5, "LAUNCH_FAILED"))
         self.assertIn("stop", document["error"]["message"].lower())
         self.assertFalse([call for call in self.adb_calls() if "monkey" in call])
+        record = json.loads((self.sandbox.config.parent / ".bdev/operations" /
+                             (document["operation_id"] + ".json")).read_text())
+        phases = {step["name"]: step for step in record["steps"]}
+        self.assertEqual(phases["install-apk"]["outcome"]["exit"], 0)
+        self.assertEqual((phases["stop-package"]["status"], phases["stop-package"]["outcome"]["exit"]),
+                         ("failed", 1))
+        self.assertNotIn("launch-package", phases)
 
 
 class AndroidDoctorTests(AndroidTestCase):

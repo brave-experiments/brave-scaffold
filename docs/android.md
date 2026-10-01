@@ -161,7 +161,10 @@ device before building.
 
 The APK is installed over the existing app (`adb install -d -r -g`), the APK's own
 package is stopped on that device only (a failed stop is `LAUNCH_FAILED`), launched, and
-its process confirmed. Profiles and
+its process confirmed. Each install, stop, and launch phase starts immediately
+before its command. Failed steps keep the observed child exit; later steps remain
+unattempted. Launch success is recorded only after PID confirmation, with the
+launch command exit and verification exit recorded separately. Profiles and
 app data are kept: nothing is uninstalled or cleared. Older or independently built
 APKs may be installed, with the same `STALE_BUILD` / `UNKNOWN_FRESHNESS` reporting
 as on macOS. `adb` comes from `ADB`, `ANDROID_HOME`, `ANDROID_SDK_ROOT`, or `PATH`.
