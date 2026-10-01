@@ -1,0 +1,269 @@
+{
+  "hooks": {
+    "0761331a86a038e4d0debe6912a5e20b6183d77ef077c86cbc859c9bf95eeb2a": {
+      "sources": {
+        "build/config/siso/configure_siso.py": "787060784e573d56ec5e85e73b0efc68961b7a9e76586b960b8ea9b286473e3b",
+        "build/fuchsia/gen_build_defs.py": "1d11d22e0bd7fe93c0191efae6a837f7810ee41099425d5dbd344814cbd35c72",
+        "build/fuchsia/update_product_bundles.py": "84dc4151c3d37ea1847b8eef422326393f9213e30b971150f65b2d4e7f81e5c5",
+        "build/fuchsia/update_sdk.py": "f1f1ab4d1c31dee87da06d0616873b3a92df73a2e56ae934a0a6c1c327a912dd",
+        "build/landmines.py": "24efc2fdf2a2a8373bb03725513fa022878e648be9400aeb1a4d43f8a36e8e51",
+        "build/mac_toolchain.py": "2345c9a1d023aeb4b6f2fa9cc602db0bec51e348b89f8c4175c5a3587d898a26",
+        "build/util/generate_tast_control_cq_tests.py": "5dd88a64026cbd436c356ee885304a239d316ca3371c36c40fc78bb112286cf6",
+        "build/util/lastchange.py": "bdaa8346de36bacb873a4b5a1981e78cb70c32b6f961edd771476b655cfda674",
+        "build/util/tast_control.py": "2aa5332622ad1c8484c365f73baa626df7fe3927635e37cda26da73a1b65771f",
+        "build/vs_toolchain.py": "032620538c8199207bbc9ebed1f884528f4f4a39000c4752ae33e5e8d6a481f6",
+        "buildtools/reclient_cfgs/configure_reclient_cfgs.py": "87687b4a30f5b84a4fc0399882a5d1245ae152d108e37a89878ce2916b3d35ea",
+        "chrome/test/data/android/manage_wpr_archives.py": "023f926ecdc0d0eec78f748e806b212e615b314d6c2da5af0013e9e5262bff90",
+        "testing/generate_location_tags.py": "956a935d6b76f62269bf37f63d32f3861f370d64461d054d5988174cd3a1d8fa",
+        "third_party/arcore-android-sdk/test-apks/update.py": "e7e857d2b15b25d74a14d1c4faf4aa68b208ad9f7e11193d338c9c49756e410b",
+        "third_party/depot_tools/download_from_google_storage.py": "1f2220571e164b0d857d766c9a68f39bd1f8bd087ab075d55c91b5a173075b9d",
+        "third_party/depot_tools/gsutil.py": "1fedca8d27d1a99304c2a8704c580441e4da1fbe643c0f4ceb4e52807e16d4bf",
+        "third_party/depot_tools/update_depot_tools_toggle.py": "6797d3ed046e32efbd48e044347dce7703559b76b4adaca1c874f69ff83c1c23",
+        "tools/cast3p/update_binaries.py": "cb1b880e3ff82a6e0bdbff0d2307b32025e4baa6fa8b10943dfa577ccd450b24",
+        "tools/clang/scripts/build.py": "a05e271a9c55265343552dcfc12c156dd041371528d8266c1e8098cbf05cc83c",
+        "tools/download_optimization_profile.py": "197f9cd11cbc1c25c2982dd94e512c98611857cec137d608af7fe5faac9a7b6c",
+        "tools/perf/fetch_benchmark_deps.py": "235274e5b9e58a48ada1a16208e9e31e2ac93b05b6d47e3fcd81602acf9116af",
+        "tools/remove_stale_files.py": "6a3225ffac5f681f530fec5a3f2ed29c085d937daef8ace3672b07cb564d3cd3",
+        "tools/remove_stale_pyc_files.py": "b4a9a034e2d3818cec1bd4b72666dcfeac3f8b3c4a0895231234b542e062c5c2",
+        "tools/rust/build_rust.py": "08903bb6253e8693cf2b1a2ea39949c2382f7cfb272748763a7a27a7cd07c434",
+        "tools/update_pgo_profiles.py": "1e823ff28dec322be62a50ec016b5db40384f19259200527e060e33f04429a7e",
+        "v8/tools/builtins-pgo/download_profiles.py": "b580e440c69f23e3e29fc386c137902b6fddf57fcda7b7b61e61d1c60e765931"
+      },
+      "writes": [
+        "out",
+        "third_party/depot_tools",
+        ".landmines",
+        "third_party/test_fonts/test_fonts.tar.gz",
+        "third_party/node/node_modules.tar.gz",
+        "third_party/tfhub_models",
+        "tools/clang",
+        "tools/rust",
+        "third_party/llvm-build",
+        "third_party/rust-toolchain",
+        "third_party/rust-src",
+        "third_party/emsdk",
+        "third_party/fuchsia-sdk",
+        "third_party/fuchsia-sdk-internal",
+        "third_party/android_toolchain",
+        "third_party/arcore-android-sdk/test-apks",
+        "third_party/apache-win32",
+        "third_party/libaom/testdata",
+        "third_party/libvpx/testdata",
+        "third_party/catapult",
+        "tools/perf/page_sets/data",
+        "tools/cast3p",
+        "build/cros_cache",
+        "build/util/LASTCHANGE",
+        "build/util/LASTCHANGE.committime",
+        "build/util/LASTCHANGE_commit_position.h",
+        "gpu/config/gpu_lists_version.h",
+        "skia/ext/skia_commit_hash.h",
+        "gpu/webgpu/DAWN_VERSION",
+        "gpu/webgpu/dawn_commit_hash.h",
+        "chrome/test/data/android",
+        "chrome/android/profiles",
+        "chromeos",
+        "testing/location_tags.json",
+        "buildtools/reclient_cfgs",
+        "build/config/siso",
+        "build/win",
+        "build/linux",
+        "build/ciopfs",
+        "ios_internal",
+        "v8/tools/builtins-pgo/profiles"
+      ]
+    },
+    "20e26dc84741f8f56b1d1e84b9567c96934e4edefb33f48f1e0e9f96b0f4a6b3": {
+      "sources": {
+        "../build/util/lastchange.py": "bdaa8346de36bacb873a4b5a1981e78cb70c32b6f961edd771476b655cfda674",
+        "../tools/remove_stale_files.py": "6a3225ffac5f681f530fec5a3f2ed29c085d937daef8ace3672b07cb564d3cd3",
+        "agents/skills/setup.py": "8a4e19eb3a6ea40dd9b2f0705165e3990d157255fb46544ef706d2bffbfe2542",
+        "build/apple/download_swift_format.py": "18ba317ca4da599ff1b32c56ec2f94b33f3fb0a7fbc8ae5e0c393a3ff8da24fa",
+        "build/hardlink_file.py": "614e3517cac5d6a3ad7e5b5b0ffc4ae43ec63b4a059ffb0ea9ba3c84576a0e12",
+        "build/mac/download_hermetic_xcode.py": "9e80a7febea78b4f85111c27e5fab606e110030e550b324ed8d8bb99696fae44",
+        "build/util/update_midl_files.py": "f53e33e1ee3423a265e830b0acdf22d902ed3b54076e48d58133f875429ef016",
+        "build/util/version.py": "ad914c0c584a12434e32ad317fba632ec11b05d78162297e5587cf6888e4f29c",
+        "build/win/download_wintun.py": "34833b0ab7cac2eae326d36de22d72d98bbbc5981ae70383d3f34974deddb20d",
+        "script/generate_licenses.py": "e19959c5d53d06a7163ef16718be34ccccd7c4664a53cef278da2052b5503194",
+        "script/ios_bootstrap.py": "b7405b16136f2ea2e408852342f5eff5a8d331d9d141b56b740e41ca4703fbb4",
+        "script/web_discovery_project.py": "d6cdbbbc167716e1236bf29c1d45aa09c926978e581427f5f963659cdfb96326",
+        "third_party/opengrep/download_opengrep.py": "60944dd276a2c64ed5af8e622bf06bf59a5639b23c9d6890662b57b1373ddb96",
+        "third_party/reclient_configs/src/configure_reclient.py": "8155ed0836890722d853617f2d227de33247f6cf85f554c7fac30a4a2ca7e266",
+        "tools/chromium_src/generate_clang_format.py": "b69592305e7af92665e4bbf6ae350189914c8245e781cc7f3dc5a307d9cb2560",
+        "tools/cr/install_extra_deps.py": "3b0634ed32881f20075289e296fb090ad95edfd71874c3cd03924d82cbc39c48",
+        "tools/remove_stale_files.py": "701839eaa9454d6a019aad9e191540013c676548293aa317f5c16898fc7ae2ec"
+      },
+      "writes": [
+        ".claude/skills",
+        ".clang-format",
+        "chromium_src/.clang-format",
+        "ios",
+        "third_party/node",
+        "third_party/opengrep",
+        "third_party/ast-grep",
+        "third_party/updater/mac",
+        "third_party/brave-vpn-wireguard-nt-dlls",
+        "third_party/brave-vpn-wireguard-tunnel-dlls",
+        "third_party/wintun",
+        "third_party/libdmg-hfsplus",
+        "vendor/web-discovery-project",
+        "build/version.gni",
+        "build/mac_files",
+        "build/mac/hermetic_xcode",
+        "components/third_party/adblock/LICENSE",
+        "components/third_party/local_data/LICENSE",
+        "browser/resources/brave_new_tab_page_refresh/state/background_images/LICENSE",
+        "third_party/cryptography",
+        "third_party/macholib",
+        "../out",
+        "../third_party/rust-toolchain",
+        "../third_party/swift-format",
+        "../third_party/win_build_output/midl",
+        "../build/util/LASTCHANGE",
+        "../build/util/LASTCHANGE.committime",
+        "../build/config/siso/brave_siso_config.star",
+        "../build/mac_files"
+      ]
+    },
+    "2fe54c0022e9c2261d510bb0e24ee0040f1a3bc9f29f18391952b60820fbc8a2": {
+      "sources": {
+        "third_party/mesa/mesa_build.py": "6ac9b2808d602d9b7ce747fa38ee7726b72183f4927314d7127b882e6f24f458"
+      },
+      "writes": [
+        ".",
+        "../../out",
+        "../../third_party",
+        "../../build/config",
+        "../../build/util"
+      ]
+    },
+    "381288b931e0253afec7d0a6f412216b73c0e05d3c48ee0d053564ec26fd2d11": {
+      "sources": {},
+      "writes": [
+        ".",
+        "../../out",
+        "../../third_party",
+        "../../build/config",
+        "../../build/util"
+      ]
+    },
+    "3b484c35468bf711d9c3a9269bde1f7c32eb3b1a03997e33e46e9eff0533959f": {
+      "sources": {
+        "scripts/deps/download_emscripten.py": "308e102c399aa40a18408c7dbedd02668def57bc69e8dad9e335b620ede03bc1",
+        "scripts/deps/fix_cft_permissions.py": "ef64311047aab498f704edb657ecadbfb7d5e56f25069b9e2f08fb6ab519bcde",
+        "third_party/node/node.py": "367db1cf007d83f14471d8c89ed031bda749f33e5492e68853fbf47b048cc826"
+      },
+      "writes": [
+        ".",
+        "../../out",
+        "../../third_party",
+        "../../build/config",
+        "../../build/util"
+      ]
+    },
+    "a94cf18d51b4f81357fb81b2eea76b998ff0379b9e54a972dc9f1f394cf23936": {
+      "sources": {},
+      "writes": [
+        ".",
+        "../../out",
+        "../../third_party",
+        "../../build/config",
+        "../../build/util"
+      ]
+    },
+    "c3ff60ddc921a5f44f8cff12a995e512b600c1e8e6e16aa3b9958e2a7891bc69": {
+      "sources": {
+        "tools/download-chromium-file.py": "3cba0e9853b218d1d6b131a17104793bb8c854c333a5ce1bd259e624dafdeecd",
+        "tools/lastchange.py": "011bbcc13f5b34941a574c067a1688d22f0518e8ef1d036a988c62b7e6dea3aa"
+      },
+      "writes": [
+        ".",
+        "../../out",
+        "../../third_party",
+        "../../build/config",
+        "../../build/util"
+      ]
+    },
+    "d29aa06c374e54c3a746dddf2dd875122424f25139ee89e73e33516a52ebaa60": {
+      "sources": {},
+      "writes": [
+        ".",
+        "../../out",
+        "../../third_party",
+        "../../build/config",
+        "../../build/util"
+      ]
+    },
+    "ebed3cbe5f81e4f37cc3ec60c42d48486122c0566a4734d9a0f2c0477c6fb432": {
+      "sources": {
+        "tools/create_ranlib_symlink.py": "51470a7e19a9eacc9d362dc5ae235b4e37566c0242b207579f3369ce10547968"
+      },
+      "writes": [
+        ".",
+        "../../out",
+        "../../third_party",
+        "../../build/config",
+        "../../build/util"
+      ]
+    }
+  },
+  "sync_sources": {
+    "build/commands/lib/actionGuard.js": [
+      "332a223cbb764028e754c79f476c0848a897fa43d91ee7d195f9a140cf166da1"
+    ],
+    "build/commands/lib/checkEnvironment.js": [
+      "d971fbcd88360d6b435356205569f990c88efc6682458097eef12b5598237090"
+    ],
+    "build/commands/lib/chromiumFetch.ts": [
+      "a2010282dfe6782a38fa87a4d05d68cc8ca51afd34cb637aa5d1289dc035fd1d"
+    ],
+    "build/commands/lib/ciDetect.ts": [
+      "7c170b22745ea4d3a0851b54dd417d6c832ff13345ab472494c2594cb8d0d86f"
+    ],
+    "build/commands/lib/config.ts": [
+      "3457928dc753dbc43b4440248fafc749463ed3d0e23e6d932b7e29f343d967c4"
+    ],
+    "build/commands/lib/depotTools.js": [
+      "7b4e0b36f5fe64999b86b540dc4a7201fdae2fb01dd0931650aefae2215f0309"
+    ],
+    "build/commands/lib/envConfig.ts": [
+      "3b36fda90e70a8cd35d1e01212923be9f18104e274ee632eb48448f6f1ca005a"
+    ],
+    "build/commands/lib/gitPatcher.js": [
+      "92fc73ea36b1fa88c3991655720e23bea41483ef78804e2e63cc55f4a1bfc0f2"
+    ],
+    "build/commands/lib/repositories.ts": [
+      "8d20a73c91fab1c9dea0097e19d1e7a131dfec8692e0ec9f6acc93ddac894940"
+    ],
+    "build/commands/lib/rootDir.cjs": [
+      "472b18bace474317159f61868a44ac6c0a21cce212c57b98f4262ebdfd7ede45"
+    ],
+    "build/commands/lib/sisoUtils.js": [
+      "083be39b9726364053cc09239e1097942d30ee6c643dc20823256c54ebcaf7be"
+    ],
+    "build/commands/lib/syncUtils.js": [
+      "89408aaf7218de479216b1041a1cb6d186b5ab469161de5d7cb0595baa3483da"
+    ],
+    "build/commands/lib/util.js": [
+      "7fe226e87381766e443d5a73d82f3081c2920c48df66e362bcdfe1deb1538ab5"
+    ],
+    "build/commands/scripts/devPreinstall.ts": [
+      "74a17beb1090b2af2fd3aaae0e387831f322394a3c325f719b693bf9ae4e40d8"
+    ],
+    "build/commands/scripts/sync.ts": [
+      "098d01a97c6ed8c788cf5c56a6fadb32bf7658d2e1b5ac1d9f1899ef2917aa0b"
+    ],
+    "pnpm-workspace.yaml": [
+      "df5b4a2f3c18a58f2ab919d5d2f175ed1dc88885a790fb2d0e568cc85dd97a3d"
+    ],
+    "vendor/depot_tools/gclient.py": [
+      "ac100091d3d3c02993cbcad11d13cd1e25ae8adb4346746bf85886dd96094913"
+    ],
+    "vendor/depot_tools/gclient_scm.py": [
+      "e92bb49deaba9de7dd89fc131c20e58e12c8ca36efe3b2fa48261b705aadc33f"
+    ]
+  },
+  "version_writers": [
+    "ad914c0c584a12434e32ad317fba632ec11b05d78162297e5587cf6888e4f29c"
+  ]
+}

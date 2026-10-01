@@ -347,7 +347,7 @@ def build_plan_steps(ctx, identity, effective, subcommand="build", script_args=(
 
     last = "readiness"
     if sync_args is not None:
-        steps.append(step_module.sync_step(identity, sync_args, package(sync_args), ["readiness"]))
+        steps.append(sync_module.plan_step(ctx, identity, sync_args, toolchain, ["readiness"]))
         steps.append(step_module.Step(
             "readiness-after-sync", "Check tools and build readiness again once the sync has changed the checkout.",
             "unresolved", needs=["sync"], on_failure="The build does not start.",
@@ -662,8 +662,7 @@ def cmd_sync(ctx):
     if parsed.get("plan"):
         arguments = sync_module.sync_arguments(ctx, mobile, parsed.forwarded, identity)
         toolchain, steps = common_plan_steps(ctx, identity, "mac", "sync", False)
-        steps.append(step_module.sync_step(identity, arguments, tools_module.package_argv(toolchain, arguments)
-                                           if toolchain is not None else None, ["readiness"]))
+        steps.append(sync_module.plan_step(ctx, identity, arguments, toolchain, ["readiness"]))
         result = Result(command="sync")
         result.data = {"plan": {"argv_arguments": arguments, "cwd": str(identity.core),
                                 "writes": ["source tree and dependencies"], "steps": [step.to_dict() for step in steps]}}

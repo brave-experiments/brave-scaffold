@@ -2,13 +2,7 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this file,
 # You can obtain one at https://mozilla.org/MPL/2.0/.
-"""The repositories a source sync can reset, and the local work they hold.
-
-Core's sync runs gclient with `--reset` for Chromium and again for Core, and gclient resets every Git
-dependency it manages. Each gclient records those dependencies in an entries file next to its
-configuration (`.gclient_entries` in the workspace, `.brave_gclient_entries` in Core); entries whose name
-contains a colon are packages, not repositories.
-"""
+"""Repository discovery and local-work evidence for the selected sync operation."""
 
 from __future__ import annotations
 
@@ -127,52 +121,77 @@ def read_baseline(identity, root=None):
     return {}
 
 
-def checkpoint(identity, root=None, log=None):
+def checkpoint(identity, root=None, log=None, before=None):
     """Remember the tracked changes left by a successful guarded sync.
 
     Legacy baselines lack origin evidence and remain on disk, but cannot excuse
     local work: they may have been saved by rejected or failed blanket adoption.
     """
-    data = {"schema_version": 1, "origin": "successful-sync", "core": str(identity.core),
-            "files": snapshot(identity, sync_repositories(identity), log)}
+    current = snapshot(identity, sync_repositories(identity), log, include_core=True)
+    previous = read_baseline(identity, root)
+    files = {}
+    for label, paths in current.items():
+        accepted = {path: digest for path, digest in paths.items()
+                    if (before is not None and before.get(label, {}).get(path, "clean") != digest)
+                    or (path in previous.get(label, {}) and previous[label][path] == digest)}
+        if accepted:
+            files[label] = accepted
+    data = {"schema_version": 1, "origin": "successful-sync", "core": str(identity.core), "files": files}
     atomic_write(baseline_path(identity, root), json.dumps(data, sort_keys=True, indent=1) + "\n")
 
 
-def local_work(identity, scope, expected, baseline, log=None):
-    """Local work in the scope that a sync would reset, as conflict records.
+def overlaps(path, writes):
+    """A write can replace a path, its directory, or a file obstructing its parents."""
+    return any(path == write or path.is_relative_to(write) or write.is_relative_to(path) for write in writes)
 
-    Core is checked for any change, untracked files included. Every other repository is checked for tracked
-    files that differ from HEAD, except paths that still hold what a scaffold step wrote (`expected`) or what
-    Core's tools had left when the last sync finished (`baseline`). Incomplete discovery is itself a conflict.
-    Staged changes are checked separately and cannot be excused by working-file checksums.
+
+def local_work(identity, scope, expected, baseline, log=None, *, reset_repositories=None, writes=(), unknown_writes=(), reset_upstream=True):
+    """Protect only work threatened by reset, patch, hooks, or unknown mutation scope.
+
+    A non-reset gclient update uses Git's clean checks and non-forced checkout/rebase;
+    it can refuse local work but does not discard it. Unmanaged Core is never reset.
+    Generated worktree bytes never excuse a staged change in a reset repository.
     """
+    resets = set(scope.repositories) if reset_repositories is None else set(reset_repositories)
     conflicts = [{"path": problem, "reason": "incomplete evidence"} for problem in scope.problems]
-    current = {}
-    staged = set()
     for repository in scope.repositories:
         changes = gitstate.inspect_changes(repository, log)
-        if repository == identity.core:
-            if changes.all:
-                conflicts.append({"path": str(identity.core),
-                                  "reason": "Core has %d uncommitted change(s)" % len(changes.all)})
-            continue
-        staged |= {repository / relative for relative in changes.staged}
-        files = {relative: sha256_or_none(repository / relative) for relative in changes.tracked}
-        if files:
-            current[_label(identity, repository)] = files
-        conflicts += [{"path": _label(identity, repository / relative),
-                       "reason": "untracked work could collide with incoming sync files; incoming paths are unknown"}
-                      for relative in sorted(changes.untracked)]
-    conflicts += [{"path": _label(identity, path), "reason": "staged changes would be discarded by sync"}
-                  for path in sorted(staged)]
-    for label, files in current.items():
-        base = identity.src if label == "." else identity.src / label
-        for relative, digest in sorted(files.items()):
-            if base / relative in staged:
+        if reset_upstream and repository in resets:
+            ahead = gitstate._git(repository, ["rev-list", "--count", "@{upstream}..HEAD"], log)
+            if ahead.returncode == 0 and (ahead.truncated or ahead.stdout.strip() != "0"):
+                conflicts.append({"path": _label(identity, repository / ".git/HEAD"),
+                                  "reason": "local commits would be discarded by gclient reset --upstream; "
+                                            "retain them on a branch or select a non-reset sync"})
+        label = _label(identity, repository)
+        for relative in sorted(changes.all):
+            path = repository / relative
+            threatened = repository in resets
+            output = overlaps(path, writes)
+            if not threatened and not output and not unknown_writes:
                 continue
-            if base / relative in expected or (relative in baseline.get(label, {}) and baseline[label][relative] == digest):
+            known = not path.is_symlink() and (path in expected or (relative in baseline.get(label, {})
+                                             and baseline[label][relative] == sha256_or_none(path)))
+            if relative in changes.staged and (threatened or unknown_writes):
+                reason = "staged changes would be discarded by gclient reset" if threatened else \
+                    "staged work could be discarded by " + "; ".join(unknown_writes)
+            elif output:
+                # A hook writes the working file, even when gclient skips this repository.
+                # Staged work does not make different wanted working bytes disposable.
+                if known and relative not in changes.staged:
+                    continue
+                operations = sorted({operation for write, operation in writes.items() if overlaps(path, [write])}) \
+                    if isinstance(writes, dict) else ["patch or hook output"]
+                reason = "; ".join(operations) + " could overwrite local work; save the edit first, or skip regular hooks with --nohooks"
+            elif unknown_writes and not known:
+                # Unknown hooks cannot establish preservation of developer working bytes.
+                reason = "; ".join(unknown_writes) + "; inspect the operation or repeat with --nohooks"
+            elif relative in changes.untracked:
+                if known:
+                    continue
+                reason = "untracked work could collide with gclient reset; incoming paths are unknown"
+            elif known:
                 continue
-            conflicts.append({"path": _label(identity, base / relative),
-                              "reason": "tracked file with local changes in %s; a sync resets it" % (
-                                  "Chromium" if label == "." else label)})
+            else:
+                reason = "tracked local changes would be discarded by gclient reset; save wanted edits first"
+            conflicts.append({"path": _label(identity, path), "reason": reason})
     return conflicts

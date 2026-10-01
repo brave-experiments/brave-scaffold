@@ -110,6 +110,23 @@ results with the evidence.
    `brave/doctor.py`; execution paths reuse the same functions. Groups other than machine,
    shell, and signing run in the selected checkout's approved environment.
 
+## Sync preservation evidence
+
+`brave/sync_model.py` checks the selected Core implementation and reads its
+effective configuration through `sync_probe.mjs`. The probe has read permission
+only. `sync_contracts.json` identifies reviewed sync sources, version writers,
+and hook inventories with their source digests and conservative output scopes.
+An implementation change requires reviewing its mutation behavior before adding
+its digest. Never infer a hook's output scope from its name or silently accept a
+new script. Include pre-DEPS hooks and recursive DEPS files; `--nohooks` does not
+skip pre-DEPS hooks.
+
+The same model supplies plans and execution guards. Patch metadata identifies
+materialized bytes even when the patch input has changed. A sync baseline accepts
+new output, not unchanged developer work. Regression fixtures must distinguish
+the index, working bytes, and untracked collisions, and cover both reset and
+non-reset operations.
+
 ## Evidence for support claims
 
 A combination is `supported` in the capability table only after it has run on a

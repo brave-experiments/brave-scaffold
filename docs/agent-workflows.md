@@ -23,7 +23,9 @@ the scope, or human approval is expressly required.
 
 `--adopt-local-changes` is disabled. Blanket approval cannot identify which local
 bytes a sync may discard; the command saves no baseline and starts no sync.
-A successful guarded sync still records the changes its tools leave behind.
+The sync guard permits local work outside the selected operation's reset and
+write scopes. A successful sync records new generated output, without adopting
+unchanged developer work that it preserved. Read-only plans need no sync authority.
 
 A suggested repair in a result, or a passing `doctor`, grants nothing. `requires_user_action` says only whether a step needs a person; `false`
 does not mean it is permitted. For an unresolved checkout, list candidates with

@@ -130,15 +130,22 @@ def patches_step(identity, plan, argv, after_sync=False):
                 on_failure="Stops before the build; files it had already patched stay patched.", cleanup=NO_CLEANUP)
 
 
-def sync_step(identity, arguments, argv, needs=()):
+def sync_step(identity, arguments, argv, needs=(), model=None, conflicts=()):
     from . import sync_scope
-    repositories = [str(path) for path in sync_scope.sync_repositories(identity).repositories]
-    return Step("sync", "Sync sources and dependencies with Core's own sync command.", "planned",
+    repositories = [str(path) for path in (model.resets if model is not None
+                    else sync_scope.sync_repositories(identity).repositories)]
+    outputs = sorted(map(str, model.writes)) if model is not None else []
+    detail = "arguments: " + " ".join(redact_argv(arguments))
+    if model is not None:
+        detail += "; Chromium sync: " + model.chromium
+    if conflicts:
+        detail += "; " + "; ".join(item["path"] + ": " + item["reason"] for item in conflicts[:5])
+    return Step("sync", "Sync sources and dependencies with Core's own sync command.", "blocked" if conflicts else "planned",
                 reads=[str(identity.workspace / ".gclient")],
-                writes=[str(identity.workspace / ".gclient"), *repositories],
+                writes=[str(identity.workspace / ".gclient"), *repositories, *outputs],
                 argv=argv, cwd=str(identity.core), needs=list(needs),
                 on_failure="Stops before any later phase; a partial sync stays as it is.", cleanup=NO_CLEANUP,
-                detail="arguments: " + " ".join(redact_argv(arguments)))
+                detail=detail)
 
 
 def build_step(identity, effective, subcommand, arguments, argv, needs, conditional_arguments=()):

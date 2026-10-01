@@ -208,14 +208,14 @@ class PatchPlan:
     metadata_writes: list = field(default_factory=list)  # absolute paths of the metadata files Core rewrites
 
 
-def plan_patch_preparation(identity, log=None, root=None):
+def plan_patch_preparation(identity, log=None, root=None, extra_expected=None):
     """Decide whether patches need applying and whether applying could lose local work."""
     inventory = read_inventory(identity)
     report = collect_drift(identity, inventory)
     receipt = read_receipt(identity, root)
     # Another verified step (for example Android support preparation) may change patched files on
     # top of Core's patches. Those files are expected while they still hold what that step wrote.
-    extra = (receipt or {}).get("extra_expected") or {}
+    extra = {**((receipt or {}).get("extra_expected") or {}), **(extra_expected or {})}
     for repo_path, expected in extra.items():
         entry = report.files.get(repo_path)
         if entry is not None and entry.reasons == {SOURCE_CHANGED} and sha256_or_none(identity.src / repo_path) == expected:
@@ -282,7 +282,7 @@ def write_set_conflicts(identity, stale, known, extra, log):
             if repository == chromium:
                 tracked = gitstate.tracked_paths(repository.path, CORE_WRITTEN, log)
                 dirty |= {path for path in CORE_WRITTEN if path not in tracked
-                          and (identity.src / path).exists()}
+                          and ((identity.src / path).exists() or (identity.src / path).is_symlink())}
         except ScaffoldError as error:
             conflicts.append({"path": repository.rel or ".", "reason": error.message})
             continue
@@ -297,6 +297,8 @@ def write_set_conflicts(identity, stale, known, extra, log):
 
 
 def _write_conflict(identity, key, relative, owners, dirty, known, extra):
+    if (identity.src / key).is_symlink():
+        return "local symlink would redirect a patch or version write; save or remove the link first"
     recorded = {entry.recorded[relative] for entry, _ in owners if relative in entry.recorded}
     accepted = recorded | {value for value in (known.get(key), extra.get(key)) if value}
     current = sha256_or_none(identity.src / key)

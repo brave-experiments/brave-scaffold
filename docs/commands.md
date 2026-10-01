@@ -195,6 +195,10 @@ phases that finished (each with its `phase` name and outcome, for example a sync
 revisions or a build with its exit status and `artifact_status`), and `artifacts` keeps the
 verified output. A cancelled command lists them the same way.
 
+Sync results also include `scope`: the Chromium sync decision, reset repositories,
+other output writes, and incomplete preservation evidence. Plans check the same
+scope read-only and show conflicts before dispatch.
+
 ## Plans
 
 `--plan` (on `build`, `test`, `sync`, the combined commands, `run`, and `deploy`) shows the
