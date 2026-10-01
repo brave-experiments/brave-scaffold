@@ -9,7 +9,7 @@ import subprocess
 import unittest
 from pathlib import Path
 
-from tests.android_fixtures import GIT, install_fake_aapt2, install_fake_adb, make_support_repo
+from tests.android_fixtures import GIT, install_fake_aapt2, install_fake_adb, make_support_repo, script_contracts
 from tests.integration.test_build import SKIP, BuildTestCase
 
 ANDROID_HOOK = """
@@ -55,6 +55,7 @@ DEVICES_TWO = "emulator-5554,device;R58M1234,device"
 class AndroidTestCase(BuildTestCase):
     def setUp(self):
         super().setUp()
+        self.sandbox.install_script_contracts(script_contracts())
         (self.src / "chrome").mkdir(exist_ok=True)
         (self.src / "chrome" / "VERSION").write_text("MAJOR=155\nMINOR=0\n")
         with open(self.src.parent / ".gclient", "a") as stream:

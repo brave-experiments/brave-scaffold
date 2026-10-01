@@ -75,21 +75,19 @@ files (in the source root and in nested repositories such as `v8`) and copy reso
 into the checkout's `third_party` directories (the paths `copyMacRes.sh` declares);
 GN files are then regenerated.
 
-Before running a script, the build lists what it can write and checks each item. The
-scaffold supports one script layout and reads it directly:
+Before executing either script, including its `-v` checks, the scaffold compares
+its SHA-256 with the reviewed identities in the tooling installation. Each identity
+has a complete manifest of patch repositories, patch files, direct source edits,
+and resource destinations. A support repository cannot approve its own code.
+Unknown or changed shell code stops with `PREPARATION_CONFLICT` before execution;
+select a supported implementation or extend and review the tooling adapter first.
 
-- `applyPatches.sh` applies each patch with `handle_patch "<label>" "<repository>" "<patch>"`,
-  where the repository is `$src_root` or `$src_root/<directory>` and the patch is a
-  `patches/<name>.patch` file (given directly or through a variable assigned to one in the
-  script). The repository named in each call owns that patch's files, at any depth. A call
-  in any other form stops the build, because the files it writes cannot be known. A script
-  with no such calls falls back to every patch it names, each owned by the repository that
-  tracks the path.
-- Files the script edits directly are the `$src_root/<file>` paths written in it; the
-  deepest repository containing the file owns each one.
-- `copyMacRes.sh` declares each resource with `patch_dependency "<name>" "<destination>"
-  "<gate>" "res/<source>" "<readme>"`. Every file under a declared destination that the copy
-  would create or replace is checked.
+Patch data can change within a supported script contract. The guard reads every
+current patch target in the repository the manifest names and checks direct source
+writes too. Missing or unreadable repository discovery blocks preparation.
+Resource copying and signing stay within the declared destinations; existing files
+there are checked before replacement. Plans and execution use this same inventory.
+The tracked-change after-check remains additional evidence of adapter errors.
 
 The build stops with `PREPARATION_CONFLICT`, changing nothing, and names the files, when
 
@@ -103,15 +101,14 @@ The build stops with `PREPARATION_CONFLICT`, changing nothing, and names the fil
   example a fetched dependency you changed, or a receipt that predates resource records,
   stops the build; move the listed files aside (sync restores fetched dependencies) or
   restore them, then repeat;
-- a patch has a format the scaffold cannot read, a patch call is not in the supported form,
+- a patch has a format the scaffold cannot read, a script identity is unknown,
   or the repositories gclient manages cannot be listed.
 
-Restore or move the listed files, then repeat. Edits made outside the files the
-scripts touch are never affected. Inputs you edited in the working copy are applied
-as they are. Because the scripts are shell code, the build also compares the tracked
-changes in every repository before and after they run. A change outside the declared
-files is reported as `PREPARATION_CONFLICT`, and the refresh is not recorded as done; nothing
-is reverted, so review it with `git status`.
+Restore or move conflicting local files before repeating. Unknown shell code needs
+a reviewed adapter; moving local files does not make that code supported. Patch and
+resource inputs you edit remain subject to the manifest and preservation checks.
+After execution, a tracked change outside the declared scope is an adapter failure:
+the build stops, records nothing as prepared, and leaves the files for review.
 
 The build also keeps a marked block of GN overrides (no component build, no
 secondary ABI, `use_mold=false`, `android_static_analysis="off"`, remote execution)

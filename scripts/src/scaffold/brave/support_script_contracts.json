@@ -1,0 +1,58 @@
+{
+  "d10b8e0415e295b6aa03a35636b3693f465debfd90b94c4cb800f0b56717b0c0": {
+    "script": "applyPatches.sh",
+    "patches": [
+      [
+        "",
+        "build-config-apply-arch_gni.patch"
+      ],
+      [
+        "",
+        "build-config-cpp-modules-mac-android.patch"
+      ],
+      [
+        "",
+        "robolectric-mac-support.patch"
+      ],
+      [
+        "",
+        "forwarder2-mac-support.patch"
+      ],
+      [
+        "v8",
+        "v8-mac-support.patch"
+      ]
+    ],
+    "direct": [
+      "build/config/BUILDCONFIG.gn"
+    ],
+    "resources": []
+  },
+  "3e2add0da8f08a7a247a0817a69b104b7b37b1ff7619cc115a62660e2593d5ff": {
+    "script": "copyMacRes.sh",
+    "patches": [],
+    "direct": [],
+    "resources": [
+      [
+        "build/config/siso",
+        "res/siso/brave_siso_config.star"
+      ],
+      [
+        "third_party/jdk",
+        "res/jdk-v25/current"
+      ],
+      [
+        "third_party/android_build_tools/protoc/cipd",
+        "res/protoc-v28/protoc"
+      ],
+      [
+        "third_party/android_sdk/public/build-tools",
+        "res/android-sdk/public/build-tools/37.0.0"
+      ],
+      [
+        "third_party/android_build_tools/aapt2/cipd",
+        "res/aapt2/aapt2"
+      ]
+    ]
+  }
+}

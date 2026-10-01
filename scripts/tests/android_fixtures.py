@@ -4,6 +4,7 @@
 # You can obtain one at https://mozilla.org/MPL/2.0/.
 """A local support repository and a fake adb for Android tests. Nothing here uses the network."""
 
+import hashlib
 import subprocess
 from pathlib import Path
 
@@ -80,6 +81,23 @@ REALISTIC_PATCHES = {
         "--- forkSrcPrefix/gni/snapshot.gni\n+++ forkDstPrefix/gni/snapshot.gni\n"
         "@@ -1 +1 @@\n-v8 original\n+v8 patched\n"),
 }
+
+
+def script_contracts():
+    """Complete write inventories for the fixed scripts this fixture supplies."""
+    resources = [["third_party/jdk", "res/jdk/current"]]
+    extra_copy = COPY_SCRIPT + 'patch_dependency "Extra" "third_party/extra" "" "res/extra/current" ""\n'
+    entries = [
+        (COPY_SCRIPT, "copyMacRes.sh", [], [], resources),
+        (extra_copy, "copyMacRes.sh", [], [], resources + [["third_party/extra", "res/extra/current"]]),
+        (APPLY_SCRIPT, "applyPatches.sh", [["", "support.patch"]],
+         ["SUPPORT_PATCHED", "base/BUILD.gn", "base/support_target.cc"], []),
+        (REALISTIC_APPLY_SCRIPT, "applyPatches.sh", [["", "build-config-fork.patch"],
+         ["", "support-a-prefix.patch"], ["v8", "v8-nested.patch"]], ["build/config/BUILDCONFIG.gn"], []),
+    ]
+    return {hashlib.sha256(text.encode()).hexdigest():
+            {"script": name, "patches": patches, "direct": direct, "resources": copied}
+            for text, name, patches, direct, copied in entries}
 
 FAKE_ADB = """#!%(python)s
 import json, os, sys

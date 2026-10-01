@@ -57,6 +57,8 @@ class SupportRefreshLocalWorkTests(AndroidTestCase):
         git(src / "v8", "commit", "-q", "-m", "v8")
         with open(src / ".git" / "info" / "exclude", "a") as stream:
             stream.write("/v8/\n")
+        entries = src.parent / ".gclient_entries"
+        entries.write_text(entries.read_text().replace("}\n", "  'src/v8': 'https://example.invalid/v8.git',\n}\n"))
         self.sandbox.commit_all("main")
         self.support = make_support_repo(self.sandbox.root / "realistic", {"v154": 154, "v155": 155}, realistic=True)
         self.assertEqual(self.setup_support().returncode, 0)
@@ -132,6 +134,12 @@ class SupportRefreshLocalWorkTests(AndroidTestCase):
                                  check=True, capture_output=True, text=True).stdout
         self.assertEqual(indexed, "staged work\n")
 
+    def test_named_patch_repositories_still_require_complete_discovery(self):
+        target = self.src / "support" / "target_a.cc"
+        (self.src.parent / ".gclient_entries").unlink()
+        self.change_support_patch()
+        self.assert_blocked_without_changes([target], "incomplete evidence")
+
     def test_an_edited_copied_resource_is_not_overwritten(self):
         release = self.src / "third_party" / "jdk" / "current" / "release"
         release.write_text("JAVA_VERSION=25 hand edited\n")
@@ -202,6 +210,15 @@ class ResourceOwnershipTests(AndroidTestCase):
         self.release.write_text("something someone put here\n")
         self.assert_blocked(self.release, "something someone put here\n")
 
+    def test_extra_files_under_a_resource_destination_are_protected_from_signing(self):
+        extra = self.release.parent / "local-tool"
+        extra.write_text("wanted local tool\n")
+        result, document = self.build()
+        self.assertEqual(result.returncode, 4, result.stderr)
+        self.assertIn("third_party/jdk/current/local-tool", str(document["error"]["details"]["files"]))
+        self.assertEqual(extra.read_text(), "wanted local tool\n")
+        self.assertFalse(self.release.exists())
+
     def test_an_existing_copy_identical_to_the_support_resource_is_adopted(self):
         self.release.write_text("JAVA_VERSION=25 v155\n")
         result, _ = self.build()
@@ -248,17 +265,47 @@ class ResourceOwnershipTests(AndroidTestCase):
 
 @unittest.skipIf(SKIP, "needs direnv on a macOS host")
 class SupportScriptEffectsTests(AndroidTestCase):
-    def test_a_script_that_writes_outside_its_declared_scope_is_reported_and_not_recorded(self):
+    def test_unknown_direct_write_is_blocked_before_it_replaces_local_work(self):
         (self.src / "chrome" / "other.cc").write_text("upstream\n")
         self.sandbox.commit_all("main")
+        (self.src / "chrome" / "other.cc").write_text("wanted local work\n")
         self.assertEqual(self.setup_support().returncode, 0)
         script = self.wc() / "applyPatches.sh"
-        script.write_text(script.read_text() + 'echo "surprise" >> ../src/chrome/other.cc\n')
+        script.write_text(script.read_text() + 'echo "surprise" > ../src/chrome/other.cc\n')
         result, document = self.document("build", "android")
         self.assertEqual((result.returncode, document["error"]["code"]), (4, "PREPARATION_CONFLICT"), result.stderr)
-        self.assertEqual([item["path"] for item in document["error"]["details"]["files"]], ["chrome/other.cc"])
+        self.assertEqual((self.src / "chrome" / "other.cc").read_text(), "wanted local work\n")
         self.assertEqual([r for r in self.node_calls() if "build" in r["argv"]], [], "the build did not start")
         self.assertEqual(list(self.sandbox.config.parent.rglob("android-support.json")), [], "nothing was recorded")
+
+    def test_unknown_indirect_write_is_blocked_before_the_helper_runs(self):
+        self.assertEqual(self.setup_support().returncode, 0)
+        target = self.src / "chrome" / "untracked.cc"
+        target.write_text("wanted untracked work\n")
+        (self.wc() / "helper.sh").write_text('echo replacement > ../src/chrome/untracked.cc\n')
+        script = self.wc() / "applyPatches.sh"
+        script.write_text(script.read_text() + 'bash ./helper.sh\n')
+        result, document = self.document("build", "android")
+        self.assertEqual(result.returncode, 4, result.stderr)
+        self.assertEqual(document["error"]["code"], "PREPARATION_CONFLICT")
+        self.assertEqual(target.read_text(), "wanted untracked work\n")
+
+    def test_unknown_verify_code_is_not_executed_by_doctor(self):
+        self.assertEqual(self.setup_support().returncode, 0)
+        target = self.src / "chrome" / "untracked.cc"
+        target.write_text("wanted work\n")
+        script = self.wc() / "copyMacRes.sh"
+        script.write_text('echo replacement > ../src/chrome/untracked.cc\n' + script.read_text())
+        self.document("doctor", "android")
+        self.assertEqual(target.read_text(), "wanted work\n")
+
+    def test_incomplete_repository_discovery_blocks_support_writes(self):
+        self.assertEqual(self.setup_support().returncode, 0)
+        (self.src.parent / ".gclient_entries").unlink()
+        result, document = self.document("build", "android")
+        self.assertEqual(result.returncode, 4, result.stderr)
+        self.assertEqual(document["error"]["code"], "PREPARATION_CONFLICT")
+        self.assertFalse((self.src / "SUPPORT_PATCHED").exists())
 
 
 if __name__ == "__main__":

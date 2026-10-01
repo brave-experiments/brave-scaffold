@@ -180,6 +180,7 @@ class Sandbox:
     """A temp directory holding a scaffold configuration, checkouts, and fake PATH tools."""
 
     def __init__(self):
+        self.scripts = SCRIPTS
         self.root = Path(os.path.realpath(tempfile.mkdtemp(prefix="scaffold-test-")))
         self.home = self.root / "home"
         self.data = self.root / "data"
@@ -375,8 +376,22 @@ class Sandbox:
         self.write_config([(name if alias else None, core, "environments/" + name)])
 
     def bdev(self, *args, cwd=None, env=None, tool="bdev"):
-        return subprocess.run([str(SCRIPTS / tool), *args], cwd=str(cwd or self.root),
+        return subprocess.run([str(self.scripts / tool), *args], cwd=str(cwd or self.root),
                               env=env or self.env(), capture_output=True, text=True)
+
+    def install_script_contracts(self, contracts):
+        """Give a private tooling copy reviewed manifests for the fixture scripts.
+
+        Production tools have no test override or support-owned approval path.
+        """
+        self.scripts = self.root / "tooling" / "scripts"
+        shutil.copytree(SCRIPTS / "src", self.scripts / "src", ignore=shutil.ignore_patterns("__pycache__"))
+        for name in ("bdev", "bpm", "git-sign-with-1password"):
+            shutil.copy2(SCRIPTS / name, self.scripts / name)
+        (self.scripts / ".venv").symlink_to(SCRIPTS / ".venv", target_is_directory=True)
+        manifest = self.scripts / "src" / "scaffold" / "brave" / "support_script_contracts.json"
+        known = json.loads(manifest.read_text())
+        manifest.write_text(json.dumps({**known, **contracts}))
 
     def bdev_json(self, *args, **kwargs):
         result = self.bdev("--json", *args, **kwargs)
