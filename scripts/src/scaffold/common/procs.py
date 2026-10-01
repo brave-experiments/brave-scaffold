@@ -278,11 +278,12 @@ def _stream_process(argv, cwd, env, stdin, terminal):
 
 
 def run_streaming(argv, cwd, env, log, json_mode=False, stdin=None, preserve_stdout=False, display_argv=None,
-                  interactive=False):
+                  interactive=False, verbose_output=None):
     """Run a command whose output belongs to the user; return its exit code.
 
     In JSON mode the child's stdout goes to stderr so the result document is the
-    only thing on stdout.
+    only thing on stdout. `verbose_output` marks detail lines to keep in the log
+    and display only at verbose level, excluding them from a quiet failure tail.
     """
     log.record(argv, cwd, primary=True, display_argv=display_argv)
     if interactive:
@@ -293,7 +294,7 @@ def run_streaming(argv, cwd, env, log, json_mode=False, stdin=None, preserve_std
         return _forward_and_wait(process)
     terminal = not json_mode and sys.stdout.isatty() and sys.stderr.isatty()
     with _stream_process(argv, cwd, env, stdin, terminal) as (process, streams):
-        output = _StreamOutput(log, argv, env, streams[0], json_mode, preserve_stdout)
+        output = _StreamOutput(log, argv, env, streams[0], json_mode, preserve_stdout, verbose_output)
         code = None
         reader = _BoundedReader(process, 0, output.receive, streams=streams, terminal=terminal)
         try:
@@ -330,9 +331,10 @@ class _StreamOutput:
     writing a partial secret. Ordinary newline and carriage-return progress stays live.
     """
 
-    def __init__(self, log, argv, env, stdout, json_mode, preserve_stdout=False):
+    def __init__(self, log, argv, env, stdout, json_mode, preserve_stdout=False, verbose_output=None):
         self.preserve_stdout = preserve_stdout and not json_mode and log.verbosity != "quiet"
         self.log, self.stdout, self.json_mode = log, stdout, json_mode
+        self.verbose_output = verbose_output
         self.pending, self.decoders, self.discard = {}, {}, set()
         self.tail = ""
         secrets = {v for k, v in (env or os.environ).items() if v and SECRET_NAME.search(k)}
@@ -375,6 +377,8 @@ class _StreamOutput:
             text = text.replace(secret, "***")
         text = redact_url_credentials(text)
         self.log.save(text)
+        if self.verbose_output and self.verbose_output(text) and self.log.verbosity != "verbose":
+            return
         tail = (self.tail + text).encode("utf-8")[-16384:].decode("utf-8", "ignore")
         self.tail = "".join(tail.splitlines(keepends=True)[-40:])
         if self.log.verbosity != "quiet" and not (self.preserve_stdout and stream is self.stdout):

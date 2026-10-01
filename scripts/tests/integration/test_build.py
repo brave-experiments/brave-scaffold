@@ -77,6 +77,38 @@ class BuildTestCase(SandboxTest):
 
 
 class BuildTests(BuildTestCase):
+    def test_bytecode_details_require_verbose_but_remain_in_logs(self):
+        detail = "redirecting constructor from upstream/Class to brave/Class"
+        self.hook = self.sandbox.hook(
+            'if "build" in argv:\n'
+            '    print("redirecting con", end="", flush=True)\n'
+            '    print("structor from upstream/Class to brave/Class")\n'
+            '    print("make field public in brave/Class")\n'
+            '    print("[12/20] build progress")\n'
+            '    print("WARNING: bytecode diagnostic", file=sys.stderr)\n' + BUILD_HOOK)
+        for verbosity in ("normal", "verbose", "quiet"):
+            with self.subTest(verbosity=verbosity):
+                result, document = self.document("build", "--verbosity", verbosity)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(detail in result.stderr, verbosity == "verbose")
+                self.assertEqual("make field public in brave/Class" in result.stderr, verbosity == "verbose")
+                self.assertEqual("[12/20] build progress" in result.stderr, verbosity != "quiet")
+                self.assertEqual("WARNING: bytecode diagnostic" in result.stderr, verbosity != "quiet")
+                saved = Path(next(line.removeprefix("Log: ") for line in result.stderr.splitlines()
+                                  if line.startswith("Log: "))).read_text()
+                self.assertIn(detail, saved)
+                self.assertIn("make field public in brave/Class", saved)
+
+        direct = self.sandbox.bdev("--config", self.config, "--checkout", "main", "run", "build",
+                                   tool="bpm", env=self.env())
+        self.assertEqual(direct.returncode, 0, direct.stderr)
+        self.assertIn(detail, direct.stdout)
+        self.hook = self.sandbox.hook(Path(self.hook).read_text() + "\nraise SystemExit(1)\n")
+        failed, _ = self.document("build", "--quiet")
+        self.assertNotEqual(failed.returncode, 0)
+        self.assertNotIn(detail, failed.stderr)
+        self.assertIn("WARNING: bytecode diagnostic", failed.stderr)
+
     def test_default_build_runs_the_package_build_in_core_and_verifies_the_app(self):
         result, document = self.document("build")
         self.assertEqual((result.returncode, document["status"]), (0, "ok"), result.stderr)

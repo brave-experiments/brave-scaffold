@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import contextlib
+import re
 import shlex
 import shutil
 import stat
@@ -15,6 +16,18 @@ from pathlib import Path
 
 from ..common import tools as tools_module
 from ..common.procs import run_streaming
+
+
+# Routine messages printed by Core's Java bytecode rewriter.
+BYTECODE_DETAIL = re.compile(
+    r"^(?:redirecting constructor from |redirecting ownership for |redirecting type in method "
+    r"|changing owner for |change superclass of |use invoke virtual for call to method "
+    r"|make .+ (?:public|private) in .+$|make Class .+ non final$"
+    r"|delete .+ from .+$|add .+ annotation to .+ in .+$)")
+
+
+def bytecode_detail(text):
+    return bool(BYTECODE_DETAIL.match(text.rstrip("\r\n")))
 
 
 @contextlib.contextmanager
@@ -51,4 +64,6 @@ def run(ctx, execution, arguments, extra_env=None):
                 env[name] = value
         return argv, run_streaming(argv, str(execution.identity.core), env, ctx.log, json_mode=ctx.json_mode,
                                    preserve_stdout=ctx.command == "bpm",
+                                   verbose_output=bytecode_detail if ctx.command != "bpm" and
+                                   list(arguments[:2]) == ["run", "build"] else None,
                                    display_argv=[execution.toolchain.manager, *argv[2:]])
