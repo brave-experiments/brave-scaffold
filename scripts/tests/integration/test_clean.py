@@ -164,6 +164,18 @@ class RevalidationTests(SandboxTest):
         self.assertEqual((moved[0] / "original").read_text(), "approved")
         self.assertEqual(sorted(p.name for p in out.iterdir()), ["Debug_arm64"], "nothing is left half-renamed")
 
+    def test_a_git_entry_added_immediately_before_deletion_is_preserved(self):
+        out, entries = self.plan()
+        def add_repository(entry):
+            (out / entry.name / ".git").mkdir()
+            (out / entry.name / ".git/HEAD").write_text("wanted HEAD")
+        clean.execute_plan(entries, out, during_delete=add_repository)
+        self.assertEqual(entries[0].outcome, "skipped")
+        self.assertIn(".git", entries[0].detail)
+        remaining = out / (entries[0].private or entries[0].name)
+        self.assertEqual((remaining / ".git/HEAD").read_text(), "wanted HEAD")
+        self.assertEqual((remaining / "original").read_text(), "approved")
+
     def test_an_out_directory_replaced_after_planning_is_refused(self):
         out, entries = self.plan()
         elsewhere = self.sandbox.root / "old-out"
@@ -298,6 +310,29 @@ class InterruptedCleanupTests(SandboxTest):
         self.assertEqual((remainder / "keep").read_text(), "a different directory under the same name")
         entry = next(e for e in document["data"]["entries"] if e["name"] == remainder.name)
         self.assertEqual(entry["outcome"], "skipped")
+
+    def assert_resumed_repository_is_preserved(self, git_file):
+        self.interrupt_after_rename(partial=False)
+        (remainder,) = [p for p in self.out.iterdir() if p.name.startswith(clean.PRIVATE_PREFIX)]
+        if git_file:
+            (remainder / ".git").write_text("gitdir: recovered repository\n")
+        else:
+            (remainder / ".git").mkdir()
+            (remainder / ".git/HEAD").write_text("wanted HEAD\n")
+        (remainder / "source.cc").write_text("wanted recovered source\n")
+        before = tree_snapshot(remainder)
+        code, document = self.run_cli("mac", "--configuration", "debug", "--execute")
+        self.assertEqual(code, 6)
+        entry = next(e for e in document["data"]["entries"] if e["name"] == remainder.name)
+        self.assertEqual(entry["outcome"], "skipped")
+        self.assertIn(".git", entry["detail"])
+        self.assertEqual(tree_snapshot(remainder), before)
+
+    def test_resumed_cleanup_preserves_a_new_git_directory(self):
+        self.assert_resumed_repository_is_preserved(git_file=False)
+
+    def test_resumed_cleanup_preserves_a_new_git_file(self):
+        self.assert_resumed_repository_is_preserved(git_file=True)
 
     def prune_after_later_operations(self):
         directory = self.sandbox.config.parent / ".bdev/operations"

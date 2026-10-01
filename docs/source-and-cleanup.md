@@ -188,6 +188,9 @@ The next `bdev clean` finds the remainder. A directory with a `.scaffold-deletin
 counts as a remainder only when a record from this checkout names it and it is still the
 directory that record identified (same device and inode). It is listed as `planned` with
 "unfinished deletion of <output> (operation <id>)", for the targets you select, and
-`--execute` continues removing exactly that directory. Any other directory with a
+`--execute` continues removing exactly that directory. Normal and resumed deletions
+check for a `.git` entry through the held directory descriptor immediately before
+removing contents. A repository added after planning or interruption is kept and
+reported as skipped. Any other directory with a
 cleanup-style name is listed as `skipped` and left alone, and so is a recorded name that has
 since been replaced. A partly removed output is not a usable build; rebuild before running it.

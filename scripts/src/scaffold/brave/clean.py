@@ -164,6 +164,15 @@ def _remove_contents(directory_fd):
         os.rmdir(name, dir_fd=directory_fd)
 
 
+def _contains_repository(directory_fd):
+    """A held directory's contents may have changed since planning or interruption."""
+    try:
+        os.stat(".git", dir_fd=directory_fd, follow_symlinks=False)
+        return True
+    except FileNotFoundError:
+        return False
+
+
 def _delete_approved(out_fd, out_dir, entry, during_delete=None, op=None):
     """Delete exactly the directory that was approved; return (outcome, detail).
 
@@ -185,11 +194,8 @@ def _delete_approved(out_fd, out_dir, entry, during_delete=None, op=None):
     try:
         if _identity(os.fstat(held)) != entry.identity:
             return "skipped", "changed after the plan was made"
-        try:
-            os.stat(".git", dir_fd=held, follow_symlinks=False)
+        if _contains_repository(held):
             return "skipped", "contains a .git entry"
-        except FileNotFoundError:
-            pass
         if during_delete:
             during_delete(entry)
         private = "%s%s-%s" % (PRIVATE_PREFIX, entry.name, secrets.token_hex(4))
@@ -220,6 +226,10 @@ def _record_end(op, succeeded, **outcome):
 
 def _remove_held(out_fd, held, private, op, directory):
     try:
+        if _contains_repository(held):
+            reason = "contains a .git entry; left as %s in src/out" % private
+            _record_end(op, False, directory=directory, private=private, reason=reason)
+            return "skipped", reason
         _remove_contents(held)
         os.rmdir(private, dir_fd=out_fd)
     except OSError as error:
