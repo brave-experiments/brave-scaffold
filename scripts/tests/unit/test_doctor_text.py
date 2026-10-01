@@ -55,6 +55,29 @@ class RenderTests(unittest.TestCase):
         self.assertIn("LOG_WRITE_FAILED", stderr.getvalue())
         self.assertNotIn("CHECK_WARNING", stderr.getvalue())
 
+    def test_shared_tools_and_filesystems_do_not_hide_environment_differences(self):
+        def report(alias, sdk, device):
+            return {"alias": alias, "core": "/" + alias, "checks": [
+                make_check("host-macos-arm64", PASS, "macOS arm64 host", "mac").to_dict(),
+                make_check("macos-sdk", PASS, "SDK visible", "mac", tool_environment={"SDKROOT": sdk}).to_dict(),
+                make_check("disk-space", WARNING, "Space low", "mac", required=False,
+                           filesystem=device, free_bytes=10).to_dict()]}
+        reports = [report("main", "/sdk/one", 1), report("alt", "/sdk/two", 1), report("external", "/sdk/one", 2)]
+        common, hidden = doctor.shared_checkout_checks(reports)
+        self.assertEqual([check.name for check in common], ["host-macos-arm64", "disk-space", "disk-space"])
+        self.assertIn("main, alt", common[1].summary)
+        for names in hidden:
+            self.assertIn("host-macos-arm64", names)
+            self.assertIn("disk-space", names)
+            self.assertNotIn("macos-sdk", names)
+        reports[1]["checks"][1]["evidence"]["tool_environment"]["SDKROOT"] = "/sdk/one"
+        common, hidden = doctor.shared_checkout_checks(reports)
+        self.assertIn("macos-sdk", [check.name for check in common])
+        # An uninspected checkout must not inherit another checkout's successful tool checks.
+        reports[1]["checks"] = []
+        common, hidden = doctor.shared_checkout_checks(reports)
+        self.assertNotIn("macos-sdk", [check.name for check in common])
+
     def test_details_stay_readable_next_to_the_marker(self):
         text = self.report()
         self.assertIn("❌  broken: Needs work.", text)

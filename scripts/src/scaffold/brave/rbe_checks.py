@@ -55,6 +55,8 @@ def read_env(path, seen=None):
 
 def _machine(ctx, scope):
     checks = []
+    tool_environment = {key: ctx.environ.get(key) for key in ("DEVELOPER_DIR", "SDKROOT", "TOOLCHAINS")}
+    tool_environment["xcrun"] = shutil.which("xcrun", path=ctx.environ.get("PATH"))
     sdk = run_capture(["xcrun", "--show-sdk-version"], os.getcwd(), ctx.environ, ctx.log, timeout=30)
     version = sdk.stdout.strip()
     checks.append(make_check(
@@ -68,7 +70,7 @@ def _machine(ctx, scope):
         if Path(METAL_MOUNTS).is_dir() else []
     if metal.returncode == 0:
         checks.append(make_check("metal-toolchain", PASS, "xcrun metal works.", scope, required=False,
-                                 affects=("mac build",), xcrun_works=True))
+                                 affects=("mac build",), xcrun_works=True, version=metal.stdout.strip()))
     elif mounted:
         checks.append(make_check("metal-toolchain", PASS, "A Metal toolchain component is mounted; builds select it.",
                                  scope, required=False, affects=("mac build",)))
@@ -77,6 +79,8 @@ def _machine(ctx, scope):
             "metal-toolchain", WARNING, "No usable Metal toolchain was found; shader compilation may fail.", scope,
             required=False, affects=("mac build",),
             repairs=[repair(["xcodebuild", "-downloadComponent", "MetalToolchain"], requires_user_action=True)]))
+    for check in checks:
+        check.evidence["tool_environment"] = tool_environment
     return checks
 
 
@@ -87,7 +91,7 @@ def _disk(scope, path):
     return make_check("disk-space", PASS if enough else WARNING,
                       "%.0f GB free under %s." % (gigabytes, path) if enough else
                       "Only %.0f GB free under %s; a build may need more." % (gigabytes, path),
-                      scope, required=False, affects=("mac build",), free_bytes=free)
+                      scope, required=False, affects=("mac build",), free_bytes=free, filesystem=os.stat(path).st_dev)
 
 
 def _selection(ctx):

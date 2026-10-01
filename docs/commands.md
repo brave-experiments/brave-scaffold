@@ -266,7 +266,10 @@ runs every delivered scope. A blocker in a required check gives
 `READINESS_INCOMPLETE`; both exit `3`. Optional problems are warnings and do not
 fail readiness. Outside a checkout, doctor inspects every configured checkout and runs shared
 runtime, shell, and signing checks once. Each checkout uses its own approved
-environment and gets a separate report; any required failure makes the overall
+environment and gets a separate report. Matching host and tool results appear
+once in the shared text section; differing results stay under each checkout.
+Disk space appears once per filesystem, listing the affected checkouts. JSON
+retains all per-checkout checks, including the shared results; any required failure makes the overall
 command fail. JSON includes per-checkout reports in `data.checkouts`, with
 checkout-qualified names in the top-level checks and error summary.
 An explicit `--checkout` limits inspection to that checkout; running inside a

@@ -207,13 +207,17 @@ def merge_checks(checks):
     return list(merged.values())
 
 
-def render_text(scopes, checks):
+def render_text(scopes, checks, *, hidden=(), heading="🩺 Brave setup doctor", show_scopes=True):
     """Group results and show each problem and suggested repair once."""
     selection = next((check for check in checks if check.name == "checkout-selection"), None)
     missing = selection is not None and selection.status == NOT_CHECKED
-    lines = ["🩺 Brave setup doctor", "Scopes: %s" % ", ".join(scopes)]
+    lines = [heading]
+    if show_scopes:
+        lines.append("Scopes: %s" % ", ".join(scopes))
     sections = {}
     for check in checks:
+        if check.name in hidden:
+            continue
         if missing and check.status == NOT_CHECKED and (
                 check.name in ("checkout-selection", "checkout-layout", "environment", "local-tools", "services-key")
                 or check.name.startswith("android-")
@@ -221,7 +225,7 @@ def render_text(scopes, checks):
             continue
         if check.name.startswith("rbe-"):
             section = "RBE"
-        elif check.name in ("checkout-selection", "checkout-layout", "environment", "local-tools"):
+        elif check.name in ("checkout-selection", "checkout-layout", "environment", "local-tools", "services-key"):
             section = "Checkout"
         elif check.name in ("scaffold-runtime", "git", "direnv"):
             section = "Runtime"
@@ -251,9 +255,11 @@ def render_text(scopes, checks):
             "%d required check(s) not checked." % incomplete, warnings))
     else:
         lines.append("Required checks passed; %d warning(s). Checks marked not checked remain unverified." % warnings)
+    if hidden:
+        lines.append("Checkout totals include the shared checks above.")
     repairs = []
     for check in checks:
-        if check.status != PASS:
+        if check.name not in hidden and check.status != PASS:
             for step in check.repairs:
                 if step not in repairs:
                     repairs.append(step)
@@ -295,8 +301,7 @@ def all_checkout_reports(ctx, scopes, groups):
     dependent = {group: values for group, values in groups.items() if group not in MACHINE_GROUPS}
     result = evaluate_checks(ctx, scopes, shared)
     reports = []
-    texts = [result.text.removesuffix("\n\n" + MARKER_LEGEND).replace(
-        "🩺 Brave setup doctor", "🩺 Brave setup doctor — shared checks", 1)]
+    shared_checks = [CheckResult(**check) for check in result.checks]
     for record in ctx.config.checkouts:
         label = record.alias or record.core
         try:
@@ -312,8 +317,6 @@ def all_checkout_reports(ctx, scopes, groups):
         reports.append({"alias": record.alias, "core": str(record.core_real),
                         "status": report.status, "exit_code": report.exit_code,
                         "checks": report.checks, "error": report.error, "warnings": report.warnings})
-        texts.append(report.text.removesuffix("\n\n" + MARKER_LEGEND).replace(
-            "🩺 Brave setup doctor", "Checkout: %s — %s" % (label, record.core_real), 1))
         for check in report.checks:
             tagged = dict(check, name="%s/%s" % (label, check["name"]))
             tagged["evidence"] = dict(check["evidence"], checkout=str(record.core_real), alias=record.alias)
@@ -327,11 +330,52 @@ def all_checkout_reports(ctx, scopes, groups):
         result.status, result.exit_code = "error", error.exit_code
         result.error = {"code": error.code, "message": error.message,
                         "details": error.details, "repairs": error.repairs}
+    common, hidden = shared_checkout_checks(reports)
+    texts = [render_text(scopes, [*shared_checks, *common],
+                         heading="🩺 Brave setup doctor — shared checks").removesuffix("\n\n" + MARKER_LEGEND)]
+    for report, names in zip(reports, hidden):
+        checks = [CheckResult(**check) for check in report["checks"]]
+        texts.append(render_text(scopes, checks, hidden=names, show_scopes=False,
+                                 heading="Checkout: %s — %s" % (report["alias"] or report["core"], report["core"]))
+                     .removesuffix("\n\n" + MARKER_LEGEND))
     texts.append("Overall: %s." % ("readiness blocked" if error and error.code == "READINESS_BLOCKED" else
                                      "readiness incomplete" if error else "required checks passed"))
     result.text = "\n\n".join([*texts, MARKER_LEGEND])
     return result
 
+
+
+def shared_checkout_checks(reports):
+    """Consolidate presentation only; every checkout retains its full readiness evidence."""
+    names = {"host-macos-arm64", "xcode-developer-directory", "macos-sdk", "metal-toolchain",
+             "adb", "git-lfs", "rbe-reachability"}
+    common, hidden = [], [set() for _ in reports]
+    if not reports:
+        return common, hidden
+    for check in reports[0]["checks"]:
+        if check["name"] not in names:
+            continue
+        # Scope membership does not change the tool or environment being checked.
+        comparable = {key: value for key, value in check.items() if key != "scopes"}
+        if all(any({key: value for key, value in candidate.items() if key != "scopes"} == comparable
+                   for candidate in report["checks"]) for report in reports):
+            common.append(CheckResult(**check))
+            for item in hidden:
+                item.add(check["name"])
+    disks = {}
+    for index, report in enumerate(reports):
+        for check in report["checks"]:
+            device = check["evidence"].get("filesystem")
+            if check["name"] != "disk-space" or device is None:
+                continue
+            hidden[index].add(check["name"])
+            disks.setdefault(device, []).append((report, check))
+    for entries in disks.values():
+        # Use the lowest observed free space if the filesystem changed between probes.
+        check = min((check for _, check in entries), key=lambda check: check["evidence"]["free_bytes"])
+        labels = ", ".join(report["alias"] or report["core"] for report, _ in entries)
+        common.append(replace(CheckResult(**check), summary=check["summary"] + " Checkouts: " + labels + "."))
+    return common, hidden
 
 def evaluate_checks(ctx, scopes, groups):
     checks = []

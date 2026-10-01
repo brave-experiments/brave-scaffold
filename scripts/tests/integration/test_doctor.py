@@ -60,6 +60,17 @@ class DoctorTests(SandboxTest):
         self.assertIsNone(document["context"]["checkout"])
         self.assertEqual(before, tree_snapshot(second.parents[3]))
 
+    def test_matching_host_checks_appear_once_in_text_but_remain_in_json(self):
+        self.two_checkouts()
+        result = self.sandbox.bdev("--config", self.config, "doctor", "mac")
+        self.assertEqual(result.stdout.count("host-macos-arm64:"), 1)
+        self.assertEqual(result.stdout.count("macos-sdk:"), 1)
+        self.assertEqual(result.stdout.count("disk-space"), 1)
+        self.assertEqual(result.stdout.count("services-key"), 2)
+        _, document = self.doctor("mac")
+        for report in document["data"]["checkouts"]:
+            self.assertIn("macos-sdk", [check["name"] for check in report["checks"]])
+
     def test_explicit_and_cwd_selection_limit_inspection(self):
         second = self.two_checkouts()
         for args, cwd in [(("mac", "--checkout", "second"), self.sandbox.root), (("mac",), second)]:
