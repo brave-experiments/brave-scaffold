@@ -80,6 +80,11 @@ class BuildTests(BuildTestCase):
     def test_default_build_runs_the_package_build_in_core_and_verifies_the_app(self):
         result, document = self.document("build")
         self.assertEqual((result.returncode, document["status"]), (0, "ok"), result.stderr)
+        self.assertIn("Building Brave for macOS (Debug, arm64)", result.stderr)
+        self.assertIn("Build mode: online (RBE/Siso requested)", result.stderr)
+        self.assertIn("Output directory: " + str(self.src / "out" / "Debug_arm64"), result.stderr)
+        for phase in ("Environment", "Readiness", "Source preparation", "Package build", "Output verification", "Source state"):
+            self.assertRegex(result.stderr, phase + r" [0-9]+[.][0-9]{2}s")
         self.assertIn("$ pnpm run build", result.stderr)
         self.assertNotIn("/bin/node ", result.stderr)
         self.assertEqual(self.build_argv(), [

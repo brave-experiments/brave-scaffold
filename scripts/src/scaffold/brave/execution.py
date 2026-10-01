@@ -39,7 +39,8 @@ class Execution:
 def load(ctx, identity):
     """Load and validate the checkout's approved environment (evaluates the reviewed `.envrc`)."""
     ctx.log.phase("Checking environment for %s..." % identity.core)
-    return Execution(identity, env_module.load_environment(identity, ctx.environ, ctx.log))
+    with ctx.log.measure("Environment"):
+        return Execution(identity, env_module.load_environment(identity, ctx.environ, ctx.log))
 
 
 def resolve_tools(execution, ctx):

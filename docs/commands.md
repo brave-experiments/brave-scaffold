@@ -37,15 +37,26 @@ look, and what the codes mean. Only delivered commands appear here.
   remove old files from this directory when no running command needs them.
 - Known secret arguments, secret-named environment values, and URL passwords are
   redacted from saved child output and its console copy. This cannot identify every
-  secret a program might print. Child output uses pipes and is forwarded by line,
-  including carriage-return progress; a partial line waits for its terminator or
-  process exit. Lines exceeding 1 MiB are explicitly omitted to bound memory and
-  avoid storing partial secrets. Programs may disable terminal color under pipes.
-  Direct `bpm` and `vpython3` stdout remains byte-for-byte and unredacted in normal
-  text mode so pipes and binary output still work; its saved copy is redacted text.
+  secret a program might print. When stdout and stderr are terminals, text-mode
+  execution uses a pseudo-terminal with the caller's dimensions and forwards resize
+  events. Children keep terminal detection, color, and interactive progress while
+  their combined stdout/stderr is captured. Quiet mode changes display, not terminal
+  detection. Redirected and JSON output use pipes and remain non-interactive.
+  Output is forwarded by line, including carriage-return progress; a partial line
+  waits for its terminator or process exit. Lines exceeding 1 MiB are explicitly
+  omitted to bound memory and avoid storing partial secrets.
+  Direct `bpm` and `vpython3` stdout (or combined terminal output) stays raw and
+  unredacted in normal text mode so prompts and binary output still work; its saved
+  copy is redacted text.
   `bdev shell` keeps direct terminal access, including prompts and output, at every
   verbosity level; its interactive output is not captured. The child receives the
   original arguments and environment.
+- Builds show the target, configuration, architecture, output directory, and local
+  or RBE mode before compilation. Phase timings separate environment loading,
+  readiness, source preparation, the package build, output verification, and source
+  state inspection. The package time includes Core's preparation and compilation;
+  it is not just Siso's reported time. Other time covers work outside those phases.
+  Timings are saved in quiet mode and printed in normal and verbose modes.
 - Probe output is read with a size limit. Incomplete evidence is treated as unknown.
   Command records flag timeouts, truncated output, and incomplete cleanup. Repeated
   poll commands keep a count instead of flooding the terminal. Source-state scans

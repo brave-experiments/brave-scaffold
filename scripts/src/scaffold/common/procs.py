@@ -7,17 +7,21 @@
 from __future__ import annotations
 
 import codecs
+import contextlib
+import errno
 import os
+import pty
 import re
-import tempfile
-from pathlib import Path
 import selectors
 import shlex
 import signal
 import subprocess
 import sys
+import tempfile
+import termios
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from .redaction import SECRET_NAME, URL_CREDENTIALS, redact_argv, redact_url_credentials
 from .results import Cancelled
@@ -53,6 +57,22 @@ class CommandLog:
     path: str | None = None
     progress_at: float = 0
     progress_line: bool = False
+    timings: list = field(default_factory=list)
+
+    @contextlib.contextmanager
+    def measure(self, name):
+        started = time.monotonic()
+        try:
+            yield
+        finally:
+            self.timings.append((name, time.monotonic() - started))
+
+    def report_timings(self, total):
+        if self.timings:
+            measured = sum(seconds for _, seconds in self.timings)
+            parts = ["%s %.2fs" % pair for pair in self.timings]
+            parts.append("Other %.2fs" % max(0, total - measured))
+            self.phase("Timings: " + "; ".join(parts))
 
     def open(self, root):
         directory = Path(root) / ".bdev" / "logs"
@@ -209,6 +229,54 @@ def terminate_group(process, grace=None, signum=signal.SIGTERM):
     return _wait_for_group(process, KILL_WAIT_SECONDS)
 
 
+@contextlib.contextmanager
+def _stream_process(argv, cwd, env, stdin, terminal):
+    """Give interactive children terminal output, without changing stdin or owning the user's terminal."""
+    master = slave = None
+    process = None
+    previous_resize = None
+    try:
+        if terminal:
+            master_fd, slave = pty.openpty()
+            master = os.fdopen(master_fd, "rb", buffering=0)
+            attributes = termios.tcgetattr(slave)
+            # The real terminal performs newline translation when we write the captured bytes.
+            attributes[1] &= ~termios.ONLCR
+            termios.tcsetattr(slave, termios.TCSANOW, attributes)
+            termios.tcsetwinsize(slave, termios.tcgetwinsize(sys.stdout.fileno()))
+        process = subprocess.Popen(list(argv), cwd=cwd, env=env, stdin=stdin, start_new_session=True,
+                                   stdout=slave if terminal else subprocess.PIPE,
+                                   stderr=slave if terminal else subprocess.PIPE)
+        if terminal:
+            os.close(slave)
+            slave = None
+
+            def resize(_signum, _frame):
+                if master.closed:
+                    return
+                try:
+                    termios.tcsetwinsize(master.fileno(), termios.tcgetwinsize(sys.stdout.fileno()))
+                    _signal_group(process.pid, signal.SIGWINCH)
+                except (OSError, termios.error):
+                    pass  # The caller's terminal may have gone away.
+
+            previous_resize = signal.signal(signal.SIGWINCH, resize)
+        yield process, (master,) if terminal else (process.stdout, process.stderr)
+    finally:
+        if previous_resize is not None:
+            signal.signal(signal.SIGWINCH, previous_resize)
+        if slave is not None:
+            os.close(slave)
+        if master is not None:
+            master.close()
+        if process is not None:
+            if process.poll() is None:
+                terminate_group(process)
+            for stream in (process.stdout, process.stderr):
+                if stream is not None:
+                    stream.close()
+
+
 def run_streaming(argv, cwd, env, log, json_mode=False, stdin=None, preserve_stdout=False, display_argv=None,
                   interactive=False):
     """Run a command whose output belongs to the user; return its exit code.
@@ -223,36 +291,36 @@ def run_streaming(argv, cwd, env, log, json_mode=False, stdin=None, preserve_std
         process = subprocess.Popen(list(argv), cwd=cwd, env=env, stdin=stdin,
                                    stdout=sys.stderr if json_mode else None, start_new_session=True)
         return _forward_and_wait(process)
-    process = subprocess.Popen(list(argv), cwd=cwd, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                               stdin=stdin, start_new_session=True)
-    output = _StreamOutput(log, argv, env, process.stdout, json_mode, preserve_stdout)
-    code = None
-    reader = _BoundedReader(process, 0, output.receive)
-    try:
-        # Poll the leader so an escaped descendant cannot hold these pipes open forever.
-        while not reader.read(0.2):
-            if process.poll() is not None:
-                if not reader.read(PIPE_DRAIN_SECONDS):
-                    warning = "Warning: child output pipes remained open after exit; capture stopped."
-                    log.save(warning + "\n")
-                    log.message(warning)
-                break
-        code = _forward_and_wait(process)
-    except Cancelled as cancelled:
-        cancelled.cleanup_incomplete = not terminate_group(
-            process, signum=CANCEL_SIGNALS.get(cancelled.exit_code, signal.SIGTERM))
-        reader.read(PIPE_DRAIN_SECONDS)
-        raise
-    except BaseException:
-        terminate_group(process)
-        raise
-    finally:
-        reader.close()
-        output.finish()
-        if code != 0 and log.verbosity == "quiet" and output.tail:
-            log.message("Child output (last 40 lines, at most 16 KiB):\n" + output.tail)
-    log.save("Child exit: %s\n" % code)
-    return code
+    terminal = not json_mode and sys.stdout.isatty() and sys.stderr.isatty()
+    with _stream_process(argv, cwd, env, stdin, terminal) as (process, streams):
+        output = _StreamOutput(log, argv, env, streams[0], json_mode, preserve_stdout)
+        code = None
+        reader = _BoundedReader(process, 0, output.receive, streams=streams, terminal=terminal)
+        try:
+            # Poll the leader so an escaped descendant cannot hold these pipes open forever.
+            while not reader.read(0.2):
+                if process.poll() is not None:
+                    if not reader.read(PIPE_DRAIN_SECONDS):
+                        warning = "Warning: child output pipes remained open after exit; capture stopped."
+                        log.save(warning + "\n")
+                        log.message(warning)
+                    break
+            code = _forward_and_wait(process)
+        except Cancelled as cancelled:
+            cancelled.cleanup_incomplete = not terminate_group(
+                process, signum=CANCEL_SIGNALS.get(cancelled.exit_code, signal.SIGTERM))
+            reader.read(PIPE_DRAIN_SECONDS)
+            raise
+        except BaseException:
+            terminate_group(process)
+            raise
+        finally:
+            reader.close()
+            output.finish()
+            if code != 0 and log.verbosity == "quiet" and output.tail:
+                log.message("Child output (last 40 lines, at most 16 KiB):\n" + output.tail)
+        log.save("Child exit: %s\n" % code)
+        return code
 
 
 class _StreamOutput:
@@ -328,10 +396,11 @@ class _BoundedReader:
     stays bounded; `dropped` records that something was discarded.
     """
 
-    def __init__(self, process, limit, callback=None):
+    def __init__(self, process, limit, callback=None, streams=None, terminal=False):
         self.callback = callback
+        self.terminal = terminal
         self.limit, self.dropped = limit, False
-        self.buffers = {process.stdout: bytearray(), process.stderr: bytearray()}
+        self.buffers = {stream: bytearray() for stream in (streams or (process.stdout, process.stderr))}
         self.selector = selectors.DefaultSelector()
         for stream in self.buffers:
             os.set_blocking(stream.fileno(), False)
@@ -345,7 +414,12 @@ class _BoundedReader:
             if remaining is not None and remaining <= 0:
                 return False
             for key, _ in self.selector.select(remaining):
-                chunk = os.read(key.fd, 65536)
+                try:
+                    chunk = os.read(key.fd, 65536)
+                except OSError as error:
+                    if not self.terminal or error.errno != errno.EIO:
+                        raise
+                    chunk = b""  # PTY EOF on systems that report EIO after the slave closes.
                 if not chunk:
                     self.selector.unregister(key.fileobj)
                     continue

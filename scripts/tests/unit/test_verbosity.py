@@ -170,3 +170,20 @@ class VerbosityTests(unittest.TestCase):
                 self.assertEqual('from child' in out, level != 'quiet')
                 self.assertEqual('PROBE_PAYLOAD' in err, level == 'verbose')
                 self.assertIn('from child', saved)
+
+    def test_phase_times_survive_failure_and_quiet_keeps_them_in_log(self):
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as directory:
+            console = io.StringIO()
+            log = procs.CommandLog(stream=console, verbosity='quiet')
+            log.open(directory)
+            try:
+                with patch.object(procs.time, 'monotonic', side_effect=[1.0, 3.5]):
+                    with self.assertRaises(ValueError):
+                        with log.measure('Source state'):
+                            raise ValueError('failed')
+                log.report_timings(4.0)
+                self.assertEqual(console.getvalue(), '')
+                self.assertIn('Source state 2.50s; Other 1.50s', Path(log.path).read_text())
+            finally:
+                log.close()

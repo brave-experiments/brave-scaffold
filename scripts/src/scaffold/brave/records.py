@@ -80,7 +80,8 @@ class Operation:
         """A phase begins. It stays `running` in the saved record until it succeeds or fails, so a process that
         dies mid-phase leaves the evidence of where."""
         if self.progress:
-            self.progress(name.replace("-", " ").capitalize() + "...")
+            label = "Running Core build" if name == "build" else name.replace("-", " ").capitalize()
+            self.progress(label + "...")
         self.data["steps"].append({**fields, "name": name, "at": now(), "status": "running"})
         self.save()
 

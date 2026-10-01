@@ -99,6 +99,7 @@ def run_command(command, parsed, handler, argv_environ=None, needs_config=True, 
         result.logs = [{"kind": "command", **record} for record in context.log.records]
     elapsed = time.monotonic() - started
     try:
+        log.report_timings(elapsed)
         if log.path:
             log.save("Result: %s; exit %d; elapsed %.2fs\n" % (result.status, result.exit_code, elapsed))
             safe = result.redacted()

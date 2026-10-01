@@ -87,14 +87,16 @@ def readiness_gate(ctx, target, phase="build", remote_required=False):
 def prepare(ctx, identity, target, phase="build", remote_required=False, execution=None):
     """Environment, checkout-local tools, and readiness for one phase, as one execution context."""
     execution = execution or execution_module.load(ctx, identity)
-    execution = execution_module.resolve_tools(execution, ctx)
-    return execution.with_checks(readiness_gate(execution.context(ctx), target, phase, remote_required))
+    with ctx.log.measure("Readiness"):
+        execution = execution_module.resolve_tools(execution, ctx)
+        return execution.with_checks(readiness_gate(execution.context(ctx), target, phase, remote_required))
 
 
 def prepare_for_build(execution, ctx, target, remote_required):
     """After sync changed the checkout: resolve its tools and judge the build's readiness again."""
-    execution = execution_module.resolve_tools(execution, ctx)
-    return execution.with_checks(readiness_gate(execution.context(ctx), target, "build", remote_required))
+    with ctx.log.measure("Readiness"):
+        execution = execution_module.resolve_tools(execution, ctx)
+        return execution.with_checks(readiness_gate(execution.context(ctx), target, "build", remote_required))
 
 
 def metal_environment(ctx, environ, checks=()):
@@ -209,7 +211,8 @@ def run_output_step(ctx, execution, effective, op, arguments, phase, extra_env=N
     try:
         if before_child is not None:
             before_child()
-        argv, code = packages.run(ctx, execution, arguments, extra_env)
+        with ctx.log.measure("Package " + phase):
+            argv, code = packages.run(ctx, execution, arguments, extra_env)
     except Cancelled:
         if state is not None:
             state.end_attempt(op.id, "cancelled")
@@ -228,13 +231,19 @@ def run_output_step(ctx, execution, effective, op, arguments, phase, extra_env=N
 def perform_build(ctx, execution, effective, op, force_gn=False):
     """Prepare sources, run the package build, then verify the resulting output."""
     identity = execution.identity
-    changed, plan = prepare_patches(ctx, execution, op)
-    is_android = effective.target == "android"
-    if is_android:
-        refreshed = android.prepare_support(ctx, execution, op, effective)
-        if refreshed:
-            patches.record_extra_expected(identity, ctx.state_root)
-        changed = refreshed or changed
+    platform = "macOS" if effective.target == "mac" else effective.target
+    ctx.log.phase("Building Brave for %s (%s, %s)" % (platform, effective.configuration, effective.arch))
+    ctx.log.phase("Output directory: %s" % (effective.output_dir or "unresolved"))
+    mode = "local (remote execution disabled)" if effective.offline else "online (RBE/Siso requested)"
+    ctx.log.phase("Build mode: " + mode)
+    with ctx.log.measure("Source preparation"):
+        changed, plan = prepare_patches(ctx, execution, op)
+        is_android = effective.target == "android"
+        if is_android:
+            refreshed = android.prepare_support(ctx, execution, op, effective)
+            if refreshed:
+                patches.record_extra_expected(identity, ctx.state_root)
+            changed = refreshed or changed
     arguments = build_arguments(effective, "build", (), force_gn or changed)
     if is_android:
         described = step_module.gn_step(effective, effective.preparation_dir / "args.gn", effective.chosen_gn_keys)
@@ -254,7 +263,8 @@ def perform_build(ctx, execution, effective, op, force_gn=False):
         write_overrides if is_android else None)
     op.start("verify-output", output_dir=str(effective.output_dir) if effective.output_dir else None)
     try:
-        artifact, reason = artifact_for(effective, identity, execution.environ, ctx.log)
+        with ctx.log.measure("Output verification"):
+            artifact, reason = artifact_for(effective, identity, execution.environ, ctx.log)
     except ScaffoldError as error:
         op.fail("verify-output", code=error.code)
         if state is not None:
@@ -266,8 +276,9 @@ def perform_build(ctx, execution, effective, op, force_gn=False):
                verified_output=artifact["output_dir"] if artifact else None, explanation=reason)
     if artifact:
         op.attach_artifacts([artifact])
-    inputs = freshness.compute(identity, plan.report.patched_paths, arguments, ctx.log,
-                               android_deps.freshness_inputs(identity, ctx.log) if is_android else None)
+    with ctx.log.measure("Source state"):
+        inputs = freshness.compute(identity, plan.report.patched_paths, arguments, ctx.log,
+                                   android_deps.freshness_inputs(identity, ctx.log) if is_android else None)
     if artifact is not None and state is not None:
         state.record_success(op.id, artifact, inputs)
     elif state is not None:
