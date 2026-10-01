@@ -218,6 +218,62 @@ class BuildTests(BuildTestCase):
         self.assertFalse(list(self.core.glob(".bdev*")))
 
 
+
+class NinjaOutputTests(BuildTestCase):
+    def setUp(self):
+        super().setUp()
+        self.assertEqual(self.document("build")[0].returncode, 0)
+        self.alternate = self.src / "out/Alternate"
+        self.hook = self.sandbox.hook(BUILD_HOOK.replace(
+            'out = build_dir if os.path.isabs(build_dir) else os.path.join(src, "out", build_dir)',
+            'out = os.environ["FAKE_NINJA_OUTPUT"]'))
+
+    def test_ninja_directory_options_keep_the_default_receipt_unchanged(self):
+        (receipt,) = (self.sandbox.config.parent / ".bdev/outputs").glob("*/*.json")
+        before = receipt.read_bytes()
+        binary = self.output_app() / "Contents/MacOS/Brave Browser Development"
+        stamp = binary.stat().st_mtime_ns
+        (self.core / "changed.cc").write_text("new source\n")
+        self.sandbox.commit_all("main")
+        for tokens in (["--ninja=C:" + str(self.alternate)], ["--ninja", "C:" + str(self.alternate)]):
+            with self.subTest(tokens=tokens):
+                result, document = self.document("build", "--offline", *tokens,
+                                                  env=self.env(FAKE_NINJA_OUTPUT=str(self.alternate)))
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertTrue((self.alternate / self.output_app().name).exists())
+                self.assertEqual(document["data"]["build"]["artifact_status"], "unresolved")
+                self.assertIsNone(document["data"]["build"]["effective"]["output_dir"])
+                self.assertEqual(binary.stat().st_mtime_ns, stamp)
+                self.assertEqual(receipt.read_bytes(), before)
+                self.assertEqual(self.build_argv()[-len(tokens):], tokens)
+
+    def test_a_ninja_build_file_marks_the_known_directory_for_revalidation(self):
+        result, document = self.document("build", "--ninja=f:other.ninja",
+                                          env=self.env(FAKE_NINJA_OUTPUT=str(self.alternate)))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(document["data"]["build"]["artifact_status"], "unresolved")
+        (receipt,) = (self.sandbox.config.parent / ".bdev/outputs").glob("*/*.json")
+        self.assertTrue(json.loads(receipt.read_text())["needs_revalidation"])
+
+    def test_a_combined_plan_reports_unresolved_output_without_a_default_launch(self):
+        result, document = self.document("build-run", "--plan", "--ninja=C:" + str(self.alternate))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIsNone(document["data"]["plan"]["effective"]["output_dir"])
+        steps = document["data"]["plan"]["steps"]
+        self.assertEqual(steps[-1]["status"], "unresolved")
+        self.assertNotIn(str(self.output_app()), json.dumps(steps))
+
+    def test_combined_build_stops_before_restart_for_directory_and_build_file_options(self):
+        for tokens in (["--ninja=C:" + str(self.alternate)], ["--ninja", "f:other.ninja"]):
+            with self.subTest(tokens=tokens):
+                self.sandbox.record.unlink(missing_ok=True)
+                result, document = self.document("build-run", *tokens,
+                                                  env=self.env(FAKE_NINJA_OUTPUT=str(self.alternate)))
+                self.assertEqual(result.returncode, 5, result.stderr)
+                self.assertEqual(document["error"]["code"], "ARTIFACT_UNRESOLVED")
+                self.assertFalse(any(r["tool"] in ("open", "osascript") for r in self.sandbox.records()))
+
+
 class RemoteBuildReadinessTests(BuildTestCase):
     """Local remote-build configuration is required exactly when the effective compile mode is remote."""
 

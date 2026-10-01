@@ -205,6 +205,22 @@ class AndroidBuildTests(AndroidTestCase):
         repairs = [step["argv"][:3] for step in document["error"]["repairs"]]
         self.assertIn(["bdev", "sync", "android"], repairs)
 
+    def test_ninja_directory_build_does_not_install_an_existing_default_apk(self):
+        self.assertEqual(self.setup_support().returncode, 0)
+        self.assertEqual(self.document("build", "android")[0].returncode, 0)
+        alternate = self.src / "out/Alternate"
+        self.hook = self.sandbox.hook(ANDROID_HOOK.replace(
+            'out = build_dir if os.path.isabs(build_dir) else os.path.join(src, "out", build_dir)',
+            'out = os.environ["FAKE_NINJA_OUTPUT"]'))
+        self.sandbox.record.unlink(missing_ok=True)
+        result, document = self.document("build-run", "android", "--device", "emulator-5554",
+                                         "--ninja=C:" + str(alternate),
+                                         env=self.env(FAKE_NINJA_OUTPUT=str(alternate), FAKE_ADB_DEVICES="emulator-5554,device"))
+        self.assertEqual(result.returncode, 5, result.stderr)
+        self.assertEqual(document["error"]["code"], "ARTIFACT_UNRESOLVED")
+        self.assertTrue((alternate / "apks/BraveMonoarm64.apk").exists())
+        self.assertFalse(any("install" in argv or "monkey" in argv for argv in self.adb_calls()))
+
 
 class SupportPatchedFileTests(AndroidTestCase):
     def build_android(self):

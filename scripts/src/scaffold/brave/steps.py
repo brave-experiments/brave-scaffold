@@ -142,12 +142,16 @@ def sync_step(identity, arguments, argv, needs=()):
 
 
 def build_step(identity, effective, subcommand, arguments, argv, needs, conditional_arguments=()):
+    writes = [str(effective.preparation_dir)]
+    if effective.output_dir is None:
+        writes.append("Ninja output directory: unresolved")
     return Step(subcommand, "Run Core's %s command for %s %s %s." % (
         subcommand, effective.target, effective.configuration, effective.arch), "planned",
-        reads=[str(identity.core), "patched Chromium sources"], writes=[str(effective.output_dir)],
+        reads=[str(identity.core), "patched Chromium sources"], writes=writes,
         argv=argv, cwd=str(identity.core), needs=list(needs),
-        on_failure="The output is marked as needing revalidation; the previous build record is kept as history, "
-                   "and the output cannot be restored to its earlier state.",
+        on_failure=("The selected output is marked as needing revalidation; its previous build record is kept as history, "
+                    "and the output cannot be restored to its earlier state."
+                    if effective.output_dir else "The output directory is unresolved; no other output receipt is changed."),
         cleanup=NO_CLEANUP + " Cleaning output is a separate, explicit command.",
         detail=None if argv else "arguments: " + " ".join(redact_argv(arguments)) + " (the final command needs local tools)",
         conditional_arguments=list(conditional_arguments))
@@ -155,10 +159,12 @@ def build_step(identity, effective, subcommand, arguments, argv, needs, conditio
 
 def verify_step(effective, needs):
     expectation = "an Android APK" if effective.target == "android" else "the Brave application"
-    return Step("verify-output", "Check that the build produced %s in the resolved output." % expectation, "planned",
-                reads=[str(effective.output_dir)], needs=list(needs),
+    return Step("verify-output", "Check that the build produced %s in the resolved output." % expectation,
+                "unresolved" if effective.unresolved else "planned",
+                reads=[str(effective.output_dir)] if effective.output_dir else [], needs=list(needs),
                 on_failure="No artifact is recorded; combined commands stop before touching a device or a running "
-                           "browser.", detail="output: %s" % effective.output_dir)
+                           "browser.",
+                detail="; ".join(effective.unresolved) if effective.unresolved else "output: %s" % effective.output_dir)
 
 
 def support_step(identity, plan, writes):

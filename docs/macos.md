@@ -44,6 +44,13 @@ wins). If a forwarded value contradicts an explicit scaffold selector, such as
 change with both values and an example. A relative `-C` names a directory beneath
 Chromium's `src/out`, not Core: `-C Custom` selects `<src>/out/Custom`.
 
+`--ninja C:<directory>` changes Ninja's directory after Core generates its build
+configuration. The scaffold forwards it but reports the artifact directory as
+unresolved, keeps other outputs' receipts unchanged, and cannot restart from that
+build. `--ninja f:<file>` selects a different build file: the artifact contract is
+unresolved and the selected directory's earlier output needs revalidation. Both
+`--ninja=<key>:<value>` and `--ninja <key>:<value>` forms have this behavior.
+
 ### Build results
 
 | Outcome | Result |

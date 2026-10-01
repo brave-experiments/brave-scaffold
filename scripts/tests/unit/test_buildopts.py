@@ -56,6 +56,17 @@ class NonCompilingModeTests(unittest.TestCase):
             with self.subTest(tokens=tokens):
                 self.assertIsNone(buildopts.interpret(tokens).skips_compilation)
 
+    def test_ninja_directory_and_build_file_options_do_not_verify_a_default_artifact(self):
+        for tokens in (["--ninja=C:/absolute/other"], ["--ninja", "C:relative"],
+                       ["--ninja=f:alternate.ninja"], ["--ninja", "f:alternate.ninja"]):
+            with self.subTest(tokens=tokens):
+                effective = resolve(tokens)
+                self.assertTrue(effective.unresolved)
+                if "C:" in " ".join(tokens):
+                    self.assertIsNone(effective.output_dir)
+                else:
+                    self.assertTrue(effective.changes_output)
+
     def test_a_dry_run_leaves_the_output_alone_but_a_ninja_tool_may_not(self):
         self.assertFalse(resolve(["--ninja=n:"]).changes_output)
         self.assertTrue(resolve(["--ninja", "t:clean"]).changes_output)

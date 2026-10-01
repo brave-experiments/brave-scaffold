@@ -216,7 +216,7 @@ def run_output_step(ctx, execution, effective, op, arguments, phase, extra_env=N
     if code != 0:
         op.fail(phase, exit=code)
         raise ScaffoldError("CHILD_FAILED", "The package %s command exited with status %d." % (phase, code),
-                            details={"argv": argv, "cwd": str(identity.core), "output_dir": str(effective.output_dir)},
+                            details={"argv": argv, "cwd": str(identity.core), "output_dir": str(effective.output_dir) if effective.output_dir else None},
                             child_exit_code=code)
     op.succeed(phase, exit=0)
     return argv, state
@@ -234,10 +234,10 @@ def perform_build(ctx, execution, effective, op, force_gn=False):
         changed = refreshed or changed
     arguments = build_arguments(effective, "build", (), force_gn or changed)
     if is_android:
-        described = step_module.gn_step(effective, effective.output_dir / "args.gn", effective.chosen_gn_keys)
+        described = step_module.gn_step(effective, effective.preparation_dir / "args.gn", effective.chosen_gn_keys)
         op.start(described.name, **described.record())
     op.detail(effective={"target": effective.target, "configuration": effective.configuration,
-                         "arch": effective.arch, "output_dir": str(effective.output_dir),
+                         "arch": effective.arch, "output_dir": str(effective.output_dir) if effective.output_dir else None,
                          "package_arguments": arguments})
 
     def write_overrides():
@@ -248,7 +248,7 @@ def perform_build(ctx, execution, effective, op, force_gn=False):
         ctx, execution, effective, op, arguments, "build",
         android.build_environment(execution.context(ctx)) if is_android else metal_environment(ctx, execution.environ),
         write_overrides if is_android else None)
-    op.start("verify-output", output_dir=str(effective.output_dir))
+    op.start("verify-output", output_dir=str(effective.output_dir) if effective.output_dir else None)
     try:
         artifact, reason = artifact_for(effective, identity, execution.environ, ctx.log)
     except ScaffoldError as error:
@@ -389,12 +389,17 @@ def plan_android_preparation(ctx, identity, effective, steps):
     except ScaffoldError as error:
         support_plan, writes = error, []
     steps.append(step_module.support_step(identity, support_plan, writes))
-    args_gn = effective.output_dir / "args.gn"
+    args_gn = effective.preparation_dir / "args.gn"
     steps.append(step_module.gn_step(effective, args_gn, effective.chosen_gn_keys))
     return "gn-overrides", getattr(support_plan, "action", None) == "refresh"
 
 
 def plan_restart_after_build(ctx, effective, is_android, device_choice):
+    if effective.unresolved:
+        return [step_module.Step("restart-after-build", "Restart only a verified artifact from this build.",
+                                 "unresolved", needs=["verify-output"],
+                                 detail="; ".join(effective.unresolved),
+                                 on_failure="Nothing is stopped, installed, or launched.")]
     if is_android:
         try:
             _, device, source = android.preflight_device(ctx)

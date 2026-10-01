@@ -37,6 +37,7 @@ class Forwarded:
     target_os: str | None = None
     target_arch: str | None = None
     build_dir: str | None = None
+    ninja_directory: bool = False
     build_config: str | None = None
     target: str | None = None
     channel: str | None = None
@@ -68,6 +69,10 @@ def interpret(tokens):
             value = token.partition("=")[2] if "=" in token else (tokens[index + 1] if index + 1 < len(tokens) else "")
             index += 0 if "=" in token else 1
             key = value.partition(":")[0]
+            if key in ("C", "f"):
+                changed = "directory" if key == "C" else "build file"
+                found.problems.append("--ninja %s changes Ninja's %s; artifact identity is unresolved" % (key, changed))
+                found.ninja_directory = found.ninja_directory or key == "C"
             if key in NINJA_NOT_COMPILING:
                 found.skips_compilation = "--ninja %s" % key
                 found.leaves_output = found.leaves_output or key in NINJA_LEAVES_OUTPUT
@@ -134,6 +139,7 @@ class Effective:
     configuration: str
     arch: str
     output_dir: Path | None
+    preparation_dir: Path
     build_dir_arg: str | None
     generated: list
     forwarded: list
@@ -241,8 +247,11 @@ def resolve_effective(src, forwarded_tokens, target, configuration, explicit_tar
     if fwd.target and fwd.target != "brave":
         unresolved.append("build target %r does not produce the application" % fwd.target)
     output = resolve_output_dir(src, build_dir_arg)
-    return Effective(target=effective_target, configuration=effective_configuration, arch=arch, output_dir=output,
-                     build_dir_arg=build_dir_arg, generated=generated, forwarded=list(forwarded_tokens),
+    if fwd.ninja_directory:
+        sources["output"] = "unresolved Ninja directory"
+    return Effective(target=effective_target, configuration=effective_configuration, arch=arch,
+                     output_dir=None if fwd.ninja_directory else output,
+                     preparation_dir=output, build_dir_arg=build_dir_arg, generated=generated, forwarded=list(forwarded_tokens),
                      build_target=fwd.target, channel=fwd.channel, offline=offline, sources=sources,
                      unresolved=unresolved, changes_output=not fwd.leaves_output,
                      chosen_gn_keys=frozenset(fwd.gn_keys | ({"use_remoteexec"} if fwd.remoteexec is not None
