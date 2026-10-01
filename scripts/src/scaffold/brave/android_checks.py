@@ -99,7 +99,8 @@ def support_checks(ctx, scope):
                              "The support revision's version gates accept this checkout." if ok else
                              "Incompatible with this checkout: %s" % detail, scope, affects=("android build",),
                              repairs=[] if ok else [repair(["git", "-C", str(wc), "log", "--oneline", "-n", "10"])]))
-    current, why = android_deps.resources_current(identity, wc) if ok else (False, "not evaluated")
+    receipt = android_deps._read_state(identity, ctx.state_root)
+    current, why = android_deps.resources_current(identity, wc, receipt) if ok else (False, "not evaluated")
     checks.append(make_check("android-support-currency", PASS if current else WARNING,
                              "Support resources are copied and current." if current else
                              "Support resources will be refreshed by the next build: %s" % why,

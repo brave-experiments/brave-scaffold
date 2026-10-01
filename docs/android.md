@@ -96,10 +96,12 @@ The build stops with `PREPARATION_CONFLICT`, changing nothing, and names the fil
   when the working file matches that record;
 - a copied resource file changed since the last refresh, or exists with no record of where
   it came from. A file with no record is replaced only when it is identical to the support
-  resource (a macOS binary counts as identical to its re-signed copy) or a repository
+  resource byte for byte or a repository
   tracks it and Git shows no change, meaning Chromium supplied it. Anything else, for
   example a fetched dependency you changed, or a receipt that predates resource records,
-  stops the build; move the listed files aside (sync restores fetched dependencies) or
+  stops the build. A file-format header cannot prove origin, including for Mach-O
+  binaries. A prior refresh receipt can account for a re-signed copy; without it,
+  differing bytes are unknown. Move the listed files aside (sync restores fetched dependencies) or
   restore them, then repeat;
 - a patch has a format the scaffold cannot read, a script identity is unknown,
   or the repositories gclient manages cannot be listed.

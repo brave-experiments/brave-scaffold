@@ -4,11 +4,12 @@
 # You can obtain one at https://mozilla.org/MPL/2.0/.
 """Android support refresh must not overwrite local work, whatever triggers it."""
 
+import hashlib
 import json
 import subprocess
 import unittest
 
-from tests.android_fixtures import GIT, make_support_repo
+from tests.android_fixtures import COPY_SCRIPT, GIT, make_support_repo
 from tests.integration.test_android import AndroidTestCase
 from tests.integration.test_build import SKIP
 
@@ -209,6 +210,58 @@ class ResourceOwnershipTests(AndroidTestCase):
     def test_an_existing_untracked_file_of_unknown_origin_is_kept(self):
         self.release.write_text("something someone put here\n")
         self.assert_blocked(self.release, "something someone put here\n")
+
+    def test_different_macho_bytes_survive_first_adoption(self):
+        origin = self.wc() / "res/jdk/current/tool"
+        copied = self.release.parent / "tool"
+        origin.write_bytes(b"\xcf\xfa\xed\xfe support tool")
+        copied.write_bytes(b"\xcf\xfa\xed\xfe wanted local tool")
+        result, document = self.build()
+        self.assertEqual(result.returncode, 4, result.stderr)
+        self.assertEqual(document["error"]["code"], "PREPARATION_CONFLICT")
+        self.assertEqual(copied.read_bytes(), b"\xcf\xfa\xed\xfe wanted local tool")
+        self.assertFalse(self.release.exists())
+
+    def test_different_macho_bytes_survive_receipt_migration(self):
+        origin = self.wc() / "res/jdk/current/tool"
+        origin.write_bytes(b"\xcf\xfa\xed\xfe support tool")
+        self.assertEqual(self.build()[0].returncode, 0)
+        receipt = json.loads(self.state_file().read_text())
+        del receipt["resources"]
+        self.state_file().write_text(json.dumps(receipt))
+        copied = self.release.parent / "tool"
+        copied.write_bytes(b"\xcf\xfa\xed\xfe wanted local tool")
+        result, document = self.build()
+        self.assertEqual(result.returncode, 4, result.stderr)
+        self.assertEqual(document["error"]["code"], "PREPARATION_CONFLICT")
+        self.assertEqual(copied.read_bytes(), b"\xcf\xfa\xed\xfe wanted local tool")
+
+    def test_a_known_resigned_copy_can_be_refreshed(self):
+        origin = self.wc() / "res/jdk/current/tool"
+        origin.write_bytes(b"\xcf\xfa\xed\xfe support tool")
+        script = (COPY_SCRIPT +
+                  'patch_dependency "Tool" "third_party/tools" "" "res/jdk/current/tool" ""\n'
+                  'printf signed >> ../src/third_party/tools/tool\n')
+        manifest = self.sandbox.scripts / "src/scaffold/brave/support_script_contracts.json"
+        contracts = json.loads(manifest.read_text())
+        contracts[hashlib.sha256(script.encode()).hexdigest()] = {
+            "script": "copyMacRes.sh", "patches": [], "direct": [],
+            "resources": [["third_party/jdk", "res/jdk/current"],
+                          ["third_party/tools", "res/jdk/current/tool"]]}
+        manifest.write_text(json.dumps(contracts))
+        (self.wc() / "copyMacRes.sh").write_text(script)
+        subprocess.run([*GIT, "-C", str(self.wc()), "add", "."], check=True, capture_output=True)
+        subprocess.run([*GIT, "-C", str(self.wc()), "commit", "-qm", "add resource signing"], check=True, capture_output=True)
+        self.assertEqual(self.build()[0].returncode, 0)
+        self.assertIsNotNone(json.loads(self.state_file().read_text())["inputs"])
+        copied = self.src / "third_party/tools/tool"
+        self.assertEqual(copied.read_bytes(), origin.read_bytes() + b"signed")
+        self.assertEqual(self.build()[0].returncode, 0)
+        self.assertEqual(copied.read_bytes(), origin.read_bytes() + b"signed")
+        origin.write_bytes(b"\xcf\xfa\xed\xfe replacement support tool")
+        result, _ = self.build()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(copied.read_bytes(), origin.read_bytes() + b"signed")
 
     def test_extra_files_under_a_resource_destination_are_protected_from_signing(self):
         extra = self.release.parent / "local-tool"

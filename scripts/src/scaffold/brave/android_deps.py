@@ -276,14 +276,12 @@ def _is_macho(path):
 def _same_small_file(source, copied):
     if not (source.is_file() and copied.is_file()):
         return False
-    if _is_macho(source):
-        return _is_macho(copied)
     if source.stat().st_size > MAX_COMPARED_BYTES:
         return False
     return source.read_bytes() == copied.read_bytes()
 
 
-def resources_current(identity, wc):
+def resources_current(identity, wc, receipt=None):
     """Whether copied resources match their sources (directories by a small sentinel file)."""
     manifest = resource_manifest(wc)
     if manifest is None:
@@ -293,8 +291,12 @@ def resources_current(identity, wc):
         copied = identity.src / destination / origin.name
         if not copied.exists():
             return False, "%s has not been copied" % copied.relative_to(identity.src)
-        if origin.is_file() and not _same_small_file(origin, copied):
-            return False, "%s differs from its source" % copied.relative_to(identity.src)
+        if origin.is_file() and not _identical(origin, copied):
+            key = os.path.relpath(copied, identity.src)
+            previous = (receipt or {}).get("resources", {}).get(key, {})
+            source_digest = (receipt or {}).get("resource_sources", {}).get(key)
+            if not source_digest or source_digest != _sha(origin) or previous != resource_signature(origin, copied):
+                return False, "%s differs from its source without matching copy evidence" % key
         if origin.is_dir():
             sentinel = next((name for name in SENTINELS if (origin / name).is_file()
                              and (origin / name).stat().st_size <= MAX_COMPARED_BYTES
@@ -473,11 +475,9 @@ def protected_work(identity, wc, receipt, scripts, log=None):
 
 
 def _identical(origin, copied):
-    """Whether an existing destination file is a copy of the support file (Mach-O files are re-signed after copying)."""
+    """Whether an existing destination has exactly the support file bytes."""
     if os.path.islink(copied) or not os.path.isfile(copied) or not os.path.isfile(origin):
         return False
-    if _is_macho(origin):
-        return _is_macho(copied)
     return filecmp.cmp(origin, copied, shallow=False)
 
 
@@ -550,7 +550,7 @@ def plan_preparation(ctx, identity, log=None):
     receipt = _read_state(identity, ctx.state_root)
     dirty = inputs_dirty(wc, log)
     patched_ok, _ = run_gate(wc, "applyPatches.sh", ctx.environ, log)
-    current, why = resources_current(identity, wc)
+    current, why = resources_current(identity, wc, receipt)
     recorded = bool(receipt) and receipt.get("inputs") == input_state(wc, log)
     if patched_ok and current and recorded and not dirty:
         return SupportPlan("current", "Support patches and resources are current.", evidence)
@@ -587,12 +587,17 @@ def record_state(identity, state_root, plan, log=None):
     if "applyPatches.sh" in plan.scripts:
         files, _ = write_inventory(identity, wc, log)
         targets = {key: _sha(repo / relative) for key, (repo, relative) in files.items()}
+    resource_sources = dict(previous.get("resource_sources", {}))
     if "copyMacRes.sh" in plan.scripts:
-        resources = {key: resource_signature(origin, copied) for key, origin, copied in
-                     resource_destinations(identity, wc)}
-    complete = not inputs_dirty(wc, log) and resources_current(identity, wc)[0]
+        resources, resource_sources = {}, {}
+        for key, origin, copied in resource_destinations(identity, wc):
+            resources[key] = resource_signature(origin, copied)
+            if origin.is_file():
+                resource_sources[key] = _sha(origin)
+    receipt = {"resources": resources, "resource_sources": resource_sources}
+    complete = not inputs_dirty(wc, log) and resources_current(identity, wc, receipt)[0]
     atomic_write(state_path(identity, state_root), json.dumps({
-        "inputs": input_state(wc, log) if complete else None, "targets": targets, "resources": resources},
+        "inputs": input_state(wc, log) if complete else None, "targets": targets, **receipt},
         indent=1, sort_keys=True))
     return complete
 
