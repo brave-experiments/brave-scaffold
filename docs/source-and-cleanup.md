@@ -109,6 +109,14 @@ and its refresh are described in [Android](android.md#android-on-mac-support-rep
 a refresh that would overwrite local Chromium edits stops with `PREPARATION_CONFLICT`
 like patch preparation does.
 
+### Validated sync workflow
+
+A macOS arm64 source update has completed on an existing checkout with retained
+mobile targets, normal Core patches and hooks, and `DEPOT_TOOLS_UPDATE=0`.
+Core stayed clean, unrelated untracked dependency files retained their exact
+bytes, and the next ordinary sync plan required no Chromium reset. This does not
+validate lean sync, every forwarded option, or every upstream source revision.
+
 ## Patch preparation
 
 Builds and tests apply Core patches only when the materialized Chromium files no
