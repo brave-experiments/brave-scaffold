@@ -49,4 +49,6 @@ def run(ctx, execution, arguments, extra_env=None):
                 env.pop(name, None)
             else:
                 env[name] = value
-        return argv, run_streaming(argv, str(execution.identity.core), env, ctx.log, json_mode=ctx.json_mode)
+        return argv, run_streaming(argv, str(execution.identity.core), env, ctx.log, json_mode=ctx.json_mode,
+                                   preserve_stdout=ctx.command == "bpm",
+                                   display_argv=[execution.toolchain.manager, *argv[2:]])

@@ -80,6 +80,8 @@ class BuildTests(BuildTestCase):
     def test_default_build_runs_the_package_build_in_core_and_verifies_the_app(self):
         result, document = self.document("build")
         self.assertEqual((result.returncode, document["status"]), (0, "ok"), result.stderr)
+        self.assertIn("$ pnpm run build", result.stderr)
+        self.assertNotIn("/bin/node ", result.stderr)
         self.assertEqual(self.build_argv(), [
             "run", "build", "--target_os=mac", "--target_arch=arm64", "-C", "Debug_arm64", "Debug",
             "--use_remoteexec=true"])

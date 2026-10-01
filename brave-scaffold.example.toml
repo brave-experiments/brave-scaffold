@@ -7,8 +7,8 @@
 schema_version = 1
 
 [logging]
-# Print effective commands and their working directories by default.
-commands = true
+# Console detail: quiet, normal, or verbose. Diagnostic logs are always saved.
+verbosity = "normal"
 
 # Optional platform override. Omit to use the current host platform.
 # [defaults]

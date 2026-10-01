@@ -113,7 +113,9 @@ selected; add `--checkout`.
 
 *Meaning:* the package command or Python program ran and exited nonzero. The
 result's `child_exit_code` is its own status; the tools exit `5`. Its output is on
-your terminal (stderr in JSON mode).
+your terminal (stderr in JSON mode). Quiet mode shows the failure's last 40 lines,
+up to 16 KiB. The final stderr line gives the diagnostic log path for the full
+saved output and command trace; see [output controls](commands.md#common-behavior).
 
 ## `CONFIG_INVALID`
 

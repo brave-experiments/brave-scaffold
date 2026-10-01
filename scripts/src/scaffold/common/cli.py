@@ -24,6 +24,10 @@ class Opt:
 
 
 COMMON_OPTIONS = (
+    Opt("--quiet", "quiet", takes_value=False, help="Hide progress and child output; show a failure excerpt."),
+    Opt("--verbose", "verbose", takes_value=False, help="Also show internal commands and their directories."),
+    Opt("--verbosity", "verbosity", choices=("quiet", "normal", "verbose"),
+        help="Console detail; overrides configuration.", metavar="LEVEL"),
     Opt("--checkout", "checkout", help="Checkout alias or path (Core, Chromium src, or outer checkout).",
         metavar="NAME_OR_PATH"),
     Opt("--config", "config", help="Configuration file (default: the installation's brave-scaffold.toml).",
@@ -157,6 +161,9 @@ def parse_tokens(spec, tokens):
 
 
 def _set(values, option, value, spec):
+    if option.dest in ("quiet", "verbose"):
+        value = option.dest
+        option = Opt(option.name, "verbosity")
     if option.dest in values and values[option.dest] != value:
         raise ScaffoldError(
             "SELECTOR_CONFLICT",

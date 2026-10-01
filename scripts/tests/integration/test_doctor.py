@@ -86,13 +86,18 @@ class DoctorTests(SandboxTest):
         result, document = self.doctor("ios")
         self.assertEqual((result.returncode, document["error"]["code"]), (2, "UNSUPPORTED_CAPABILITY"))
 
-    def test_doctor_writes_nothing_and_never_repairs(self):
+    def test_doctor_writes_only_external_diagnostics_and_never_repairs(self):
         self.sandbox.mark_stale("main")
         before_checkout = tree_snapshot(self.core.parents[3])
         before_config = tree_snapshot(self.sandbox.root / "config")
         self.doctor("mac", "--checkout", "main")
         self.assertEqual(before_checkout, tree_snapshot(self.core.parents[3]))
-        self.assertEqual(before_config, tree_snapshot(self.sandbox.root / "config"))
+        after_config = tree_snapshot(self.sandbox.root / "config")
+        logs = self.sandbox.root / "config" / ".bdev" / "logs"
+        allowed = {str(logs.parent), str(logs), *(str(path) for path in logs.glob("*.log"))}
+        self.assertEqual(before_config, {path: after_config.get(path) for path in before_config})
+        self.assertLessEqual(after_config.keys() - before_config.keys(), allowed)
+        self.assertTrue(list(logs.glob("*.log")))
         self.assertEqual([r for r in self.sandbox.records() if r["tool"] == "installer"], [])
 
     def test_text_mode_matches_the_json_verdict(self):

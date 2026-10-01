@@ -21,7 +21,7 @@ CONFIG_NAME = "brave-scaffold.toml"
 ALIAS_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]*")
 PLATFORM_NAMES = ("mac", "macos", "android")
 TOP_FIELDS = {"schema_version", "logging", "defaults", "checkouts"}
-LOGGING_FIELDS = {"commands"}
+LOGGING_FIELDS = {"commands", "verbosity"}
 DEFAULT_FIELDS = {"platform", "android_device"}
 CHECKOUT_FIELDS = {"alias", "core", "direnv_dir"}
 EXAMPLE = """[[checkouts]]
@@ -48,6 +48,7 @@ class Config:
     path: Path
     exists: bool
     commands_logging: bool = True
+    verbosity: str = "normal"
     default_platform: str | None = None
     default_android_device: str | None = None
     checkouts: list = field(default_factory=list)
@@ -110,6 +111,11 @@ def _validate(path, data):
         if not isinstance(value, bool):
             raise _invalid(path, "logging.commands", "must be true or false", "[logging]\ncommands = true")
         config.commands_logging = value
+        config.verbosity = data["logging"].get("verbosity", "normal")
+        if "verbosity" in data["logging"]:
+            config.commands_logging = True
+        if config.verbosity not in ("quiet", "normal", "verbose"):
+            raise _invalid(path, "logging.verbosity", "must be quiet, normal, or verbose")
     if "defaults" in data:
         _expect_table(path, data["defaults"], "defaults", DEFAULT_FIELDS)
         platform = data["defaults"].get("platform")

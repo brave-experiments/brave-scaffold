@@ -21,7 +21,8 @@ checkout as their purpose; each command's help states its side effects.
 | Field | Meaning | Default |
 | --- | --- | --- |
 | `schema_version` | Configuration format version. Must be `1`. | required |
-| `logging.commands` | Print each dispatched command and its working directory to stderr. | `true` |
+| `logging.verbosity` | Console detail: `quiet`, `normal`, or `verbose`; CLI flags override it. | `"normal"` |
+| `logging.commands` | Legacy switch for console command lines. `false` hides them; explicit verbosity overrides it. Saved logs are unaffected. | `true` |
 | `defaults.platform` | Target used when no target is named: `mac`, `macos`, or `android`. | the host platform |
 | `defaults.android_device` | Device id used when several Android devices are usable and `--device` is not given. | none |
 | `checkouts[].core` | Absolute path to the checkout's `src/brave` directory. Stored once. | required |

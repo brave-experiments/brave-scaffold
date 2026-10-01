@@ -73,13 +73,14 @@ def dependency_state(identity, log=None):
     if not scope.complete:
         return None, None
     heads, changes = hashlib.sha256(), hashlib.sha256()
-    for repo in sorted(item for item in scope.repositories if item not in (identity.src, identity.core)):
-        head = gitstate.head_commit(repo, log)
+    repositories = sorted(item for item in scope.repositories if item not in (identity.src, identity.core))
+    for index, repo in enumerate(repositories, 1):
+        if log:
+            log.progress("Checking source state: dependency %d/%d (%s)" % (
+                index, len(repositories), os.path.relpath(repo, identity.src)))
         try:
-            changed = gitstate.tracked_changes(repo, log)
+            head, changed = gitstate.tracked_snapshot(repo, log)
         except ScaffoldError:
-            return None, None
-        if head is None:
             return None, None
         label = os.path.relpath(repo, identity.src)
         heads.update(("%s=%s\n" % (label, head)).encode())
@@ -124,6 +125,8 @@ def compute(identity, patched_paths, effective_args, log=None, extra=None):
 
     `extra` adds inputs that only apply to some outputs (for example Android support).
     """
+    if log:
+        log.phase("Checking source state...")
     patched = hashlib.sha256()
     for repo_path in sorted(patched_paths):
         patched.update(("%s=%s\n" % (repo_path, _file_signature(identity.src / repo_path))).encode())

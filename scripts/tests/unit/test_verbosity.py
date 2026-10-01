@@ -1,0 +1,163 @@
+# Copyright (c) 2026 The Brave Authors. All rights reserved.
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this file,
+# You can obtain one at https://mozilla.org/MPL/2.0/.
+"""Console detail must not change execution or lose diagnostic evidence."""
+
+import contextlib
+import io
+import os
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+import tests.support
+from scaffold.common import cli, config, procs
+from scaffold.brave.app import run_command
+from scaffold.common.results import Result, ScaffoldError
+
+
+class VerbosityTests(unittest.TestCase):
+    def invoke(self, level, code, **environment):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        root = Path(directory.name)
+        path = root / 'config.toml'
+        path.write_text('schema_version = 1\n[logging]\nverbosity = "normal"\n')
+        parsed = cli.Parsed(values={'config': str(path), 'verbosity': level})
+        out, err = io.StringIO(), io.StringIO()
+        def handler(ctx):
+            procs.run_capture([sys.executable, '-c', "import os; print(os.environ['PROBE_PAYLOAD'])"],
+                              root, dict(os.environ, PROBE_PAYLOAD="private probe payload"), ctx.log)
+            rc = procs.run_streaming([sys.executable, '-c', code], root,
+                                    dict(os.environ, **environment), ctx.log)
+            return Result(command='example', exit_code=rc, text='Finished')
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            rc = run_command('example', parsed, handler, stdout=out, stderr=err)
+        files = list((root / '.bdev' / 'logs').glob('*.log'))
+        self.assertEqual(len(files), 1)
+        self.assertEqual(files[0].stat().st_mode & 0o777, 0o600)
+        return rc, out.getvalue(), err.getvalue(), files[0].read_text()
+
+    def test_normal_shows_child_but_hides_probes_and_saves_commands(self):
+        rc, out, err, saved = self.invoke('normal', "print('build' + ' output')")
+        self.assertEqual(rc, 0)
+        self.assertIn('build output', out)
+        self.assertNotIn('private probe payload', err)
+        self.assertIn('PROBE_PAYLOAD', saved)
+        self.assertNotIn('private probe payload', saved)
+        self.assertIn('build output', saved)
+        self.assertIn('Log:', err)
+
+    def test_verbose_shows_probes(self):
+        _, _, err, _ = self.invoke('verbose', "print('build' + ' output')")
+        self.assertIn('PROBE_PAYLOAD', err)
+
+    def test_quiet_suppresses_success_but_replays_failure_tail(self):
+        _, out, err, saved = self.invoke('quiet', "print('child' + ' output')")
+        self.assertNotIn('child output', out + err)
+        self.assertIn('child output', saved)
+        rc, out, err, saved = self.invoke('quiet', "print('failure' + ' detail'); raise SystemExit(7)")
+        self.assertEqual(rc, 7)
+        self.assertIn('failure detail', err)
+        self.assertNotIn('failure detail', out)
+
+    def test_child_secrets_are_redacted_even_across_writes(self):
+        code = "import os; os.write(1,b'abc'); os.write(1,b'def\\nhttps://u:pw@example.com\\n')"
+        _, out, err, saved = self.invoke('normal', code, ACCESS_TOKEN='abcdef')
+        self.assertNotIn('abcdef', out + err + saved)
+        self.assertNotIn('u:pw@', out + saved)
+        self.assertIn('***', out)
+
+    def test_verbosity_options_conflict_and_forwarding(self):
+        spec = cli.CommandSpec('build', 'Build', forward=True)
+        with self.assertRaises(ScaffoldError):
+            cli.parse_tokens(spec, ['--quiet', '--verbose'])
+        parsed = cli.parse_tokens(spec, ['--verbose', '--', '--quiet'])
+        self.assertEqual(parsed.get('verbosity'), 'verbose')
+        self.assertEqual(parsed.forwarded, ['--quiet'])
+        parsed = cli.parse_leading(spec, ['--quiet', 'run', '--verbose'])
+        self.assertEqual(parsed.forwarded, ['run', '--verbose'])
+
+    def test_config_accepts_levels_and_rejects_unknown(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'config.toml'
+            for level in ('quiet', 'normal', 'verbose'):
+                path.write_text('schema_version = 1\n[logging]\nverbosity = "%s"\n' % level)
+                self.assertEqual(config.load_config(path).verbosity, level)
+            path.write_text('schema_version = 1\n[logging]\nverbosity = "loud"\n')
+            with self.assertRaises(ScaffoldError):
+                config.load_config(path)
+
+    def test_direct_stdout_keeps_binary_bytes_and_partial_lines(self):
+        with tempfile.TemporaryDirectory() as directory:
+            raw = io.BytesIO()
+            stdout = io.TextIOWrapper(raw, encoding="utf-8")
+            log = procs.CommandLog(enabled=False, stream=io.StringIO(), verbosity="normal")
+            log.open(directory)
+            with contextlib.redirect_stdout(stdout):
+                rc = procs.run_streaming([sys.executable, '-c', "import os; os.write(1, b'\\xffprompt')"],
+                                         directory, os.environ, log, preserve_stdout=True)
+            self.assertEqual(rc, 0)
+            self.assertEqual(raw.getvalue(), b'\xffprompt')
+            log.close()
+
+    def test_json_child_output_never_enters_stdout(self):
+        import json
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'config.toml'
+            path.write_text('schema_version = 1\n[logging]\nverbosity = "quiet"\n')
+            parsed = cli.Parsed(values={'config': str(path), 'json': True, 'verbosity': 'normal'})
+            out, err = io.StringIO(), io.StringIO()
+            def handler(ctx):
+                procs.run_streaming([sys.executable, '-c', "print('child-text')"], directory,
+                                    os.environ, ctx.log, json_mode=ctx.json_mode)
+                return Result(command='example')
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                self.assertEqual(run_command('example', parsed, handler, stdout=out, stderr=err), 0)
+            self.assertEqual(json.loads(out.getvalue())['status'], 'ok')
+            self.assertIn('child-text', err.getvalue())
+
+    def test_split_secrets_and_long_lines_never_save_partial_values(self):
+        with tempfile.TemporaryDirectory() as directory:
+            log = procs.CommandLog(verbosity='quiet', stream=io.StringIO())
+            log.open(directory)
+            output = procs._StreamOutput(log, [], {'API_TOKEN': 'sensitive-value'}, 'stdout', False)
+            output.receive('stdout', b'sensitive-')
+            self.assertNotIn('sensitive-', Path(log.path).read_text())
+            output.receive('stdout', b'value\nhttps://user:pass')
+            output.receive('stdout', b'word@host/path\n')
+            output.receive('stdout', b'x' * 1_048_577)
+            output.receive('stdout', b'end\nlast line')
+            output.finish()
+            log.close()
+            saved = Path(log.path).read_text()
+            self.assertNotIn('sensitive', saved)
+            self.assertNotIn('password', saved)
+            self.assertIn('omitted', saved)
+            self.assertTrue(saved.endswith('last line'))
+            self.assertLess(len(saved), 200)
+
+    def test_metal_reuses_only_the_latest_execution_check(self):
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        from scaffold.brave.cmd_build import metal_environment
+        from scaffold.common.checks import make_check
+        good = make_check('metal-toolchain', 'pass', 'Ready', 'mac', xcrun_works=True)
+        bad = make_check('metal-toolchain', 'warning', 'Missing', 'mac')
+        context = SimpleNamespace(log=procs.CommandLog(enabled=False))
+        with patch('scaffold.brave.cmd_build.run_capture', return_value=procs.ProcessResult(0)) as probe:
+            self.assertEqual(metal_environment(context, {}, [good]), {})
+            probe.assert_not_called()
+            self.assertEqual(metal_environment(context, {}, [good, bad]), {})
+            self.assertEqual(probe.call_count, 1)
+
+    def test_progress_updates_do_not_flood_redirected_output(self):
+        from unittest.mock import patch
+        stream = io.StringIO()
+        log = procs.CommandLog(stream=stream, verbosity='normal')
+        with patch.object(procs.time, 'monotonic', side_effect=[100, 101, 109, 110]):
+            for i in range(4):
+                log.progress('dependency %d' % i)
+        self.assertEqual(stream.getvalue().splitlines(), ['dependency 0', 'dependency 3'])

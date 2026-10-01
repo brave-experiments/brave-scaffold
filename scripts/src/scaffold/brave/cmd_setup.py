@@ -302,7 +302,7 @@ def shell(ctx):
     identity = ctx.identity()
     loaded = env_module.load_environment(identity, ctx.environ, ctx.log)
     program = ctx.environ.get("SHELL") or "/bin/zsh"
-    code = run_streaming([program], str(identity.core), loaded, ctx.log, json_mode=ctx.json_mode)
+    code = run_streaming([program], str(identity.core), loaded, ctx.log, json_mode=ctx.json_mode, interactive=True)
     result = Result(command="shell", data={"shell": program, "cwd": str(identity.core), "exit": code},
                     child_exit_code=code)
     return result

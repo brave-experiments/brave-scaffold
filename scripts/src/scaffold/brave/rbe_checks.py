@@ -68,7 +68,7 @@ def _machine(ctx, scope):
         if Path(METAL_MOUNTS).is_dir() else []
     if metal.returncode == 0:
         checks.append(make_check("metal-toolchain", PASS, "xcrun metal works.", scope, required=False,
-                                 affects=("mac build",)))
+                                 affects=("mac build",), xcrun_works=True))
     elif mounted:
         checks.append(make_check("metal-toolchain", PASS, "A Metal toolchain component is mounted; builds select it.",
                                  scope, required=False, affects=("mac build",)))

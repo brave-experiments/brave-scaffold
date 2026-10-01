@@ -22,19 +22,26 @@ def _git(repo, args, log, timeout=120):
                        max_bytes=EVIDENCE_BYTES)
 
 
-def _require_root(repo, log):
+def _require_root(repo, log, with_head=False):
     """Stop unless Git treats `repo` itself as a repository, not an enclosing one.
 
     A damaged repository directory makes Git fall through to the repository around it, whose answer would
     describe the wrong files.
     """
-    top = _git(repo, ["rev-parse", "--show-toplevel"], log, timeout=30)
-    reported = top.stdout.strip()
+    args = ["rev-parse", "--show-toplevel"] + (["HEAD^{commit}"] if with_head else [])
+    top = _git(repo, args, log, timeout=30)
+    lines = top.stdout.strip().splitlines()
+    reported = (lines[0] if lines else "") if with_head else top.stdout.strip()
     if (top.returncode != 0 or top.truncated or "\0" in reported
             or os.path.realpath(reported) != os.path.realpath(repo)):
         raise ScaffoldError("PREPARATION_CONFLICT",
                             "%s is not readable as a Git repository, so its local changes could not be inspected; "
                             "nothing was changed." % repo, details={"repository": str(repo)})
+
+    if with_head:
+        if len(lines) != 2 or len(lines[1]) not in (40, 64) or any(c not in "0123456789abcdef" for c in lines[1]):
+            raise ScaffoldError("PREPARATION_CONFLICT", "Repository HEAD could not be inspected: %s" % repo)
+        return lines[1]
 
 
 @dataclass
@@ -48,8 +55,9 @@ class Changes:
         return self.tracked | self.untracked
 
 
-def _status(repo, pathspec, untracked, log):
-    _require_root(repo, log)
+def _status(repo, pathspec, untracked, log, root_checked=False):
+    if not root_checked:
+        _require_root(repo, log)
     result = _git(repo, ["status", "--porcelain", "-z", "--untracked-files=" + untracked, *pathspec], log, timeout=600)
     if result.returncode != 0 or result.truncated:
         raise ScaffoldError("PREPARATION_CONFLICT",
@@ -93,6 +101,12 @@ def inspect_changes(repo, log=None, paths=None):
         if not paths:
             return Changes()
     return _status(repo, [] if paths is None else ["--", *paths], "all", log)
+
+
+def tracked_snapshot(repo, log=None):
+    """HEAD and tracked changes, with one combined root/HEAD probe and one status read."""
+    head = _require_root(repo, log, with_head=True)
+    return head, _status(repo, [], "no", log, root_checked=True).tracked
 
 
 def tracked_changes(repo, log=None):

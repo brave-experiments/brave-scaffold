@@ -35,10 +35,10 @@ class RecordLifecycleTests(RecordCase, BuildTestCase):
     def test_json_build_logs_each_dependency_command_and_directory(self):
         from scaffold.common.procs import format_command_block
         repositories = [self.sandbox.add_dependency("main", relative) for relative in ("v8", "third_party/ffmpeg")]
-        result, document = self.document("build")
+        result, document = self.document("build", "--verbose")
         self.assertEqual((result.returncode, document["status"]), (0, "ok"))
         for repository in repositories:
-            for args in (["rev-parse", "--verify", "--quiet", "HEAD^{commit}"],
+            for args in (["rev-parse", "--show-toplevel", "HEAD^{commit}"],
                          ["status", "--porcelain", "-z", "--untracked-files=no"]):
                 argv = ["git", "--literal-pathspecs", "-C", str(repository), *args]
                 self.assertIn(format_command_block(argv, str(repository)), result.stderr)
@@ -189,7 +189,8 @@ class RecordLifecycleTests(RecordCase, BuildTestCase):
         self.assertRegex(record["source"]["core_head"], "^[0-9a-f]{40}$")
         self.assertRegex(record["source"]["chromium_head"], "^[0-9a-f]{40}$")
         self.assertIsInstance(record["source"]["core_uncommitted_files"], int)
-        self.assertEqual(record["logs"], {"commands": "stderr", "child_output": "stderr"})
+        self.assertEqual(record["logs"]["verbosity"], "normal")
+        self.assertTrue(record["logs"]["diagnostic"].endswith(".log"))
         self.assertEqual((record["details"]["target"], record["details"]["configuration"],
                           record["details"]["arch"]), ("mac", "Debug", "arm64"))
         self.assertEqual(record["child_exit_code"], 0)
@@ -197,7 +198,7 @@ class RecordLifecycleTests(RecordCase, BuildTestCase):
         self.sandbox.config.write_text(self.sandbox.config.read_text() + "\n[logging]\ncommands = false\n")
         _, document = self.document("build")
         record = self.record_of(document)
-        self.assertEqual(record["logs"]["commands"], "disabled")
+        self.assertEqual(record["logs"]["commands"], "diagnostic")
         self.assertTrue(record["commands"], "dispatch is still recorded")
 
 

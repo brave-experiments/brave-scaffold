@@ -15,19 +15,42 @@ look, and what the codes mean. Only delivered commands appear here.
 - Text output is the default. With `--json`, stdout holds exactly one result
   document, including for parse errors and child failures. Child output and
   command logs go to stderr.
-- Before each subprocess the tools print its absolute working directory and full
-  command to stderr, with known secrets redacted. Set `logging.commands = false`
-  to turn this off; results and errors are unaffected. The same redaction covers
-  command lines in results, plans, error details, and saved operation records; the
-  child still receives the real arguments. Secrets that a child prints itself are
-  not scrubbed. Every subprocess the tools start is logged, including probes; a check
-  repeated while waiting (for example whether a process has exited) is shown once,
-  followed by a line saying how many more times it ran, and the operation record keeps the
-  count. Probe output is read with a size limit: output beyond it is discarded while
-  reading, and evidence that needs the whole output (Git status, the process listing)
-  is treated as unknown rather than as the complete answer. A logged command that timed
-out, had output discarded, or left pipes abandoned by a process outside its group says so
-in its command record (`timed_out`, `truncated`, `cleanup_incomplete`).
+- Normal output shows phases, primary commands with their working directories, live
+  child output, and the final result. Package commands use the short `pnpm` or `npm`
+  name on the console; the log keeps their exact Node and payload paths. Internal
+  probes go to the saved log.
+  `--verbose` also prints probes; `--quiet` hides progress and child output, but keeps
+  scaffold warnings, errors, and results. A failed child shows its last 40 lines
+  (at most 16 KiB) in quiet mode. Quiet does not try to classify child warning text.
+  `--verbosity normal` restores normal output when configuration selects another level.
+  These options must precede the first program argument for `bpm` and `vpython3`;
+  use `--` to forward a conflicting option to a package command.
+- Set `[logging] verbosity = "normal"` (or `"quiet"` / `"verbose"`) in configuration
+  for a persistent default. CLI verbosity wins. The legacy `commands = false` hides
+  console command lines unless an explicit verbosity setting overrides it.
+- Each configured invocation saves a mode-0600 log under `.bdev/logs/` beside its
+  configuration, at every verbosity level. `--plan` previews create no log files.
+  Pure `env export` also creates no log and remains silent on stderr. The final stderr line reports elapsed
+  time and the log path, including in JSON mode. The JSON envelope stays unchanged.
+  Logs contain effective commands, directories, phase messages, probe exit status,
+  and streamed child output. Captured probe payloads are excluded because they may
+  contain the environment or private data. Logs remain until manually removed;
+  remove old files from this directory when no running command needs them.
+- Known secret arguments, secret-named environment values, and URL passwords are
+  redacted from saved child output and its console copy. This cannot identify every
+  secret a program might print. Child output uses pipes and is forwarded by line,
+  including carriage-return progress; a partial line waits for its terminator or
+  process exit. Lines exceeding 1 MiB are explicitly omitted to bound memory and
+  avoid storing partial secrets. Programs may disable terminal color under pipes.
+  Direct `bpm` and `vpython3` stdout remains byte-for-byte and unredacted in normal
+  text mode so pipes and binary output still work; its saved copy is redacted text.
+  `bdev shell` keeps direct terminal access, including prompts and output, at every
+  verbosity level; its interactive output is not captured. The child receives the
+  original arguments and environment.
+- Probe output is read with a size limit. Incomplete evidence is treated as unknown.
+  Command records flag timeouts, truncated output, and incomplete cleanup. Repeated
+  poll commands keep a count instead of flooding the terminal. Source-state scans
+  update one terminal line, or print progress at most every ten seconds when redirected.
 - Nothing is repaired or approved automatically. Suggested next steps in errors
   are suggestions.
 

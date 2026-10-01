@@ -28,6 +28,10 @@ Android builds an arm64 APK and installs and restarts it on a device.
 `bdev capabilities` lists what is supported and what has been verified on a
 real checkout.
 
+Normal output shows phases, primary commands, and live build output. Use `--quiet`
+for less console output or `--verbose` to include internal probes. Commands save a diagnostic log
+and print its path; pure environment exports remain silent. See [output controls](docs/commands.md#common-behavior).
+
 The initial platform scope is macOS arm64 hosts with existing Brave macOS and
 Android checkouts. Fresh checkout creation, iOS, and guarded push are not part of
 it.

@@ -63,7 +63,7 @@ def vpython3(ctx):
         raise ScaffoldError("LOCAL_TOOL_MISSING", "Checkout-local vpython3 is not executable: %s" % interpreter,
                             repairs=[env_module.depot_tools_repair(identity)])
     argv = [str(interpreter), *ctx.parsed.forwarded]
-    code = run_streaming(argv, str(execution_cwd), loaded, ctx.log, json_mode=ctx.json_mode)
+    code = run_streaming(argv, str(execution_cwd), loaded, ctx.log, json_mode=ctx.json_mode, preserve_stdout=True)
     result = Result(command="vpython3", child_exit_code=code,
                     data={"argv": argv, "interpreter": str(interpreter), "cwd": str(execution_cwd)})
     if code != 0:

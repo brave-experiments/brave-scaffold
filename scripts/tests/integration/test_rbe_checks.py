@@ -129,13 +129,18 @@ class RbeCheckTests(SandboxTest):
         result, document = self.doctor("mac", "--checkout", "main")
         self.assertEqual((result.returncode, self.status(document)["macos-sdk"]), (3, "blocker"))
 
-    def test_text_mode_and_no_writes(self):
+    def test_text_mode_writes_only_external_diagnostics(self):
         self.write_env()
         before = (tree_snapshot(self.core.parents[3]), tree_snapshot(self.sandbox.root / "config"))
         text = self.sandbox.bdev("--config", self.config, "doctor", "rbe", "--checkout", "main")
         self.assertIn("rbe-reachability", text.stdout)
         self.assertIn("❔ rbe-reachability", text.stdout)
-        self.assertEqual(before, (tree_snapshot(self.core.parents[3]), tree_snapshot(self.sandbox.root / "config")))
+        self.assertEqual(before[0], tree_snapshot(self.core.parents[3]))
+        after = tree_snapshot(self.sandbox.root / "config")
+        logs = self.sandbox.root / "config" / ".bdev" / "logs"
+        allowed = {str(logs.parent), str(logs), *(str(path) for path in logs.glob("*.log"))}
+        self.assertEqual(before[1], {path: after.get(path) for path in before[1]})
+        self.assertLessEqual(after.keys() - before[1].keys(), allowed)
 
 
 if __name__ == "__main__":

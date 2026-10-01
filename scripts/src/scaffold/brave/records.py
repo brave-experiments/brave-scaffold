@@ -54,7 +54,8 @@ class Operation:
     the interruption instead of claiming success. Every dispatched command is saved before it starts.
     """
 
-    def __init__(self, command, identity, details, root=None, evidence=None):
+    def __init__(self, command, identity, details, root=None, evidence=None, progress=None):
+        self.progress = progress
         self.root = store_root(root)
         self.id = time.strftime("%Y%m%dT%H%M%S") + "-" + secrets.token_hex(3)
         self.path = self.root / "operations" / (self.id + ".json")
@@ -78,6 +79,8 @@ class Operation:
     def start(self, name, **fields):
         """A phase begins. It stays `running` in the saved record until it succeeds or fails, so a process that
         dies mid-phase leaves the evidence of where."""
+        if self.progress:
+            self.progress(name.replace("-", " ").capitalize() + "...")
         self.data["steps"].append({**fields, "name": name, "at": now(), "status": "running"})
         self.save()
 
@@ -143,8 +146,10 @@ class Operation:
 
 def describe_start(ctx, identity, validated=False):
     """Evidence stored with every operation: environment identity (no values), source state, log destinations."""
-    evidence = {"logs": {"commands": "stderr" if ctx.log.enabled else "disabled",
-                         "child_output": "stderr" if ctx.json_mode else "terminal"}}
+    evidence = {"logs": {
+        "commands": "stderr" if ctx.log.enabled and ctx.log.verbosity == "verbose" else "diagnostic",
+        "child_output": "diagnostic" if ctx.log.verbosity == "quiet" else "stderr" if ctx.json_mode else "terminal",
+        "diagnostic": ctx.log.path, "verbosity": ctx.log.verbosity}}
     record = identity.record
     if record is not None and record.direnv_dir is not None:
         envrc = Path(os.path.realpath(record.direnv_dir)) / ".envrc"
@@ -174,7 +179,7 @@ def track(ctx, command, identity, details, validated=False):
     are re-raised; a process that dies leaves the record incomplete. Call `op.complete(result)` on success.
     `validated` records that the checkout's approved environment was loaded and checked first.
     """
-    op = Operation(command, identity, details, ctx.state_root, describe_start(ctx, identity, validated))
+    op = Operation(command, identity, details, ctx.state_root, describe_start(ctx, identity, validated), ctx.log.phase)
     ctx.log.listeners.append(op.command_dispatched)
     try:
         yield op

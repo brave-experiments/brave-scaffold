@@ -40,8 +40,9 @@ operations.
   selection when unclear. Default the platform to the host unless overridden.
 - Only one operator may use a checkout at a time initially. Do not add a lock or
   scheduling system without a new requirement.
-- Log full effective commands and their working directories by default, with
-  known secrets redacted. Keep command logs separate from structured stdout.
+- Save effective commands, working directories, and streamed child output in a
+  redacted diagnostic log. Normal console output shows phases and primary commands;
+  `--verbose` also shows probes. Keep diagnostics separate from structured stdout.
 
 ## Where to read next
 

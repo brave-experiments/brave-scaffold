@@ -6,8 +6,10 @@
 
 from __future__ import annotations
 
+import json
 import os
 import sys
+import time
 import traceback
 from dataclasses import dataclass
 
@@ -35,7 +37,10 @@ class Context:
         if path and not os.path.isabs(os.path.expanduser(path)):
             path = os.path.join(self.cwd, path)
         self.config = config_module.load_config(path, explicit=bool(explicit) and not may_create)
-        self.log.enabled = self.config.commands_logging
+        self.log.verbosity = self.parsed.get("verbosity", self.config.verbosity)
+        self.log.enabled = self.config.commands_logging or bool(self.parsed.get("verbosity"))
+        if not self.log.path and self.command != "env export" and not self.parsed.get("plan"):
+            self.log.open(self.config.directory)
         return self.config
 
     @property
@@ -59,7 +64,8 @@ def run_command(command, parsed, handler, argv_environ=None, needs_config=True, 
                 may_create_config=False):
     """Run a handler and always emit exactly one result; return the exit code."""
     json_mode = parsed.json_mode
-    log = CommandLog(stream=stderr)
+    started = time.monotonic()
+    log = CommandLog(stream=stderr, verbosity=parsed.get("verbosity", "normal"))
     context = Context(command=command, parsed=parsed, environ=dict(argv_environ or os.environ),
                       cwd=cwd or os.getcwd(), json_mode=json_mode, log=log,
                       scaffold_root=config_module.scaffold_root())
@@ -92,5 +98,17 @@ def run_command(command, parsed, handler, argv_environ=None, needs_config=True, 
         result.context = context.selected.to_context()
     if context.log.records and not result.logs:
         result.logs = [{"kind": "command", **record} for record in context.log.records]
+    elapsed = time.monotonic() - started
+    try:
+        if log.path:
+            log.save("Result: %s; exit %d; elapsed %.2fs\n" % (result.status, result.exit_code, elapsed))
+            safe = result.redacted()
+            if safe.error or safe.warnings:
+                log.save(json.dumps({"error": safe.error, "warnings": safe.warnings}) + "\n")
+        log.close()
+    except OSError as error:
+        result.add_warning("LOG_WRITE_FAILED", "The diagnostic log could not be completed: %s" % error)
     emit(result, json_mode, stdout=stdout, stderr=stderr)
+    if log.path:
+        log.message("Elapsed: %.2fs. Log: %s" % (elapsed, log.path))
     return result.exit_code

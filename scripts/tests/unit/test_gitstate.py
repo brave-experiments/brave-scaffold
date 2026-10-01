@@ -52,6 +52,20 @@ class ChangedPathsTests(unittest.TestCase):
         with self.assertRaises(ScaffoldError):
             gitstate.changed_paths(outside, ["x"])
 
+    def test_snapshot_keeps_index_and_worktree_changes_with_two_git_calls(self):
+        from scaffold.common.procs import CommandLog
+        (self.repo / "modified.cc").write_text("modified\n")
+        self.git("mv", "moved_from.cc", "moved_to.cc")
+        log = CommandLog(enabled=False)
+        head, paths = gitstate.tracked_snapshot(self.repo, log)
+        self.assertEqual(head, gitstate.head_commit(self.repo))
+        self.assertEqual(paths, {"modified.cc", "moved_from.cc", "moved_to.cc"})
+        self.assertEqual(len(log.records), 2)
+        nested = self.repo / "broken-dependency"
+        nested.mkdir()
+        with self.assertRaises(ScaffoldError):
+            gitstate.tracked_snapshot(nested)
+
     def test_paths_are_literal_not_patterns(self):
         (self.repo / "star*.cc").write_text("x\n")
         self.assertEqual(gitstate.changed_paths(self.repo, ["*.cc"]), set())

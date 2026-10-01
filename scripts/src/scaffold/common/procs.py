@@ -6,7 +6,11 @@
 
 from __future__ import annotations
 
+import codecs
 import os
+import re
+import tempfile
+from pathlib import Path
 import selectors
 import shlex
 import signal
@@ -15,7 +19,7 @@ import sys
 import time
 from dataclasses import dataclass, field
 
-from .redaction import redact_argv
+from .redaction import SECRET_NAME, URL_CREDENTIALS, redact_argv, redact_url_credentials
 from .results import Cancelled
 
 TERMINATE_GRACE_SECONDS = 10
@@ -44,7 +48,63 @@ class CommandLog:
     records: list = field(default_factory=list)
     listeners: list = field(default_factory=list)
     polled: dict = field(default_factory=dict)
-    def record(self, argv, cwd, poll=False):
+    verbosity: str = "verbose"
+    diagnostic: object = None
+    path: str | None = None
+    progress_at: float = 0
+    progress_line: bool = False
+
+    def open(self, root):
+        directory = Path(root) / ".bdev" / "logs"
+        directory.mkdir(parents=True, exist_ok=True)
+        fd, self.path = tempfile.mkstemp(prefix=time.strftime("%Y%m%dT%H%M%S-"), suffix=".log", dir=directory)
+        self.diagnostic = os.fdopen(fd, "w", encoding="utf-8")
+
+    def save(self, text):
+        if self.diagnostic:
+            self.diagnostic.write(text)
+            self.diagnostic.flush()
+
+    def clear_progress(self):
+        if self.progress_line:
+            stream = self.stream or sys.stderr
+            stream.write("\r\033[2K")
+            stream.flush()
+            self.progress_line = False
+
+    def message(self, text):
+        self.clear_progress()
+        stream = self.stream or sys.stderr
+        stream.write(text + "\n")
+        stream.flush()
+
+    def phase(self, text):
+        self.save(text + "\n")
+        if self.verbosity != "quiet":
+            self.message(text)
+
+    def progress(self, text):
+        stream = self.stream or sys.stderr
+        tty = stream.isatty()
+        now = time.monotonic()
+        if now - self.progress_at >= (1 if tty else 10):
+            self.save(text + "\n")
+            if self.verbosity != "quiet":
+                if tty:
+                    stream.write("\r\033[2K" + text)
+                    stream.flush()
+                    self.progress_line = True
+                else:
+                    self.message(text)
+            self.progress_at = now
+
+    def close(self):
+        self.clear_progress()
+        if self.diagnostic:
+            self.diagnostic.close()
+            self.diagnostic = None
+
+    def record(self, argv, cwd, poll=False, primary=False, display_argv=None):
         """Note a command before it starts; listeners (such as an operation record) see the redacted form.
 
         A `poll` command that repeats while waiting is described once; later runs only raise its `repeated`
@@ -61,20 +121,21 @@ class CommandLog:
         self.records.append(entry)
         for listener in list(self.listeners):
             listener(entry)
-        if self.enabled:
-            stream = self.stream or sys.stderr
-            stream.write(format_command_block(argv, cwd) + "\n")
-            stream.flush()
+        block = format_command_block(argv, cwd)
+        self.save(block + "\n")
+        if self.enabled and self.verbosity != "quiet" and (primary or self.verbosity == "verbose"):
+            self.message(block if self.verbosity == "verbose" else
+                         "Current directory: %s\n$ %s" % (os.path.abspath(cwd), shlex.join(redact_argv(display_argv) if display_argv else redacted)))
         return entry
 
     def finish_polls(self):
         """Say how often each polled command ran again after its first description."""
-        if self.enabled:
-            stream = self.stream or sys.stderr
-            for entry in self.polled.values():
-                if entry.get("repeated"):
-                    stream.write("(the command above ran %d more times while waiting)\n" % entry["repeated"])
-            stream.flush()
+        for entry in self.polled.values():
+            if entry.get("repeated"):
+                text = "(command repeated %d more times: %s)" % (entry["repeated"], shlex.join(entry["argv"]))
+                self.save(text + "\n")
+                if self.enabled and self.verbosity == "verbose":
+                    self.message("(the command above ran %d more times while waiting)" % entry["repeated"])
         self.polled.clear()
 
 
@@ -148,17 +209,116 @@ def terminate_group(process, grace=None, signum=signal.SIGTERM):
     return _wait_for_group(process, KILL_WAIT_SECONDS)
 
 
-def run_streaming(argv, cwd, env, log, json_mode=False, stdin=None):
+def run_streaming(argv, cwd, env, log, json_mode=False, stdin=None, preserve_stdout=False, display_argv=None,
+                  interactive=False):
     """Run a command whose output belongs to the user; return its exit code.
 
     In JSON mode the child's stdout goes to stderr so the result document is the
     only thing on stdout.
     """
-    log.record(argv, cwd)
-    stdout = sys.stderr if json_mode else None
-    process = subprocess.Popen(list(argv), cwd=cwd, env=env, stdout=stdout, stdin=stdin,
-                               start_new_session=True)
-    return _forward_and_wait(process)
+    log.record(argv, cwd, primary=True, display_argv=display_argv)
+    if interactive:
+        # Shell prompts and terminal control need inherited descriptors, not a text tee.
+        log.save("Interactive shell output uses the terminal directly and is not captured.\n")
+        process = subprocess.Popen(list(argv), cwd=cwd, env=env, stdin=stdin,
+                                   stdout=sys.stderr if json_mode else None, start_new_session=True)
+        return _forward_and_wait(process)
+    process = subprocess.Popen(list(argv), cwd=cwd, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                               stdin=stdin, start_new_session=True)
+    output = _StreamOutput(log, argv, env, process.stdout, json_mode, preserve_stdout)
+    code = None
+    reader = _BoundedReader(process, 0, output.receive)
+    try:
+        # Poll the leader so an escaped descendant cannot hold these pipes open forever.
+        while not reader.read(0.2):
+            if process.poll() is not None:
+                if not reader.read(PIPE_DRAIN_SECONDS):
+                    warning = "Warning: child output pipes remained open after exit; capture stopped."
+                    log.save(warning + "\n")
+                    log.message(warning)
+                break
+        code = _forward_and_wait(process)
+    except Cancelled as cancelled:
+        cancelled.cleanup_incomplete = not terminate_group(
+            process, signum=CANCEL_SIGNALS.get(cancelled.exit_code, signal.SIGTERM))
+        reader.read(PIPE_DRAIN_SECONDS)
+        raise
+    except BaseException:
+        terminate_group(process)
+        raise
+    finally:
+        reader.close()
+        output.finish()
+        if code != 0 and log.verbosity == "quiet" and output.tail:
+            log.message("Child output (last 40 lines, at most 16 KiB):\n" + output.tail)
+    log.save("Child exit: %s\n" % code)
+    return code
+
+
+class _StreamOutput:
+    """Redact complete lines before displaying or saving them, including split writes.
+
+    A pathological line is omitted after 1 MiB rather than allowing unbounded memory or
+    writing a partial secret. Ordinary newline and carriage-return progress stays live.
+    """
+
+    def __init__(self, log, argv, env, stdout, json_mode, preserve_stdout=False):
+        self.preserve_stdout = preserve_stdout and not json_mode and log.verbosity != "quiet"
+        self.log, self.stdout, self.json_mode = log, stdout, json_mode
+        self.pending, self.decoders, self.discard = {}, {}, set()
+        self.tail = ""
+        secrets = {v for k, v in (env or os.environ).items() if v and SECRET_NAME.search(k)}
+        hide_next = False
+        for arg in map(str, argv):
+            if hide_next:
+                secrets.add(arg)
+            hide_next = arg.startswith("-") and "=" not in arg and bool(SECRET_NAME.search(arg))
+            if "=" in arg and SECRET_NAME.search(arg.partition("=")[0]):
+                secrets.add(arg.partition("=")[2])
+            secrets.update(match.group("secret") for match in URL_CREDENTIALS.finditer(arg))
+        secrets.update(line for value in list(secrets) for line in value.splitlines() if line)
+        self.secrets = sorted(filter(None, secrets), key=len, reverse=True)
+
+    def receive(self, stream, chunk):
+        if self.preserve_stdout and stream is self.stdout:
+            # Direct tools may emit binary data or prompts without a newline.
+            sys.stdout.buffer.write(chunk)
+            sys.stdout.buffer.flush()
+        decoder = self.decoders.setdefault(stream, codecs.getincrementaldecoder("utf-8")("replace"))
+        text = self.pending.pop(stream, "") + decoder.decode(chunk)
+        parts = re.split(r"([\n\r])", text)
+        for index in range(0, len(parts) - 1, 2):
+            line = parts[index] + parts[index + 1]
+            if stream not in self.discard:
+                if len(line.encode("utf-8")) > 1_048_576:
+                    line = "[Output line exceeds 1 MiB; omitted.]\n"
+                self.write(stream, line)
+            self.discard.discard(stream)
+        remaining = parts[-1]
+        if len(remaining.encode("utf-8")) > 1_048_576:
+            if stream not in self.discard:
+                self.write(stream, "[Output line exceeds 1 MiB; omitted.]\n")
+            self.discard.add(stream)
+        elif stream not in self.discard:
+            self.pending[stream] = remaining
+
+    def write(self, stream, text):
+        for secret in self.secrets:
+            text = text.replace(secret, "***")
+        text = redact_url_credentials(text)
+        self.log.save(text)
+        tail = (self.tail + text).encode("utf-8")[-16384:].decode("utf-8", "ignore")
+        self.tail = "".join(tail.splitlines(keepends=True)[-40:])
+        if self.log.verbosity != "quiet" and not (self.preserve_stdout and stream is self.stdout):
+            self.log.clear_progress()
+            destination = (self.log.stream or sys.stderr) if self.json_mode or stream is not self.stdout else sys.stdout
+            destination.write(text)
+            destination.flush()
+
+    def finish(self):
+        for stream, decoder in self.decoders.items():
+            if stream not in self.discard:
+                self.write(stream, self.pending.get(stream, "") + decoder.decode(b"", final=True))
 
 
 class _BoundedReader:
@@ -168,7 +328,8 @@ class _BoundedReader:
     stays bounded; `dropped` records that something was discarded.
     """
 
-    def __init__(self, process, limit):
+    def __init__(self, process, limit, callback=None):
+        self.callback = callback
         self.limit, self.dropped = limit, False
         self.buffers = {process.stdout: bytearray(), process.stderr: bytearray()}
         self.selector = selectors.DefaultSelector()
@@ -188,6 +349,8 @@ class _BoundedReader:
                 if not chunk:
                     self.selector.unregister(key.fileobj)
                     continue
+                if self.callback:
+                    self.callback(key.fileobj, chunk)
                 buffer = self.buffers[key.fileobj]
                 room = max(self.limit - len(buffer), 0)
                 buffer += chunk[:room]
@@ -243,6 +406,8 @@ def run_capture(argv, cwd, env, log=None, timeout=60, max_bytes=1_000_000, poll=
                            stderr=reader.text(process.stderr), timed_out=timed_out, cleanup_incomplete=incomplete,
                            truncated=reader.dropped)
     reader.close()
+    if log is not None:
+        log.save("Probe exit: %s; timed out: %s; truncated: %s\n" % (result.returncode, timed_out, result.truncated))
     return result
 
 

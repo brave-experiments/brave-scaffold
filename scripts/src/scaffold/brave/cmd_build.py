@@ -97,8 +97,11 @@ def prepare_for_build(execution, ctx, target, remote_required):
     return execution.with_checks(readiness_gate(execution.context(ctx), target, "build", remote_required))
 
 
-def metal_environment(ctx, environ):
+def metal_environment(ctx, environ, checks=()):
     """Point the build at an installed Metal toolchain when `xcrun metal` cannot find one."""
+    metal = next((check for check in reversed(checks) if check.name == "metal-toolchain"), None)
+    if metal and metal.evidence.get("xcrun_works"):
+        return {}
     probe = run_capture(["xcrun", "metal", "--version"], os.getcwd(), environ, ctx.log, timeout=60)
     if probe.returncode == 0:
         return {}
@@ -246,7 +249,8 @@ def perform_build(ctx, execution, effective, op, force_gn=False):
 
     argv, state = run_output_step(
         ctx, execution, effective, op, arguments, "build",
-        android.build_environment(execution.context(ctx)) if is_android else metal_environment(ctx, execution.environ),
+        android.build_environment(execution.context(ctx)) if is_android else
+        metal_environment(ctx, execution.environ, execution.checks),
         write_overrides if is_android else None)
     op.start("verify-output", output_dir=str(effective.output_dir) if effective.output_dir else None)
     try:
@@ -521,7 +525,8 @@ def cmd_test(ctx):
 def run_test_package(ctx, execution, effective, op, arguments):
     prepare_patches(ctx, execution, op)
     argv, state = run_output_step(ctx, execution, effective, op, arguments, "test",
-                                  metal_environment(ctx, execution.environ) if effective.target == "mac" else {})
+                                  metal_environment(ctx, execution.environ, execution.checks)
+                                  if effective.target == "mac" else {})
     state.end_attempt_completed(op.id)
     return argv
 
