@@ -224,7 +224,10 @@ def read_inventory(identity):
     for repository in repositories:
         try:
             names = sorted(path.name for path in repository.patch_dir.iterdir() if path.is_file())
-        except OSError:
+        except FileNotFoundError:
+            continue
+        except OSError as error:
+            problems.append("%s cannot be listed: %s" % (repository.patch_dir, error))
             continue
         patch_names = {name for name in names if name.endswith(".patch")}
         info_names = {name for name in names if name.endswith(".patchinfo")}

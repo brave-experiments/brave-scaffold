@@ -5,6 +5,10 @@ checkout's repositories. Generated outputs are the build directories under
 `<chromium-src>/out`. They are separate: cleaning removes outputs only and never
 touches source.
 
+Unreadable patch directories make the inventory incomplete and block preparation,
+even when another repository has valid metadata. An absent or empty patch directory
+is supported; permission and I/O errors are reported.
+
 ## Sync sources
 
 ```sh

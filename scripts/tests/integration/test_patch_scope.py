@@ -8,8 +8,12 @@ import hashlib
 import json
 import subprocess
 import unittest
+from pathlib import Path
+from types import SimpleNamespace
+from unittest import mock
 
 from tests.integration.test_build import SKIP, BuildTestCase
+from scaffold.brave import patch_inventory, patches
 
 APPLY_LIKE_CORE = """
 if "apply_patches" in argv:
@@ -96,6 +100,42 @@ class PatchScopeTests(BuildTestCase):
             "schemaVersion": 1, "patchChecksum": hashlib.sha256(patch.read_bytes()).hexdigest(),
             "appliesTo": [{"path": target, "checksum": sha(after)}]}))
         return patch
+
+    def test_unreadable_nested_patch_directories_block_drift_and_preparation(self):
+        self.add_repository("v8")
+        directory = self.core / "patches/v8"
+        directory.mkdir()
+        self.sandbox.commit_all("main")
+        identity = SimpleNamespace(core=self.core, src=self.src, workspace=self.src.parent)
+        original = Path.iterdir
+        for error in (PermissionError("denied"), OSError("I/O failure")):
+            with self.subTest(error=error):
+                def listing(path):
+                    if path == directory:
+                        raise error
+                    return original(path)
+                with mock.patch.object(Path, "iterdir", listing):
+                    inventory = patch_inventory.read_inventory(identity)
+                    self.assertTrue(inventory.problems)
+                    report = patches.collect_drift(identity, inventory)
+                    self.assertFalse(report.complete)
+                    self.assertIn("v8", " ".join(report.incomplete))
+                    plan = patches.plan_patch_preparation(identity, None, self.sandbox.config.parent)
+                    self.assertEqual(plan.action, "conflict")
+
+    def test_absent_and_empty_nested_patch_directories_are_supported(self):
+        self.add_repository("v8")
+        self.sandbox.commit_all("main")
+        identity = SimpleNamespace(core=self.core, src=self.src, workspace=self.src.parent)
+        for present in (False, True):
+            with self.subTest(present=present):
+                if present:
+                    (self.core / "patches/v8").mkdir()
+                inventory = patch_inventory.read_inventory(identity)
+                self.assertEqual(inventory.problems, [])
+                self.assertTrue(patches.collect_drift(identity, inventory).complete)
+                self.assertEqual(patches.plan_patch_preparation(identity, None, self.sandbox.config.parent).action,
+                                 "current")
 
     def change_patch(self, patch, *targets):
         """Rewrite a patch so it targets the given files; its metadata keeps describing the old content."""
