@@ -17,7 +17,7 @@ from ..common.checks import readiness_error
 from ..common.platforms import RECOGNIZED_TARGETS, effective_target, normalize_target
 from ..common.procs import run_capture
 from ..common.results import Cancelled, Result, ScaffoldError, repair
-from . import (android, android_deps, buildopts, execution as execution_module, freshness, macos, output_freshness,
+from . import (android, android_deps, buildopts, execution as execution_module, freshness, macos,
                packages, patches, steps as step_module, sync as sync_module)
 from .records import OutputState, output_states, track
 
@@ -610,15 +610,13 @@ def run_phase(ctx, execution, bundle, result, device=None, op=None):
             op.start(described.name, **described.record())
     if bundle.get("kind") == "apk":
         return android.restart_apk(ctx, identity, bundle, result, device, op)
-    assessment = output_freshness.artifact_freshness(ctx, identity, Path(bundle["path"]).parent)
-    output_freshness.add_freshness_warning(result, assessment)
     outcome = macos.restart(bundle, ctx.environ, ctx.log)
     if op is not None:
         op.succeed("launch", pid=outcome["launched_pid"], stopped=outcome["stopped"])
         op.succeed("run", artifact=bundle["path"])
-    result.data = {**(result.data or {}), "run": {"artifact": bundle, "freshness": assessment, **outcome}}
+    result.data = {**(result.data or {}), "run": {"artifact": bundle, **outcome}}
     if not result.artifacts:
-        result.artifacts = [{**bundle, "verified": False, "freshness": assessment["status"]}]
+        result.artifacts = [{**bundle, "verified": False}]
     result.text = ((result.text + "\n") if result.text else "") + "Restarted %s (%s)." % (
         bundle["name"], bundle["path"])
     return result

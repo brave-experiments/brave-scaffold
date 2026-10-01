@@ -413,29 +413,20 @@ class DeviceTests(AndroidTestCase):
         result, document = self.run_android("android", "--device", "emulator-5554")
         self.assertEqual(document["error"]["code"], "ARTIFACT_MISSING")
 
-    def test_freshness_is_reported_for_the_installed_build(self):
-        result, document = self.run_android("android", "--device", "emulator-5554")
-        self.assertEqual(document["data"]["run"]["freshness"]["status"], "current")
-        apk = self.src / "out" / "android_Debug_arm64" / "apks" / "BraveMonoarm64.apk"
-        result, document = self.run_android("android", "--device", "emulator-5554", "--artifact", str(apk))
-        self.assertEqual(result.returncode, 0)
-
-    def freshness_after(self, change):
-        change()
-        result, document = self.run_android("android", "--device", "emulator-5554")
-        self.assertEqual(result.returncode, 0, result.stderr)
-        return document["data"]["run"]["freshness"]
-
-    def test_an_edit_to_the_support_working_copy_makes_the_apk_stale(self):
-        freshness = self.freshness_after(lambda: (self.wc() / "patches" / "marker").write_text("edited support\n"))
-        self.assertEqual(freshness["status"], "stale")
-        self.assertIn("support_worktree", " ".join(freshness["evidence"]))
-
-    def test_an_edit_to_a_copied_resource_makes_the_apk_stale(self):
-        freshness = self.freshness_after(lambda: (self.src / "third_party" / "jdk" / "current" / "release").write_text(
-            "edited after the build, with a different size\n"))
-        self.assertEqual(freshness["status"], "stale")
-        self.assertIn("support_resources", " ".join(freshness["evidence"]))
+    def test_run_and_deploy_do_not_inspect_sources(self):
+        (self.src.parent / ".gclient_entries").write_text("invalid entries\n")
+        (self.wc() / "patches/marker").write_text("edited support\n")
+        for command in ("run", "deploy"):
+            with self.subTest(command=command):
+                result, document = self.run_android("android", "--device", "emulator-5554", command=command)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertNotIn("freshness", document["data"]["run"])
+                self.assertFalse(any(w["code"] in ("STALE_BUILD", "UNKNOWN_FRESHNESS")
+                                     for w in document["warnings"]))
+                log = Path(next(line.removeprefix("Log: ") for line in result.stderr.splitlines()
+                                if line.startswith("Log: "))).read_text()
+                self.assertNotIn("Checking source state", log)
+                self.assertNotIn("applyPatches.sh", log)
 
     def test_build_run_chooses_the_device_before_building(self):
         self.sandbox.record.unlink(missing_ok=True)

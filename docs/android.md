@@ -163,8 +163,8 @@ before its command. Failed steps keep the observed child exit; later steps remai
 unattempted. Launch success is recorded only after PID confirmation, with the
 launch command exit and verification exit recorded separately. Profiles and
 app data are kept: nothing is uninstalled or cleared. Older or independently built
-APKs may be installed, with the same `STALE_BUILD` / `UNKNOWN_FRESHNESS` reporting
-as on macOS. `adb` comes from `ADB`, `ANDROID_HOME`, `ANDROID_SDK_ROOT`, or `PATH`.
+APKs may be installed. `run` and `deploy` check the APK and device, then install and
+launch; they do not scan sources or compare build freshness. `adb` comes from `ADB`, `ANDROID_HOME`, `ANDROID_SDK_ROOT`, or `PATH`.
 
 ## Recovery and limits
 

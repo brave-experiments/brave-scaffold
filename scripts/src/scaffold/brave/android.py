@@ -13,7 +13,7 @@ from pathlib import Path
 from ..common.platforms import host_architecture, host_platform
 from ..common.procs import run_capture
 from ..common.results import Result, ScaffoldError, repair
-from . import adb, android_deps, output_freshness, steps as step_module
+from . import adb, android_deps, steps as step_module
 from .records import output_states, track
 
 PACKAGE_PREFIX = "com.brave."
@@ -187,18 +187,15 @@ def restart_apk(ctx, identity, artifact, result, device=None, op=None):
         if op is not None:
             op.start(name, **descriptions[name].record())
 
-    output_dir = artifact.get("output_dir") or str(Path(artifact["path"]).parent.parent)
-    assessment = output_freshness.artifact_freshness(ctx, identity, output_dir, android=True)
-    output_freshness.add_freshness_warning(result, assessment)
     outcome = adb.restart_package(adapter, device["id"], artifact["path"], artifact["package"], ctx.environ, ctx.log,
                                   progress=op.succeed if op is not None else None, started=start_phase,
                                   failed=op.fail if op is not None else None)
     if op is not None:
         op.succeed("run", artifact=artifact["path"])
-    result.data = {**(result.data or {}), "run": {"artifact": artifact, "freshness": assessment,
-                                                  "device_selection": source, **outcome}}
+    result.data = {**(result.data or {}), "run": {"artifact": artifact,
+                                               "device_selection": source, **outcome}}
     if not result.artifacts:
-        result.artifacts = [{**artifact, "verified": False, "freshness": assessment["status"]}]
+        result.artifacts = [{**artifact, "verified": False}]
     result.text = ((result.text + "\n") if result.text else "") + "Installed and restarted %s on %s." % (
         artifact["package"], device["id"])
     return result

@@ -382,7 +382,7 @@ class NonCompilingModeTests(BuildTestCase):
                                  (5, "ARTIFACT_UNRESOLVED", 0))
                 self.assertEqual([r for r in self.sandbox.records() if r["tool"] != "node"], [])
 
-    def test_a_ninja_dry_run_leaves_the_earlier_build_record_and_freshness_alone(self):
+    def test_a_ninja_dry_run_leaves_the_earlier_build_record_alone(self):
         first = self.build_once()
         (self.core / "browser").mkdir(exist_ok=True)
         (self.core / "browser" / "changed_since_the_build.cc").write_text("new work\n")
@@ -394,8 +394,6 @@ class NonCompilingModeTests(BuildTestCase):
         self.assertEqual(binary.stat().st_mtime_ns, stamp)
         (state,) = self.output_states()
         self.assertEqual(state["success"]["operation_id"], first)
-        freshness = self.document("run")[1]["data"]["run"]["freshness"]
-        self.assertEqual(freshness["status"], "stale", "the source changed after the recorded build")
 
     def test_a_ninja_tool_run_may_change_the_output_so_the_earlier_record_needs_revalidation(self):
         self.build_once()

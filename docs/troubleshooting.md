@@ -189,14 +189,11 @@ listed.
 For `unauthorized`, accept the USB debugging prompt on the device; for `offline`,
 reconnect it.
 
-## Stale or unknown build freshness
+## Running an older output
 
-`bdev run` may start an older output. `STALE_BUILD` means tracked inputs changed
-since the recorded build. `UNKNOWN_FRESHNESS` means there is no record, or an
-earlier rebuild of this output failed, was cancelled, or was interrupted, so its
-contents may be partly overwritten, or some input could not be compared (see
-[macOS](macos.md#run-and-restart) for what is compared). Rebuild with `bdev build` to refresh the
-record; nothing rebuilds or deletes for you.
+`bdev run` and `bdev deploy` use the selected artifact without checking whether sources
+changed since the build. Run `bdev build` when you want a new build. Launching an
+artifact does not repair or clear records left by a failed or interrupted build.
 
 ## Interrupted operations
 

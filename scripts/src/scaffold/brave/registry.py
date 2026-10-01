@@ -131,7 +131,7 @@ def build_registry():
                     side_effects="macOS: quits any running instance of the same application (from any checkout), "
                                  "then launches the selected one. Android: installs the APK over the existing app on "
                                  "one device, stops that package there, and launches it. Profiles and app data are kept.",
-                    notes="Older or independently built outputs may run; staleness or unknown freshness is reported.",
+                    notes="Older or independently built outputs may run; source state is not inspected.",
                     examples=("bdev run", "bdev run --artifact ./out/Custom/'Brave Browser Development.app'")),
         CommandSpec("deploy", "Install the Android build on a device and launch it (same as 'run android').",
                     cmd_build.cmd_deploy, positionals=(Positional("target", True, help="android"),),

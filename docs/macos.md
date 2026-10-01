@@ -114,29 +114,11 @@ out, or is cut off), or a liveness check fails while confirming that an instance
 restart stops with `LAUNCH_FAILED` instead of treating it as no instance running; an empty
 successful listing is the only proof that nothing is running.
 
-An older or independently built output may run. Structured results carry
-`freshness` (`current`, `stale`, or `unknown`) with evidence, and a warning says
-when the output may not include the latest code: `STALE_BUILD`, or
-`UNKNOWN_FRESHNESS` ("Build freshness is unknown; this output may not include the
-latest code."). After a failed, cancelled, or interrupted rebuild the earlier
-record is marked as needing revalidation, so freshness is reported as unknown even
-if an older application is still usable; only a later successful, validated build
-clears it (a passing `bdev test` run proves nothing about the application).
-
-A successful build records these inputs, and a later `run` compares them: Core's and
-Chromium's HEAD, Core's uncommitted state, the tracked Chromium files that differ from
-HEAD (name, size, and modification time; no file is hashed), the HEAD and tracked
-changes of every dependency repository gclient manages (`v8` and the rest, read from
-gclient's entries files), the stat signatures of patched files, and Core's `.env`
-together with every file it pulls in with `include_env`. For Android outputs it also
-compares the support working copy's revision and uncommitted state and the copied
-resources. Any difference is `stale`. An input that cannot be computed (Git does not
-answer within its time bound, a dependency repository cannot be inspected, or the
-dependency list is unreadable), or a record written before an input was compared,
-makes the result `unknown`. A match is reported as `current` with the limits stated in
-its evidence: untracked files are not tracked, and nothing hashes the whole tree.
-Checking each dependency repository logs every effective Git command and its
-working directory. The operation record keeps the same redacted commands.
+An older or independently built output may run. `run` checks the selected application
+and restarts it without comparing source files, dependency repositories, or build
+records. It does not report build freshness or rebuild anything. Failed or interrupted
+builds still mark their output records as needing revalidation; launching an application
+does not clear that state.
 
 `sync-build` and `sync-build-run` (aliases `sb`, `sbr`) run the sync phase first and
 send extra arguments to the build phase only. See

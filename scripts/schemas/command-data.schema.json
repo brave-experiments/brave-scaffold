@@ -119,28 +119,6 @@
         }
       }
     },
-    "freshness": {
-      "type": "object",
-      "required": [
-        "status",
-        "evidence"
-      ],
-      "properties": {
-        "status": {
-          "enum": [
-            "current",
-            "stale",
-            "unknown"
-          ]
-        },
-        "evidence": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        }
-      }
-    },
     "sync-result": {
       "type": "object",
       "required": [
@@ -205,15 +183,11 @@
     "run-result": {
       "type": "object",
       "required": [
-        "artifact",
-        "freshness"
+        "artifact"
       ],
       "properties": {
         "artifact": {
           "$ref": "#/$defs/artifactRef"
-        },
-        "freshness": {
-          "$ref": "#/$defs/freshness"
         },
         "stopped": {
           "type": "array",

@@ -198,8 +198,7 @@ the envelope schema selects it by `command` (`build`, `build-run`, `sync-build`,
 `sync-build-run` share one shape, `run` and `deploy` another). `data` is `null` in error
 results, or a plan (`data.plan.steps`, see [Plans](#plans)) under `--plan`. The envelope
 schema also types `artifacts` (an application or an APK: `path`, `kind`, `name`, `verified`,
-plus build identity when the artifact was just built or verified, `freshness` when it was
-selected for `run`), `logs`, `checks`, and `error`, and ties `status` to `exit_code`: `ok` is
+plus build identity when the artifact was just built or verified), `logs`, `checks`, and `error`, and ties `status` to `exit_code`: `ok` is
 exit `0` with `error` null, `error` is exit `1` to `5`, `partial` is `6`, and `cancelled`
 is `130` or `143` with no artifacts. An unresolved build output is `ok` with an
 `ARTIFACT_UNRESOLVED` warning and `artifacts: []` for `build` and `sync-build`, and an

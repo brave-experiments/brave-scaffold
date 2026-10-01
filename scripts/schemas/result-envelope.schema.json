@@ -211,9 +211,6 @@
         "verified": {
           "type": "boolean"
         },
-        "freshness": {
-          "type": "string"
-        },
         "bundle_identifier": {
           "type": "string"
         },

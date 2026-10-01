@@ -2,7 +2,7 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this file,
 # You can obtain one at https://mozilla.org/MPL/2.0/.
-"""Run/restart behavior, freshness, and failed or interrupted rebuilds."""
+"""Run/restart behavior and failed or interrupted rebuilds."""
 
 import json
 import os
@@ -123,92 +123,20 @@ class RunTests(BuildTestCase):
         self.assertEqual([r["path"] for r in self.launched()], [str(self.src / "out" / "Newer" /
                                                                   "Brave Browser Development.app")])
 
-    # --- freshness ---------------------------------------------------------------
-
-    def test_freshness_is_current_stale_or_unknown_with_truthful_warnings(self):
+    def test_run_does_not_inspect_sources_or_report_freshness(self):
         self.build()
-        result, document = self.run_app()
-        self.assertEqual(document["warnings"], [], document["warnings"])
-        self.assertEqual(document["data"]["run"]["freshness"]["status"], "current")
-        (self.src / "base" / "BUILD.gn").write_text("edited after the build, with a different size\n")
-        result, document = self.run_app()
-        self.assertEqual(document["warnings"][0]["code"], "STALE_BUILD")
-        self.assertEqual(result.returncode, 0, "stale output still runs")
-        independent = self.sandbox.root / "independent"
-        independent.mkdir()
-        from tests.support import make_app
-        app = make_app(str(independent))
-        result, document = self.run_app("--artifact", app)
-        self.assertEqual(document["warnings"][0]["code"], "UNKNOWN_FRESHNESS")
-        self.assertEqual(document["warnings"][0]["message"],
-                         "Build freshness is unknown; this output may not include the latest code.")
-        self.assertEqual(document["data"]["run"]["freshness"]["status"], "unknown")
-
-    def freshness_after(self, change):
-        self.build()
-        change()
+        dependency = self.sandbox.add_dependency("main")
+        (dependency / ".git/HEAD").write_text("invalid head\n")
+        (self.src.parent / ".gclient_entries").write_text("invalid entries\n")
+        (self.src / "base/BUILD.gn").write_text("edited after build\n")
         result, document = self.run_app()
         self.assertEqual(result.returncode, 0, result.stderr)
-        return document["data"]["run"]["freshness"]
-
-    def test_an_edit_to_an_unpatched_chromium_file_makes_the_output_stale(self):
-        other = self.src / "base" / "unpatched.cc"
-        other.write_text("original\n")
-        self.sandbox.commit_all("main")
-        freshness = self.freshness_after(lambda: other.write_text("edited after the build\n"))
-        self.assertEqual(freshness["status"], "stale")
-        self.assertIn("chromium_worktree", " ".join(freshness["evidence"]))
-        other.write_text("original\n")
-        subprocess.run(["git", "-C", str(self.src), "checkout", "--", "base/unpatched.cc"], check=True)
-        result, document = self.run_app()
-        self.assertEqual(document["data"]["run"]["freshness"]["status"], "current", "restoring the file restores it")
-
-    def test_an_edit_in_a_dependency_repository_makes_the_output_stale(self):
-        repo = self.sandbox.add_dependency("main")
-        freshness = self.freshness_after(lambda: (repo / "test.cc").write_text("edited after the build\n"))
-        self.assertEqual(freshness["status"], "stale")
-        self.assertIn("dependency_changes", " ".join(freshness["evidence"]))
-        (repo / "test.cc").write_text("upstream\n")
-        self.assertEqual(self.run_app()[1]["data"]["run"]["freshness"]["status"], "current")
-
-    def test_a_moved_dependency_revision_makes_the_output_stale(self):
-        repo = self.sandbox.add_dependency("main")
-
-        def commit():
-            (repo / "test.cc").write_text("next revision\n")
-            subprocess.run(["git", "-C", str(repo), "-c", "user.name=T", "-c", "user.email=t@example.com",
-                            "-c", "commit.gpgsign=false", "commit", "-q", "-am", "roll"], check=True)
-        freshness = self.freshness_after(commit)
-        self.assertEqual(freshness["status"], "stale")
-        self.assertIn("dependency_heads", " ".join(freshness["evidence"]))
-
-    def test_dependencies_that_cannot_be_inspected_make_freshness_unknown_not_current(self):
-        repo = self.sandbox.add_dependency("main")
-        freshness = self.freshness_after(lambda: (repo / ".git" / "HEAD").write_text("garbage\n"))
-        self.assertEqual(freshness["status"], "unknown")
-        (repo / ".git" / "HEAD").write_text("ref: refs/heads/master\n")
-        (self.src.parent / ".gclient_entries").write_text("entries = not python\n")
-        self.assertEqual(self.run_app()[1]["data"]["run"]["freshness"]["status"], "unknown",
-                         "without the dependency list the dependencies are unchecked")
-
-    def test_files_included_by_the_env_file_are_tracked(self):
-        (self.core / ".env").write_text((self.core / ".env").read_text() + "include_env=extra/build.env\n")
-        (self.core / "extra").mkdir()
-        (self.core / "extra" / "build.env").write_text("use_foo=false\n")
-        freshness = self.freshness_after(lambda: (self.core / "extra" / "build.env").write_text("use_foo=true\n"))
-        self.assertEqual(freshness["status"], "stale")
-        self.assertIn("env_file", " ".join(freshness["evidence"]))
-
-    def test_a_record_from_before_a_newly_compared_input_is_unknown(self):
-        self.build()
-        import glob
-        (path,) = glob.glob(str(self.sandbox.config.parent / ".bdev" / "outputs" / "*" / "*.json"))
-        record = json.loads(Path(path).read_text())
-        del record["success"]["fingerprint"]["chromium_worktree"]
-        Path(path).write_text(json.dumps(record))
-        result, document = self.run_app()
-        self.assertEqual(document["data"]["run"]["freshness"]["status"], "unknown")
-        self.assertEqual(document["warnings"][0]["code"], "UNKNOWN_FRESHNESS")
+        self.assertNotIn("freshness", document["data"]["run"])
+        self.assertFalse(any(w["code"] in ("STALE_BUILD", "UNKNOWN_FRESHNESS") for w in document["warnings"]))
+        log = Path(next(line.removeprefix("Log: ") for line in result.stderr.splitlines()
+                        if line.startswith("Log: "))).read_text()
+        self.assertNotIn("Checking source state", log)
+        self.assertNotIn(str(dependency), log)
 
     # --- failed and interrupted rebuilds ----------------------------------------
 
@@ -229,16 +157,13 @@ class RunTests(BuildTestCase):
         self.assertFalse(self.state("Separate").needs_revalidation, "an untouched output is not invalidated")
         result, document = self.run_app("--artifact", str(self.output_app()))
         self.assertEqual(result.returncode, 0, "valid older output stays launchable")
-        freshness = document["data"]["run"]["freshness"]
-        self.assertEqual(freshness["status"], "unknown")
-        self.assertIn("did not complete successfully", " ".join(freshness["evidence"]))
-        self.assertTrue(document["warnings"])
+        self.assertNotIn("freshness", document["data"]["run"])
         result, document = self.run_app("--artifact", str(self.src / "out" / "Separate" / "Brave Browser Development.app"))
-        self.assertEqual(document["data"]["run"]["freshness"]["status"], "current")
+        self.assertEqual(result.returncode, 0, result.stderr)
         self.build()
         self.assertFalse(self.state().needs_revalidation, "a later validated build restores the record")
         result, document = self.run_app("--artifact", str(self.output_app()))
-        self.assertEqual(document["data"]["run"]["freshness"]["status"], "current")
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_a_passing_test_run_does_not_leave_the_output_marked_uncertain(self):
         self.build()
@@ -247,7 +172,7 @@ class RunTests(BuildTestCase):
         self.assertFalse(self.state().needs_revalidation)
         self.assertEqual(self.state().last_attempt()["outcome"], "succeeded")
         result, document = self.run_app()
-        self.assertEqual(document["data"]["run"]["freshness"]["status"], "current")
+        self.assertEqual(result.returncode, 0, result.stderr)
         self.document("test", "brave_unit_tests", env=self.env(FAKE_EXIT="1"))
         self.assertTrue(self.state().needs_revalidation, "a failed test run still marks the output")
 
@@ -259,9 +184,7 @@ class RunTests(BuildTestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertTrue(self.state().needs_revalidation, "a passing test does not prove the browser output")
         result, document = self.run_app("--artifact", str(self.output_app()))
-        freshness = document["data"]["run"]["freshness"]
-        self.assertEqual(freshness["status"], "unknown")
-        self.assertIn("(failed)", " ".join(freshness["evidence"]), "the evidence names the failed rebuild")
+        self.assertNotIn("freshness", document["data"]["run"])
         self.build()
         self.assertFalse(self.state().needs_revalidation, "only a validated build clears it")
         self.document("test", "brave_unit_tests")
@@ -338,7 +261,7 @@ time.sleep(120)
         self.assertEqual(len(incomplete_operations(self.sandbox.config.parent, self.core)), 1)
         self.assertTrue(self.state().needs_revalidation)
         result, document = self.run_app("--artifact", str(self.output_app()))
-        self.assertEqual(document["data"]["run"]["freshness"]["status"], "unknown")
+        self.assertEqual(result.returncode, 0, result.stderr)
         result, document = self.document("context")
         self.assertEqual([w["code"] for w in document["warnings"]], ["INCOMPLETE_OPERATION"])
         self.assertEqual(len(document["data"]["incomplete_operations"]), 1)
