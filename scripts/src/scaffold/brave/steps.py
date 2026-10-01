@@ -185,6 +185,8 @@ def support_step(identity, plan, writes):
     if plan.action == "conflict":
         detail += ": " + ", ".join(item["path"] for item in plan.conflicts[:10])
     refresh = plan.action == "refresh"
+    if refresh:
+        summary = "Refresh Android support; patch targets and resource files may be replaced."
     working_copy = str(plan.evidence["working_copy"]["path"])
     scripts = [["bash", "./" + script] for script in plan.scripts]
     if refresh and len(scripts) > 1:

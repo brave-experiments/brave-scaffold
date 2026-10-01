@@ -25,7 +25,7 @@ from ..common.config import atomic_write
 from ..common.env import resolves_inside
 from ..common.procs import run_capture, run_streaming
 from ..common.results import ScaffoldError, repair
-from . import freshness, gitstate, support_scripts, sync_scope
+from . import freshness, support_scripts, sync_scope
 from .patchformat import UnknownPatchFormat, parse_patch_targets
 from .patch_inventory import sha256_or_none
 from .records import checkout_key, store_root
@@ -453,24 +453,13 @@ class SupportPlan:
         self.declared = tuple(declared)  # absolute paths (files or directories) the scripts are declared to write
 
 
-def protected_work(identity, wc, receipt, scripts, log=None):
-    """Local work that running `scripts` could overwrite, and problems that block deciding."""
+def scope_conflicts(identity, wc, scripts, log=None):
+    """Reject incomplete write inventories, without judging destination file origin."""
     scope = sync_scope.sync_repositories(identity)
     conflicts = [{"path": problem, "reason": "incomplete evidence"} for problem in scope.problems]
     if "applyPatches.sh" in scripts:
-        files, problems = write_inventory(identity, wc, log)
-        conflicts = problems
-        known = (receipt or {}).get("targets", {})
-        for repo in {repo for repo, _ in files.values()}:
-            paths = {relative: key for key, (owner, relative) in files.items() if owner == repo}
-            changes = gitstate.inspect_changes(repo, log, paths)
-            for relative in sorted(changes.all & set(paths)):
-                key = paths[relative]
-                if relative in changes.staged or known.get(key) != _sha(repo / relative):
-                    conflicts.append({"path": key, "reason": "has local edits that applying support patches "
-                                      "could overwrite"})
-    if "copyMacRes.sh" in scripts:
-        conflicts += resource_conflicts(identity, wc, (receipt or {}).get("resources") or {}, log)
+        _, problems = write_inventory(identity, wc, log)
+        conflicts.extend(problems)
     return conflicts
 
 
@@ -481,54 +470,8 @@ def _identical(origin, copied):
     return filecmp.cmp(origin, copied, shallow=False)
 
 
-def _tracked_and_unmodified(identity, files, log):
-    """Which of the given destination files a repository tracks and Git shows unchanged: Chromium's own dependency files."""
-    repositories = sync_scope.sync_repositories(identity).repositories
-    by_owner = {}
-    for path in files:
-        owner = owning_repository(repositories, path)
-        if owner is not None:
-            by_owner.setdefault(owner, []).append(os.path.relpath(path, owner))
-    safe = set()
-    for owner, relatives in by_owner.items():
-        for start in range(0, len(relatives), 200):
-            chunk = relatives[start:start + 200]
-            tracked = gitstate.tracked_paths(owner, chunk, log)
-            safe |= {owner / name for name in tracked - gitstate.changed_paths(owner, tracked, log)}
-    return safe
-
-
-def resource_conflicts(identity, wc, recorded, log=None):
-    """Destination files a resource copy would replace that may hold work the scaffold cannot account for.
-
-    A file is the scaffold's to replace when the last refresh left it exactly as recorded, when it is identical to
-    the support resource, or when a repository tracks it and Git shows no change (a dependency Chromium supplied).
-    A file with a record that no longer matches was changed since. A file with no record, and none of that
-    evidence, is reported: an absent record never means an absence of local work.
-    """
-    conflicts, unknown = [], {}
-    for key, origin, copied in resource_destinations(identity, wc):
-        if not origin.exists():
-            continue
-        previous = recorded.get(key) or {}
-        for relative, signature in resource_signature(origin, copied).items():
-            display = os.path.join(key, relative) if relative else key
-            if relative in previous:
-                if previous[relative] != signature:
-                    conflicts.append({"path": display, "reason": "changed since the last support refresh and would be "
-                                      "replaced by the support resource"})
-            elif not _identical(origin / relative if relative else origin, copied / relative if relative else copied):
-                unknown[copied / relative if relative else copied] = display
-    safe = _tracked_and_unmodified(identity, unknown, log) if unknown else set()
-    conflicts += [{"path": display, "reason": "exists without a record of where it came from, differs from the support "
-                   "resource, and is not an unmodified tracked dependency file; move it aside (sync restores fetched "
-                   "dependencies) or restore it, then repeat"}
-                  for path, display in sorted(unknown.items(), key=lambda item: item[1]) if path not in safe]
-    return conflicts
-
-
 def plan_preparation(ctx, identity, log=None):
-    """Decide which support scripts must run and whether running them could lose local work."""
+    """Decide which support scripts must run within their reviewed write scope."""
     wc = working_copy(identity)
     facts = inspect_working_copy(wc, log)
     if facts is None:
@@ -566,9 +509,12 @@ def plan_preparation(ctx, identity, log=None):
     settled = recorded and not dirty
     scripts = [name for name, done in (("applyPatches.sh", patched_ok), ("copyMacRes.sh", current))
                if not (done and settled)]
-    conflicts = protected_work(identity, wc, receipt, scripts, log)
+    conflicts = scope_conflicts(identity, wc, scripts, log)
+    if ctx.parsed.get("skip_support_refresh"):
+        conflicts.append({"path": str(wc), "reason": "refresh is needed but --skip-support-refresh was set"})
     declared = [identity.src / key for key in planned_writes(identity, wc, scripts, log)] if not conflicts else []
-    return SupportPlan("conflict" if conflicts else "refresh", "; ".join(reasons), evidence, conflicts, scripts,
+    return SupportPlan("conflict" if conflicts else "refresh",
+                       "; ".join(reasons + [item["reason"] for item in conflicts]), evidence, conflicts, scripts,
                        declared)
 
 
@@ -605,12 +551,12 @@ def record_state(identity, state_root, plan, log=None):
 def refresh(ctx, identity, loaded, plan, log=None):
     """Run the support scripts the plan names, then record the result. Mutates the checkout.
 
-    Reviewed identities and preservation checks are revalidated before execution.
+    Reviewed identities and write inventories are revalidated before execution.
     The tracked-change after-check supplies additional evidence of adapter mistakes.
     """
     wc = working_copy(identity)
     support_scripts.require_contracts(wc)
-    conflicts = protected_work(identity, wc, _read_state(identity, ctx.state_root), plan.scripts, log)
+    conflicts = scope_conflicts(identity, wc, plan.scripts, log)
     declared = tuple(identity.src / key for key in planned_writes(identity, wc, plan.scripts, log))
     if conflicts or declared != plan.declared:
         raise conflict_error(SupportPlan("conflict", "Support inputs changed after planning.", conflicts=conflicts or
@@ -644,12 +590,11 @@ def refresh(ctx, identity, loaded, plan, log=None):
 def conflict_error(plan, identity):
     return ScaffoldError(
         "PREPARATION_CONFLICT",
-        "Android support preparation could overwrite local work or cannot tell what it writes (%d item(s)); "
-        "nothing was changed." % len(plan.conflicts),
+        "Android support preparation is blocked: %s. Nothing was changed by the support scripts." % plan.reason,
         details={"files": plan.conflicts[:50], "total": len(plan.conflicts), "checkout": str(identity.core)},
-        repairs=[repair(["bdev", "drift", "--diff", "--checkout", str(identity.core)],
-                        note="Review the listed files. Keep wanted edits elsewhere, then restore the listed "
-                             "files (or remove a resource that is only a stale copy) and repeat.")])
+        repairs=[repair(["bdev", "build", "android", "--checkout", str(identity.core)],
+                        note="Allow automatic refresh by omitting --skip-support-refresh. "
+                             "Inventory or script errors need a supported working copy or a reviewed adapter.")])
 
 
 # --- GN overrides ----------------------------------------------------------------------------

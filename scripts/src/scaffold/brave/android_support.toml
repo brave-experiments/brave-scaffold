@@ -9,4 +9,4 @@
 [support]
 url = "https://github.com/brave-experiments/brave-android-mac-support.git"
 # Used only when a new working copy is created without --ref.
-default_ref = "main"
+default_ref = "android-testing-prototype"

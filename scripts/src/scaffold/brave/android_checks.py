@@ -97,15 +97,21 @@ def support_checks(ctx, scope):
     except ScaffoldError as error:
         checks.append(make_check("android-support-lfs", BLOCKER, error.message, scope, affects=("android build",),
                                  repairs=error.repairs))
-    ok, detail = android_deps.run_gate(wc, "copyMacRes.sh", ctx.environ, ctx.log)
-    checks.append(make_check("android-support-compatibility", PASS if ok else BLOCKER,
-                             "The support revision's version gates accept this checkout." if ok else
-                             "Incompatible with this checkout: %s" % detail, scope, affects=("android build",),
-                             repairs=[] if ok else [repair(["git", "-C", str(wc), "log", "--oneline", "-n", "10"])]))
-    receipt = android_deps._read_state(identity, ctx.state_root)
-    current, why = android_deps.resources_current(identity, wc, receipt) if ok else (False, "not evaluated")
-    checks.append(make_check("android-support-currency", PASS if current else WARNING,
-                             "Support resources are copied and current." if current else
-                             "Support resources will be refreshed by the next build: %s" % why,
-                             scope, required=False, affects=("android build",)))
+    try:
+        plan = android_deps.plan_preparation(ctx, identity, ctx.log)
+    except ScaffoldError as error:
+        checks.append(make_check("android-support-compatibility", BLOCKER, error.message, scope,
+                                 affects=("android build",), repairs=error.repairs))
+        checks.append(make_check("android-support-currency", NOT_CHECKED, "Needs compatible support scripts.",
+                                 scope, affects=("android build",)))
+        return checks
+    checks.append(make_check("android-support-compatibility", PASS,
+                             "The support revision's version gates accept this checkout.", scope,
+                             affects=("android build",)))
+    status = {"current": PASS, "refresh": WARNING, "conflict": BLOCKER}[plan.action]
+    message = plan.reason if plan.action != "refresh" else (
+        "The next build will refresh support automatically and may replace local files: " + plan.reason)
+    checks.append(make_check("android-support-currency", status, message, scope,
+                             required=plan.action == "conflict", affects=("android build",),
+                             files=plan.conflicts))
     return checks

@@ -165,6 +165,7 @@ def make_support_repo(root: Path, versions: dict, realistic: bool = False, lfs: 
         subprocess.run([*GIT, "-C", str(repo), "add", "-A"], check=True)
         subprocess.run([*GIT, "-C", str(repo), "commit", "-q", "-m", tag], check=True)
         subprocess.run([*GIT, "-C", str(repo), "tag", tag], check=True)
+    subprocess.run([*GIT, "-C", str(repo), "branch", "android-testing-prototype"], check=True)
     return repo
 
 

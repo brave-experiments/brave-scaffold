@@ -24,7 +24,8 @@ checkout's Android support working copy (below). `bdev doctor android --checkout
 ## Android-on-Mac support repository
 
 Compiling Android from macOS needs resources and patches Chromium does not ship,
-kept in a separate support repository. Each checkout gets its own working copy
+kept in a separate support repository. Setup defaults to its `android-testing-prototype`
+branch. Each checkout gets its own working copy
 at `<workspace>/brave-android-mac-support`, beside (not inside) its sources. Two
 checkouts that need different revisions therefore never switch a shared tree. Only
 content-addressed storage is shared: the Git object cache
@@ -85,30 +86,26 @@ select a supported implementation or extend and review the tooling adapter first
 Patch data can change within a supported script contract. The guard reads every
 current patch target in the repository the manifest names and checks direct source
 writes too. Missing or unreadable repository discovery blocks preparation.
-Resource copying and signing stay within the declared destinations; existing files
-there are checked before replacement. Plans and execution use this same inventory.
-The tracked-change after-check remains additional evidence of adapter errors.
+Resource copying and signing stay within the declared destinations. Plans and execution
+use this same inventory. Missing repository discovery, unreadable patch formats, and
+unknown scripts block preparation before the support scripts change files.
 
-The build stops with `PREPARATION_CONFLICT`, changing nothing, and names the files, when
+Refresh runs automatically when patches or resources are stale, support inputs change,
+or the checkout has no matching refresh record. It does not prompt or back up files.
+`applyPatches.sh` resets its patch targets and applies support patches, and edits the
+direct source paths its manifest lists. `copyMacRes.sh` copies and replaces resources
+and may sign files within its declared directories. Local edits in those paths may be
+lost, including files left by an earlier refresh or supplied by Chromium. The scripts
+control replacement; Scaffold does not reset the Git index or remove extra files itself.
+Keep wanted edits elsewhere before running a build that needs refresh.
 
-- a patch target or directly edited file has unstaged, staged, or untracked changes that
-  differ from what the last refresh wrote. Staged changes block patch refresh even
-  when the working file matches that record;
-- a copied resource file changed since the last refresh, or exists with no record of where
-  it came from. A file with no record is replaced only when it is identical to the support
-  resource byte for byte or a repository
-  tracks it and Git shows no change, meaning Chromium supplied it. Anything else, for
-  example a fetched dependency you changed, or a receipt that predates resource records,
-  stops the build. A file-format header cannot prove origin, including for Mach-O
-  binaries. A prior refresh receipt can account for a re-signed copy; without it,
-  differing bytes are unknown. Move the listed files aside (sync restores fetched dependencies) or
-  restore them, then repeat;
-- a patch has a format the scaffold cannot read, a script identity is unknown,
-  or the repositories gclient manages cannot be listed.
+Use `bdev build android --skip-support-refresh` to stop if refresh is needed. This option
+also applies to `build-run`, `sync-build`, and `sync-build-run`; it does not suppress their
+other preparation or sync steps. Current support needs no refresh and builds normally.
+`doctor android` uses the same preparation decision: current support passes, a needed
+refresh warns, and script, compatibility, or write-inventory errors block readiness.
+Doctor never refreshes support. Sync retains its separate overwrite approval process.
 
-Restore or move conflicting local files before repeating. Unknown shell code needs
-a reviewed adapter; moving local files does not make that code supported. Patch and
-resource inputs you edit remain subject to the manifest and preservation checks.
 After execution, a tracked change outside the declared scope is an adapter failure:
 the build stops, records nothing as prepared, and leaves the files for review.
 

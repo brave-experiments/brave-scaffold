@@ -437,6 +437,8 @@ def do_build(ctx, command, sync_first=False, run_after=False):
     parsed = ctx.parsed
     target_token = parsed.positionals[0] if parsed.positionals else None
     identity, effective = select_build(ctx, target_token, parsed.forwarded)
+    if parsed.get("skip_support_refresh") and effective.target != "android":
+        raise ScaffoldError("INVALID_INPUT", "--skip-support-refresh applies to Android only.")
     if parsed.get("plan"):
         sync_plan = sync_module.sync_arguments(ctx, effective.target, [], identity) if sync_first else None
         return plan_result(command, effective, build_plan_steps(ctx, identity, effective, "build", (), sync_plan,

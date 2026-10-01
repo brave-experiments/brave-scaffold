@@ -20,6 +20,8 @@ OFFLINE = Opt("--offline", "offline", takes_value=False,
               help="Compile locally instead of using remote build execution (RBE/Siso, the default).")
 FORCE_GN = Opt("--force-gn", "force_gn", takes_value=False, help="Regenerate GN files even if they exist.")
 PLAN = Opt("--plan", "plan", takes_value=False, help="Show the steps without running any that change anything.")
+SKIP_SUPPORT_REFRESH = Opt("--skip-support-refresh", "skip_support_refresh", takes_value=False,
+                           help="Stop an Android build if support patches or resources need refreshing.")
 ARTIFACT = Opt("--artifact", "artifact", metavar="PATH", help="Application to run instead of the default output.")
 FILTER = Opt("--filter", "filter", metavar="PATTERN", help="Only run tests matching the pattern within the suite.")
 DEVICE = Opt("--device", "device", metavar="ID", help="Android device id (required when several are usable).")
@@ -33,7 +35,8 @@ DIFF = Opt("--diff", "diff", takes_value=False, help="Print the Git diff of each
 TARGET = Positional("target", help="mac or android (default: configured platform, else this host).")
 BUILD_SIDE_EFFECTS = ("Writes the build output under the checkout's src/out, applies Core patches when they are "
                       "out of date and no local edits are at risk, and may update the Metal toolchain setting for the "
-                      "child only. Never cleans, installs, or launches anything.")
+                      "child only. Android support refresh may reset patch targets and replace or sign resources in "
+                      "its declared paths. Never cleans, installs, or launches anything.")
 
 # Commands that take a group word first ("checkout add"). The value is the set of subcommands.
 GROUPS = {"checkout": ("add", "list"), "env": ("init", "export", "check"), "tools": ("setup",),
@@ -88,13 +91,13 @@ def build_registry():
                     examples=("bdev vpython3 -- tools/example.py --flag", "bdev vpython3 --cwd out -- ../script.py")),
         clean.SPEC,
         CommandSpec("build", "Prepare and compile Brave for a target, then verify its output.", cmd_build.cmd_build,
-                    positionals=(TARGET,), options=(CONFIGURATION, OFFLINE, FORCE_GN, PLAN), forward=True,
+                    positionals=(TARGET,), options=(CONFIGURATION, OFFLINE, FORCE_GN, PLAN, SKIP_SUPPORT_REFRESH), forward=True,
                     side_effects=BUILD_SIDE_EFFECTS,
                     notes="Unknown options and extra arguments go to 'bpm run build' after the generated ones.",
                     examples=("bdev build", "bdev build mac --offline", "bdev build --plan")),
         CommandSpec("build-run", "Build, then restart the browser with exactly the output that build produced.",
                     cmd_build.cmd_build_run, aliases=("br",), positionals=(TARGET,),
-                    options=(CONFIGURATION, OFFLINE, FORCE_GN, PLAN, DEVICE), forward=True,
+                    options=(CONFIGURATION, OFFLINE, FORCE_GN, PLAN, DEVICE, SKIP_SUPPORT_REFRESH), forward=True,
                     side_effects=BUILD_SIDE_EFFECTS + " Then stops any running instance of the same application and "
                                                      "launches the new build.",
                     examples=("bdev br",)),
@@ -106,12 +109,13 @@ def build_registry():
                                  "Mobile targets keep the checkout's existing target_os values.",
                     examples=("bdev sync", "bdev sync mac,android --plan")),
         CommandSpec("sync-build", "Sync, then build; stops at the first failed phase.", cmd_build.cmd_sync_build,
-                    aliases=("sb",), positionals=(TARGET,), options=(CONFIGURATION, OFFLINE, FORCE_GN, PLAN, ADOPT, OVERWRITE),
+                    aliases=("sb",), positionals=(TARGET,),
+                    options=(CONFIGURATION, OFFLINE, FORCE_GN, PLAN, ADOPT, OVERWRITE, SKIP_SUPPORT_REFRESH),
                     forward=True, side_effects="Sync effects, then build effects.", examples=("bdev sb",),
                     notes="Extra arguments go to the build phase only."),
         CommandSpec("sync-build-run", "Sync, build, then restart the browser with the built output.",
                     cmd_build.cmd_sync_build_run, aliases=("sbr",), positionals=(TARGET,),
-                    options=(CONFIGURATION, OFFLINE, FORCE_GN, PLAN, DEVICE, ADOPT, OVERWRITE), forward=True,
+                    options=(CONFIGURATION, OFFLINE, FORCE_GN, PLAN, DEVICE, ADOPT, OVERWRITE, SKIP_SUPPORT_REFRESH), forward=True,
                     side_effects="Sync, build, and restart effects.", examples=("bdev sbr",),
                     notes="Extra arguments go to the build phase only."),
         CommandSpec("test", "Compile if needed and run one test suite (macOS).", cmd_build.cmd_test,

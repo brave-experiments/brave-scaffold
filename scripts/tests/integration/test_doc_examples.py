@@ -36,6 +36,7 @@ MAC_EXAMPLES = {
     "bdev run": (BUILT, {0}),
     "bdev run --artifact ./out/Custom/'Brave Browser Development.app'": (BUILT_CUSTOM, {0}),
     "bdev build-run": (None, {0}),
+    "bdev sync --checkout main --overwrite-local-changes": (None, {0}),
     "bdev sync": (None, {0}), "bdev sync android --plan": (None, {0}), "bdev sync mac,android --force": (None, {0}),
     "bdev drift": (None, {0}), "bdev drift --diff": (None, {0}), "bdev patches update": (None, {0}),
     "bdev clean": (BUILT, {0}), "bdev clean android --configuration debug": (None, {0}),

@@ -77,10 +77,10 @@ class SupportRefreshLocalWorkTests(AndroidTestCase):
         patch = self.wc() / "patches" / name
         patch.write_text(patch.read_text().replace("patched line2", replacement + " line2"))
 
-    def assert_blocked_without_changes(self, paths, expected_reason=None):
+    def assert_blocked_without_changes(self, paths, expected_reason=None, skip=True):
         before = {path: path.read_text() for path in paths}
         self.sandbox.record.unlink(missing_ok=True)
-        result, document = self.document("build", "android")
+        result, document = self.document("build", "android", *(["--skip-support-refresh"] if skip else []))
         self.assertEqual((result.returncode, document["error"]["code"]), (4, "PREPARATION_CONFLICT"), result.stderr)
         self.assertEqual({path: path.read_text() for path in paths}, before)
         self.assertEqual([r for r in self.node_calls() if "build" in r["argv"]], [])
@@ -97,33 +97,30 @@ class SupportRefreshLocalWorkTests(AndroidTestCase):
         self.assertTrue(target.read_text().endswith("my experiment\n"))
         self.assertTrue((self.src / "third_party" / "jdk" / "current" / "release").exists(), "the resource returned")
 
-    def test_edited_source_patched_with_a_fork_prefixed_header_blocks_the_patch_refresh(self):
-        target = self.src / "build" / "config" / "support_fork.gni"
-        self.append(target, "my experiment\n")
+    def test_refresh_replaces_edited_patch_targets_in_both_repositories(self):
+        paths = [self.src / "build/config/support_fork.gni", self.src / "v8/gni/snapshot.gni"]
+        for target in paths:
+            self.append(target, "my experiment\n")
         self.change_support_patch()
-        self.assert_blocked_without_changes([target, self.src / "support" / "target_a.cc"])
+        result, _ = self.document("build", "android")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        for target in paths:
+            self.assertNotIn("my experiment", target.read_text())
 
-    def test_edited_source_in_a_nested_repository_blocks_the_patch_refresh(self):
-        target = self.src / "v8" / "gni" / "snapshot.gni"
+    def test_skip_refresh_keeps_direct_source_edits(self):
+        target = self.src / "build/config/BUILDCONFIG.gn"
         self.append(target, "my experiment\n")
         self.change_support_patch()
         self.assert_blocked_without_changes([target])
 
-    def test_a_file_the_support_script_edits_directly_is_protected(self):
-        target = self.src / "build" / "config" / "BUILDCONFIG.gn"
-        self.append(target, "my experiment\n")
-        self.change_support_patch()
-        document = self.assert_blocked_without_changes([target])
-        self.assertIn("build/config/BUILDCONFIG.gn", str(document["error"]["details"]))
-
-    def test_staged_edits_are_protected_too(self):
+    def test_skip_refresh_keeps_staged_edits(self):
         target = self.src / "build" / "config" / "support_fork.gni"
         self.append(target, "staged experiment\n")
         git(self.src, "add", "build/config/support_fork.gni")
         self.change_support_patch()
         self.assert_blocked_without_changes([target])
 
-    def test_known_support_worktree_content_does_not_excuse_staged_work(self):
+    def test_skip_refresh_keeps_index_when_worktree_matches_support(self):
         target = self.src / "build" / "config" / "support_fork.gni"
         generated = target.read_text()
         target.write_text("staged work\n")
@@ -139,9 +136,9 @@ class SupportRefreshLocalWorkTests(AndroidTestCase):
         target = self.src / "support" / "target_a.cc"
         (self.src.parent / ".gclient_entries").unlink()
         self.change_support_patch()
-        self.assert_blocked_without_changes([target], "incomplete evidence")
+        self.assert_blocked_without_changes([target], "incomplete evidence", skip=False)
 
-    def test_an_edited_copied_resource_is_not_overwritten(self):
+    def test_skip_refresh_keeps_an_edited_copied_resource(self):
         release = self.src / "third_party" / "jdk" / "current" / "release"
         release.write_text("JAVA_VERSION=25 hand edited\n")
         self.assert_blocked_without_changes([release])
@@ -155,9 +152,9 @@ class SupportRefreshLocalWorkTests(AndroidTestCase):
     def test_an_unrecognised_patch_format_stops_the_refresh_before_any_write(self):
         target = self.src / "support" / "target_a.cc"
         (self.wc() / "patches" / "support-a-prefix.patch").write_text("this is not a patch\n")
-        self.assert_blocked_without_changes([target], "support-a-prefix.patch")
+        self.assert_blocked_without_changes([target], "support-a-prefix.patch", skip=False)
 
-    def test_edits_are_only_protected_while_they_differ_from_what_support_wrote(self):
+    def test_changed_support_patch_is_reapplied(self):
         self.change_support_patch(replacement="second")
         result, document = self.document("build", "android")
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -165,76 +162,75 @@ class SupportRefreshLocalWorkTests(AndroidTestCase):
 
 
 @unittest.skipIf(SKIP, "needs direnv on a macOS host")
-class ResourceOwnershipTests(AndroidTestCase):
-    """A support resource replaces an existing file only when that file is known not to hold local work."""
-
-    RELEASE = "third_party/jdk/current/release"
+class ResourceRefreshTests(AndroidTestCase):
+    """Refresh replaces stale and unrecorded resources; skip mode leaves them alone."""
 
     def setUp(self):
         super().setUp()
         self.assertEqual(self.setup_support().returncode, 0)
-        self.release = self.src / "third_party" / "jdk" / "current" / "release"
+        self.release = self.src / "third_party/jdk/current/release"
         self.release.parent.mkdir(parents=True)
 
-    def commit(self):
-        self.sandbox.commit_all("main")
-
-    def build(self):
+    def build(self, *options):
         self.sandbox.record.unlink(missing_ok=True)
-        return self.document("build", "android")
-
-    def assert_blocked(self, path, content):
-        result, document = self.build()
-        self.assertEqual((result.returncode, document["error"]["code"]), (4, "PREPARATION_CONFLICT"), result.stderr)
-        self.assertIn(self.RELEASE, [item["path"] for item in document["error"]["details"]["files"]])
-        self.assertEqual(path.read_text(), content)
-        self.assertEqual([r for r in self.node_calls() if "build" in r["argv"]], [], "nothing built")
+        return self.document("build", "android", *options)
 
     def state_file(self):
         (path,) = self.sandbox.config.parent.rglob("android-support.json")
         return path
 
-    def test_a_tracked_unmodified_dependency_file_is_replaced_on_first_adoption(self):
-        self.release.write_text("JAVA_VERSION=24 chromium supplied\n")
-        self.commit()
+    def test_unrecorded_local_resource_is_replaced(self):
+        self.release.write_text("wanted local work\n")
         result, _ = self.build()
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.release.read_text(), "JAVA_VERSION=25 v155\n")
 
-    def test_a_tracked_dependency_file_with_local_edits_is_kept_on_first_adoption(self):
-        self.release.write_text("JAVA_VERSION=24 chromium supplied\n")
-        self.commit()
-        self.release.write_text("local dependency experiment\n")
-        self.assert_blocked(self.release, "local dependency experiment\n")
-
-    def test_an_existing_untracked_file_of_unknown_origin_is_kept(self):
-        self.release.write_text("something someone put here\n")
-        self.assert_blocked(self.release, "something someone put here\n")
-
-    def test_different_macho_bytes_survive_first_adoption(self):
+    def test_unrecorded_binary_resource_is_replaced(self):
         origin = self.wc() / "res/jdk/current/tool"
         copied = self.release.parent / "tool"
         origin.write_bytes(b"\xcf\xfa\xed\xfe support tool")
-        copied.write_bytes(b"\xcf\xfa\xed\xfe wanted local tool")
-        result, document = self.build()
-        self.assertEqual(result.returncode, 4, result.stderr)
-        self.assertEqual(document["error"]["code"], "PREPARATION_CONFLICT")
-        self.assertEqual(copied.read_bytes(), b"\xcf\xfa\xed\xfe wanted local tool")
-        self.assertFalse(self.release.exists())
+        copied.write_bytes(b"\xcf\xfa\xed\xfe local tool")
+        result, _ = self.build()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(copied.read_bytes(), origin.read_bytes())
 
-    def test_different_macho_bytes_survive_receipt_migration(self):
-        origin = self.wc() / "res/jdk/current/tool"
-        origin.write_bytes(b"\xcf\xfa\xed\xfe support tool")
+    def test_missing_receipt_refreshes_edited_resource(self):
         self.assertEqual(self.build()[0].returncode, 0)
-        receipt = json.loads(self.state_file().read_text())
-        del receipt["resources"]
-        self.state_file().write_text(json.dumps(receipt))
-        copied = self.release.parent / "tool"
-        copied.write_bytes(b"\xcf\xfa\xed\xfe wanted local tool")
-        result, document = self.build()
+        self.state_file().unlink()
+        self.release.write_text("JAVA_VERSION=25 local edit\n")
+        result, _ = self.build()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.release.read_text(), "JAVA_VERSION=25 v155\n")
+
+    def test_skip_blocks_unrecorded_refresh_but_accepts_current_support(self):
+        self.release.write_text("local work\n")
+        result, document = self.build("--skip-support-refresh")
         self.assertEqual(result.returncode, 4, result.stderr)
         self.assertEqual(document["error"]["code"], "PREPARATION_CONFLICT")
-        self.assertEqual(copied.read_bytes(), b"\xcf\xfa\xed\xfe wanted local tool")
+        self.assertEqual(self.release.read_text(), "local work\n")
+        self.assertEqual([r for r in self.node_calls() if "build" in r["argv"]], [])
+        self.assertEqual(self.build()[0].returncode, 0)
+        result, _ = self.build("--skip-support-refresh")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn("--skip-support-refresh", str(self.node_calls()))
+
+    def test_doctor_uses_the_refresh_decision_without_writing(self):
+        self.release.write_text("local work\n")
+        result, document = self.document("doctor", "android")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        checks = {check["name"]: check for check in document["checks"]}
+        self.assertEqual(checks["android-support-currency"]["status"], "warning")
+        self.assertEqual(self.release.read_text(), "local work\n")
+        self.assertEqual(self.build()[0].returncode, 0)
+        result, document = self.document("doctor", "android")
+        checks = {check["name"]: check for check in document["checks"]}
+        self.assertEqual(checks["android-support-currency"]["status"], "pass")
+        (self.src.parent / ".gclient_entries").unlink()
+        (self.wc() / "res/jdk/current/release").write_text("JAVA_VERSION=26\n")
+        result, document = self.document("doctor", "android")
+        self.assertEqual(result.returncode, 3, result.stderr)
+        checks = {check["name"]: check for check in document["checks"]}
+        self.assertEqual(checks["android-support-currency"]["status"], "blocker")
 
     def test_a_known_resigned_copy_can_be_refreshed(self):
         origin = self.wc() / "res/jdk/current/tool"
@@ -263,57 +259,6 @@ class ResourceOwnershipTests(AndroidTestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(copied.read_bytes(), origin.read_bytes() + b"signed")
 
-    def test_extra_files_under_a_resource_destination_are_protected_from_signing(self):
-        extra = self.release.parent / "local-tool"
-        extra.write_text("wanted local tool\n")
-        result, document = self.build()
-        self.assertEqual(result.returncode, 4, result.stderr)
-        self.assertIn("third_party/jdk/current/local-tool", str(document["error"]["details"]["files"]))
-        self.assertEqual(extra.read_text(), "wanted local tool\n")
-        self.assertFalse(self.release.exists())
-
-    def test_an_existing_copy_identical_to_the_support_resource_is_adopted(self):
-        self.release.write_text("JAVA_VERSION=25 v155\n")
-        result, _ = self.build()
-        self.assertEqual(result.returncode, 0, result.stderr)
-
-    def test_an_absent_destination_is_simply_created(self):
-        result, _ = self.build()
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(self.release.read_text(), "JAVA_VERSION=25 v155\n")
-
-    def test_edits_to_a_copied_resource_survive_a_receipt_without_resource_history(self):
-        self.assertEqual(self.build()[0].returncode, 0)
-        self.release.write_text("JAVA_VERSION=25 hand edited\n")
-        receipt = json.loads(self.state_file().read_text())
-        self.assertTrue(receipt["targets"] is not None)
-        del receipt["resources"]
-        self.state_file().write_text(json.dumps(receipt))
-        self.assert_blocked(self.release, "JAVA_VERSION=25 hand edited\n")
-
-    def test_edits_to_a_copied_resource_survive_a_missing_receipt(self):
-        self.assertEqual(self.build()[0].returncode, 0)
-        self.release.write_text("JAVA_VERSION=25 hand edited\n")
-        self.state_file().unlink()
-        self.assert_blocked(self.release, "JAVA_VERSION=25 hand edited\n")
-
-    def test_a_destination_first_declared_by_a_new_support_revision_is_checked_too(self):
-        self.assertEqual(self.build()[0].returncode, 0)
-        wc = self.wc()
-        script = wc / "copyMacRes.sh"
-        script.write_text(script.read_text() + 'patch_dependency "Extra" "third_party/extra" "" "res/extra/current" ""\n')
-        (wc / "res" / "extra" / "current").mkdir(parents=True)
-        (wc / "res" / "extra" / "current" / "info").write_text("from support\n")
-        extra = self.src / "third_party" / "extra" / "current" / "info"
-        extra.parent.mkdir(parents=True)
-        extra.write_text("already here\n")
-        result, document = self.build()
-        self.assertEqual((result.returncode, document["error"]["code"]), (4, "PREPARATION_CONFLICT"))
-        self.assertIn("third_party/extra/current/info", str(document["error"]["details"]["files"]))
-        self.assertEqual(extra.read_text(), "already here\n")
-        extra.unlink()
-        self.assertEqual(self.build()[0].returncode, 0)
-        self.assertEqual(extra.read_text(), "from support\n")
 
 
 @unittest.skipIf(SKIP, "needs direnv on a macOS host")

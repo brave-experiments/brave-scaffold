@@ -220,15 +220,20 @@ class AndroidPlanTests(AndroidTestCase):
         self.assertEqual(step["status"], "unresolved")
         self.assertIn("--device", step["detail"])
 
-    def test_support_conflicts_and_missing_support_are_reported(self):
+    def test_local_edits_allow_refresh_unless_skip_is_requested(self):
         target = self.src / "base" / "support_target.cc"
         target.parent.mkdir(exist_ok=True)
         target.write_text("upstream\n")
         self.sandbox.commit_all("main")
         target.write_text("my experiment\n")
         step = by_name(self.plan("build", "android"))["android-support"]
-        self.assertEqual(step["status"], "blocked")
-        self.assertIn("base/support_target.cc", step["detail"])
+        self.assertEqual(step["status"], "planned")
+        for command in ("build", "br", "sb", "sbr"):
+            with self.subTest(command=command):
+                step = by_name(self.plan(command, "android", "--skip-support-refresh"))["android-support"]
+                self.assertEqual(step["status"], "blocked")
+                self.assertIn("--skip-support-refresh", step["detail"])
+        self.assertEqual(target.read_text(), "my experiment\n")
 
 
 if __name__ == "__main__":

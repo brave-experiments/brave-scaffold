@@ -131,14 +131,14 @@ class AndroidBuildTests(AndroidTestCase):
         self.document("build", "android")
         self.assertEqual(self.adb_calls(), [])
 
-    def test_local_edits_to_files_support_patches_touch_stop_the_refresh(self):
+    def test_skip_refresh_keeps_local_edits_to_support_patch_targets(self):
         self.setup_support()
         target = self.src / "base" / "support_target.cc"
         target.parent.mkdir(exist_ok=True)
         target.write_text("upstream\n")
         self.sandbox.commit_all("main")
         target.write_text("my experiment\n")
-        result, document = self.document("build", "android")
+        result, document = self.document("build", "android", "--skip-support-refresh")
         self.assertEqual((result.returncode, document["error"]["code"]), (4, "PREPARATION_CONFLICT"))
         self.assertEqual(target.read_text(), "my experiment\n")
         self.assertEqual([r for r in self.node_calls() if "build" in r["argv"]], [])

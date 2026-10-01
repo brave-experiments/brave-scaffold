@@ -61,8 +61,10 @@ look, and what the codes mean. Only delivered commands appear here.
   Command records flag timeouts, truncated output, and incomplete cleanup. Repeated
   poll commands keep a count instead of flooding the terminal. Source-state scans
   update one terminal line, or print progress at most every ten seconds when redirected.
-- Nothing is repaired or approved automatically. Suggested next steps in errors
-  are suggestions.
+- Requested builds prepare sources automatically within their declared scope. Android
+  support refresh may replace local files; `--skip-support-refresh` stops a build when
+  that refresh is needed. See [Android preparation](android.md#what-preparation-changes).
+  Environments are never approved automatically. Suggested next steps in errors are suggestions.
 
 ## Command index
 
