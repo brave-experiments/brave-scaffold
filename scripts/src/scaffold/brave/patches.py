@@ -299,6 +299,10 @@ def write_set_conflicts(identity, stale, known, extra, log):
 def _write_conflict(identity, key, relative, owners, dirty, known, extra):
     if (identity.src / key).is_symlink():
         return "local symlink would redirect a patch or version write; save or remove the link first"
+    # Clean tracked bytes are safe to replace even when old patch metadata names different output.
+    # Staged changes were rejected by the caller; symlinks remain protected above.
+    if not dirty:
+        return None
     recorded = {entry.recorded[relative] for entry, _ in owners if relative in entry.recorded}
     accepted = recorded | {value for value in (known.get(key), extra.get(key)) if value}
     current = sha256_or_none(identity.src / key)

@@ -228,3 +228,14 @@ class SyncOverwriteTests(SyncFixture):
             child.assert_not_called()
         self.assertTrue(self.target.is_symlink())
         self.assertFalse((self.op.root / 'backups').exists())
+
+    def test_restored_head_is_safe_when_patch_metadata_describes_different_bytes(self):
+        import hashlib
+        info = self.core / 'patches/work.patchinfo'
+        document = json.loads(info.read_text())
+        document['appliesTo'][0]['checksum'] = hashlib.sha256(b'previous patched output\n').hexdigest()
+        info.write_text(json.dumps(document))
+        self.git(self.core, 'add', 'patches/work.patchinfo')
+        self.git(self.core, 'commit', '-qm', 'record patched output')
+        self.run_sync()
+        self.assertEqual(self.backup_file().read_text(), 'working work\n')

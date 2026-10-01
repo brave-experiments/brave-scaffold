@@ -71,6 +71,7 @@ class PatchPreparationTests(BuildTestCase):
 
     def test_drift_without_any_earlier_record_is_uncertain_ownership(self):
         self.update_patch_upstream()
+        (self.src / "base" / "BUILD.gn").write_text("my unrecorded edit\n")
         result, document = self.document("build")
         self.assertEqual(document["error"]["code"], "PREPARATION_CONFLICT")
         self.assertIn("no earlier record", document["error"]["details"]["files"][0]["reason"])
