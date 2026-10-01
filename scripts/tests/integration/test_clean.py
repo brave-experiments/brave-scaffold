@@ -10,7 +10,7 @@ import unittest
 from pathlib import Path
 
 from tests.support import SandboxTest, tree_snapshot
-from scaffold.brave import clean
+from scaffold.brave import clean, records
 
 NAMES = ["Debug_arm64", "Debug_x64", "Release_arm64", "DebugOrigin_arm64", "Debug", "android_Debug_arm64",
          "android_tests_Debug_arm64", "android_Release_arm64", "Default", "Debugger"]
@@ -298,6 +298,51 @@ class InterruptedCleanupTests(SandboxTest):
         self.assertEqual((remainder / "keep").read_text(), "a different directory under the same name")
         entry = next(e for e in document["data"]["entries"] if e["name"] == remainder.name)
         self.assertEqual(entry["outcome"], "skipped")
+
+    def prune_after_later_operations(self):
+        directory = self.sandbox.config.parent / ".bdev/operations"
+        (original,) = directory.glob("*.json")
+        oldest = directory / "000000-old-cleanup.json"
+        original.rename(oldest)
+        for _ in range(3):
+            self.run_cli("mac", "--configuration", "release", "--execute")
+        records.prune(directory.parent, keep=1)
+        return oldest
+
+    def assert_recovery_survives_pruning(self, failed):
+        if failed:
+            def failure(_):
+                raise OSError("cannot delete")
+            code, _ = self.run_cli("mac", "--configuration", "debug", "--execute", patched=failure)
+            self.assertEqual(code, 6)
+        else:
+            self.interrupt_after_rename(partial=True)
+        self.assertEqual(self.record()["state"], "complete")
+        (remainder,) = [p for p in self.out.iterdir() if p.name.startswith(clean.PRIVATE_PREFIX)]
+        oldest = self.prune_after_later_operations()
+        self.assertTrue(oldest.exists(), "ownership must outlive bounded operation history")
+        code, document = self.run_cli("mac", "--configuration", "debug")
+        entry = next(e for e in document["data"]["entries"] if e["name"] == remainder.name)
+        self.assertEqual(entry["outcome"], "planned")
+        self.assertTrue(remainder.exists())
+        code, document = self.run_cli("mac", "--configuration", "debug", "--execute")
+        self.assertEqual(code, 0)
+        self.assertFalse(remainder.exists())
+        records.prune(oldest.parent.parent, keep=1)
+        self.assertFalse(oldest.exists(), "removed remainder no longer needs ownership history")
+
+    def test_cancelled_cleanup_ownership_survives_later_log_pruning(self):
+        self.assert_recovery_survives_pruning(failed=False)
+
+    def test_failed_cleanup_ownership_survives_later_log_pruning(self):
+        self.assert_recovery_survives_pruning(failed=True)
+
+    def test_stale_cleanup_ownership_can_be_pruned_when_the_remainder_is_gone(self):
+        self.interrupt_after_rename(partial=False)
+        (remainder,) = [p for p in self.out.iterdir() if p.name.startswith(clean.PRIVATE_PREFIX)]
+        shutil.rmtree(remainder)
+        oldest = self.prune_after_later_operations()
+        self.assertFalse(oldest.exists())
 
     def test_a_cleanup_with_no_remainder_and_no_lookalike_is_unchanged(self):
         code, document = self.run_cli("mac", "--configuration", "debug", "--execute")

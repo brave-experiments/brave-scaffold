@@ -179,7 +179,10 @@ removed. Nothing is restored and nothing resumes by itself. Before it moves a di
 aside, cleanup saves its private name and identity in the operation record (step `delete`,
 in `.bdev/operations/`), so the record still names the remainder if the process dies. A
 cancelled run reports the directory as `interrupted` with its private name, and records
-what remains under `details.remaining`.
+what remains under `details.remaining`. Failed and interrupted deletions keep their
+ownership record while the private directory exists, even after later operations
+exceed log retention. Once the remainder is gone, normal pruning can remove that
+record.
 
 The next `bdev clean` finds the remainder. A directory with a `.scaffold-deleting-*` name
 counts as a remainder only when a record from this checkout names it and it is still the

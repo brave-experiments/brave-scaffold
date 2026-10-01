@@ -201,11 +201,21 @@ def track(ctx, command, identity, details, validated=False):
         ctx.log.listeners.remove(op.command_dispatched)
 
 
+def cleanup_remainders(record):
+    """Owned private directories that a cleanup did not finish removing."""
+    if record.get("command") != "clean":
+        return []
+    fields = ("directory", "private", "identity", "out_dir")
+    return [{key: step[key] for key in fields} for step in record.get("steps", [])
+            if step.get("name") == "delete" and step.get("status") in ("running", "interrupted", "failed")
+            and all(step.get(key) for key in fields)]
+
+
 def prune(root, keep=KEEP_OPERATIONS):
     """Delete the oldest completed operation records beyond `keep`.
 
-    Incomplete records and any record an output state still references are kept
-    because they are recovery evidence. Browser outputs are never touched.
+    Incomplete records, output-state references, and existing cleanup remainders
+    keep their recovery evidence. Browser outputs are never touched.
     """
     directory = Path(root) / "operations"
     if not directory.is_dir():
@@ -219,7 +229,9 @@ def prune(root, keep=KEEP_OPERATIONS):
     records = sorted(directory.glob("*.json"))
     for path in records[:-keep] if len(records) > keep else []:
         data = _read(path) or {}
-        if data.get("state") == "incomplete" or data.get("operation_id") in referenced:
+        remaining = any(os.path.lexists(Path(item["out_dir"]) / item["private"])
+                        for item in cleanup_remainders(data))
+        if data.get("state") == "incomplete" or data.get("operation_id") in referenced or remaining:
             continue
         path.unlink(missing_ok=True)
 

@@ -15,7 +15,7 @@ from pathlib import Path
 from ..common.cli import CommandSpec, Opt, Positional
 from ..common.platforms import RECOGNIZED_TARGETS, effective_target
 from ..common.results import EXIT_PARTIAL, Cancelled, Result, ScaffoldError
-from .records import all_operations, track
+from .records import all_operations, cleanup_remainders, track
 
 CONFIG_NAMES = {"debug": "Debug", "release": "Release"}
 SUPPORTED_TARGETS = ("mac", "android")
@@ -316,11 +316,7 @@ def recorded_remainders(identity, state_root):
     """Directories that earlier cleanups of this checkout recorded as moved aside and not fully removed."""
     found = []
     for record in all_operations(state_root, identity.core, "clean"):
-        for step in record["steps"]:
-            if step["name"] == "delete" and step.get("status") in ("running", "interrupted", "failed") \
-                    and step.get("private") and step.get("identity"):
-                found.append({**{key: step[key] for key in ("directory", "private", "identity", "out_dir")},
-                              "operation_id": record["operation_id"]})
+        found.extend({**item, "operation_id": record["operation_id"]} for item in cleanup_remainders(record))
     return found
 
 
