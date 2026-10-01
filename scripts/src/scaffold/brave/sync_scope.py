@@ -146,14 +146,22 @@ def local_work(identity, scope, expected, baseline, root=None, log=None, adopt=F
     that never hides incomplete discovery or changes in Core.
     """
     conflicts = [{"path": problem, "reason": "incomplete evidence"} for problem in scope.problems]
-    changes = gitstate.local_changes(identity.core, log)
-    if changes:
-        conflicts.append({"path": str(identity.core), "reason": "Core has %d uncommitted change(s)" % len(changes)})
-    current = snapshot(identity, scope, log)
+    current = {}
     staged = set()
     for repository in scope.repositories:
-        if repository != identity.core:
-            staged |= {repository / relative for relative in gitstate.staged_paths(repository, log=log)}
+        changes = gitstate.inspect_changes(repository, log)
+        if repository == identity.core:
+            if changes.all:
+                conflicts.append({"path": str(identity.core),
+                                  "reason": "Core has %d uncommitted change(s)" % len(changes.all)})
+            continue
+        staged |= {repository / relative for relative in changes.staged}
+        files = {relative: sha256_or_none(repository / relative) for relative in changes.tracked}
+        if files:
+            current[_label(identity, repository)] = files
+        conflicts += [{"path": _label(identity, repository / relative),
+                       "reason": "untracked work could collide with incoming sync files; incoming paths are unknown"}
+                      for relative in sorted(changes.untracked)]
     conflicts += [{"path": _label(identity, path), "reason": "staged changes would be discarded by sync"}
                   for path in sorted(staged)]
     if adopt and not conflicts:

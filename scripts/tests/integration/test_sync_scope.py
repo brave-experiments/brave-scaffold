@@ -60,11 +60,49 @@ class SyncScopeTests(BuildTestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(len(self.node_calls()), 1)
 
-    def test_an_untracked_file_survives_a_reset_and_does_not_stop_the_sync(self):
+    def test_an_untracked_file_blocks_when_incoming_paths_are_unknown(self):
         repo = self.add_dependency()
         (repo / "notes.txt").write_text("scratch\n")
-        result, _ = self.document("sync", "--force")
-        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assert_sync_stops("v8/notes.txt")
+        self.assertEqual((repo / "notes.txt").read_text(), "scratch\n")
+
+    def test_incoming_tracked_file_cannot_replace_untracked_work(self):
+        self.assert_incoming_collision_preserved(directory=False)
+
+    def test_incoming_tracked_file_cannot_replace_an_untracked_directory(self):
+        self.assert_incoming_collision_preserved(directory=True)
+
+    def test_dependency_deletion_options_block_when_the_write_set_is_unknown(self):
+        for flag in ("-D", "--delete_unused_deps", "--delete_unversioned_trees"):
+            with self.subTest(flag=flag):
+                result, document = self.document("sync", flag)
+                self.assertEqual(result.returncode, 4, result.stderr)
+                self.assertEqual(document["error"]["code"], "PREPARATION_CONFLICT")
+                self.assertEqual(self.node_calls(), [])
+
+    def assert_incoming_collision_preserved(self, directory):
+        repo = self.add_dependency()
+        old = git(repo, "rev-parse", "HEAD").stdout.strip()
+        incoming = repo / "incoming.cc"
+        incoming.write_text("upstream\n")
+        git(repo, "add", "incoming.cc")
+        git(repo, "commit", "-q", "-m", "incoming file")
+        new = git(repo, "rev-parse", "HEAD").stdout.strip()
+        git(repo, "reset", "--hard", old)
+        if directory:
+            incoming.mkdir()
+            wanted = incoming / "notes.txt"
+        else:
+            wanted = incoming
+        wanted.write_text("local work\n")
+        self.hook = self.sandbox.hook('''
+if "sync" in argv:
+    import subprocess
+    subprocess.run(["git", "-C", %r, "reset", "--hard", %r], check=True)
+''' % (str(repo), new))
+        self.assert_sync_stops("v8/" + str(wanted.relative_to(repo)))
+        self.assertEqual(wanted.read_text(), "local work\n")
+        self.assertEqual(git(repo, "rev-parse", "HEAD").stdout.strip(), old)
 
     def test_a_repository_that_cannot_be_inspected_stops_the_sync(self):
         repo = self.add_dependency()

@@ -29,6 +29,8 @@ gclient manages. The command reads those repositories from gclient's own records
 - Core has any uncommitted change, untracked files included;
 - another repository has staged changes, even when its working file matches a
   recorded patch or sync result;
+- a repository has untracked files. Incoming revision paths are unknown before
+  sync, so the guard also blocks files that might turn out to be unrelated;
 - a tracked file in Chromium or in a dependency repository differs from `HEAD`, unless it still holds
   exactly what patch or Android support preparation last wrote there, or what Core's tools had left
   when the last sync finished;
@@ -42,11 +44,16 @@ existed has no such record; the first sync then lists every such file. Review th
 in the named repository, `bdev drift`) and, only if none of it is your work, repeat with
 `--adopt-local-changes` to record it. An agent must not pass that option without your approval.
 
-Untracked files in dependency repositories are not listed because a reset does not remove them. The
-command never stashes, resets, or switches branches. The operation record
+A hard reset can replace an untracked file or directory that obstructs an incoming
+tracked path. Save untracked work outside the affected repositories before syncing;
+the command does not stash or remove it. The operation record
 notes Core and Chromium revisions before and after. Sync changes source and
 dependencies inside the checkout; it is the requested work, not an installation
 side effect.
+
+Options that delete unused dependencies or unversioned trees stop before dispatch:
+the guard cannot establish their complete deletion scope. Repeat without those
+options after saving wanted work; scaffold does not discard it.
 
 Android additions: `bdev sync android` requires nothing beyond the existing
 `.gclient`; the mobile union is described above. The Android support working copy

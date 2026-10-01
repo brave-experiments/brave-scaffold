@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import contextlib
 import os
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from ..common.procs import run_capture
@@ -42,7 +43,18 @@ def _require_root(repo, log):
                             "nothing was changed." % repo, details={"repository": str(repo)})
 
 
-def _status(repo, pathspec, untracked, log, staged_only=False):
+@dataclass
+class Changes:
+    tracked: set = field(default_factory=set)
+    staged: set = field(default_factory=set)
+    untracked: set = field(default_factory=set)
+
+    @property
+    def all(self):
+        return self.tracked | self.untracked
+
+
+def _status(repo, pathspec, untracked, log):
     _require_root(repo, log)
     result = _git(repo, ["status", "--porcelain", "-z", "--untracked-files=" + untracked, *pathspec], log, timeout=600)
     if result.returncode != 0 or result.truncated:
@@ -50,17 +62,19 @@ def _status(repo, pathspec, untracked, log, staged_only=False):
                             "Local changes in %s could not be inspected (%s), so nothing was changed." % (
                                 repo, "git status output was too large to read completely" if result.truncated
                                 else "git status exit %d" % result.returncode), details={"repository": str(repo)})
-    changed, entries = set(), iter(result.stdout.split("\0"))
+    changed, entries = Changes(), iter(result.stdout.split("\0"))
     for entry in entries:
         if len(entry) < 4:
             continue
-        selected = not staged_only or entry[0] not in (" ", "?")
-        if selected:
-            changed.add(entry[3:])
+        names = {entry[3:]}
         if entry[0] in "RC" or entry[1] in "RC":
-            previous = next(entries, "")
-            if selected:
-                changed.add(previous)
+            names.add(next(entries, ""))
+        if entry[:2] == "??":
+            changed.untracked |= names
+        else:
+            changed.tracked |= names
+            if entry[0] != " ":
+                changed.staged |= names
     return changed
 
 
@@ -70,11 +84,16 @@ def changed_paths(repo, paths, log=None):
     Renames report both names. Raises when Git cannot answer: an unknown state is never treated as clean.
     """
     paths = list(paths)
-    return _status(repo, ["--", *paths], "all", log) if paths else set()
+    return _status(repo, ["--", *paths], "all", log).all if paths else set()
 
 
 def local_changes(repo, log=None):
     """Every path with local work in the repository: tracked changes and untracked files."""
+    return inspect_changes(repo, log).all
+
+
+def inspect_changes(repo, log=None):
+    """Tracked, staged, and untracked paths from one complete Git status read."""
     return _status(repo, [], "all", log)
 
 
@@ -83,7 +102,7 @@ def tracked_changes(repo, log=None):
 
     Untracked files are not listed. Raises when Git cannot answer completely.
     """
-    return _status(repo, [], "no", log)
+    return _status(repo, [], "no", log).tracked
 
 
 def staged_paths(repo, paths=None, log=None):
@@ -97,7 +116,7 @@ def staged_paths(repo, paths=None, log=None):
         if not paths:
             return set()
     selected = [] if paths is None else ["--", *paths]
-    return _status(repo, selected, "no", log, staged_only=True)
+    return _status(repo, selected, "no", log).staged
 
 
 def tracked_paths(repo, paths, log=None):

@@ -70,6 +70,15 @@ def local_work_conflicts(ctx, identity, adopt=False):
 
 def do_sync_phase(ctx, execution, op, target, forwarded):
     identity = execution.identity
+    deletion = [token for token in forwarded
+                if token.split("=", 1)[0] in ("-D", "--delete_unused_deps", "--delete_unversioned_trees")]
+    if deletion:
+        raise ScaffoldError("PREPARATION_CONFLICT",
+                            "The forwarded sync options may delete repositories or untracked work, and their "
+                            "complete deletion scope cannot be established; nothing was changed.",
+                            details={"options": deletion},
+                            repairs=[repair(["bdev", "sync", "--checkout", str(identity.core)],
+                                            note="Repeat without dependency-deletion options.")])
     conflicts = local_work_conflicts(ctx, identity, bool(ctx.parsed.get("adopt_local_changes")))
     if conflicts:
         raise ScaffoldError("PREPARATION_CONFLICT",
