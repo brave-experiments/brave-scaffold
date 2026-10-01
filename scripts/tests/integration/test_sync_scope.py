@@ -74,11 +74,12 @@ class SyncScopeTests(BuildTestCase):
 
     def test_dependency_deletion_options_block_when_the_write_set_is_unknown(self):
         for flag in ("-D", "--delete_unused_deps", "--delete_unversioned_trees"):
-            with self.subTest(flag=flag):
-                result, document = self.document("sync", flag)
-                self.assertEqual(result.returncode, 4, result.stderr)
-                self.assertEqual(document["error"]["code"], "PREPARATION_CONFLICT")
-                self.assertEqual(self.node_calls(), [])
+            for plan in (False, True):
+                with self.subTest(flag=flag, plan=plan):
+                    result, document = self.document("sync", flag, *(["--plan"] if plan else []))
+                    self.assertEqual(result.returncode, 4, result.stderr)
+                    self.assertEqual(document["error"]["code"], "PREPARATION_CONFLICT")
+                    self.assertEqual(self.node_calls(), [])
 
     def assert_incoming_collision_preserved(self, directory):
         repo = self.add_dependency()

@@ -74,8 +74,7 @@ def local_work_conflicts(ctx, identity):
     return conflicts
 
 
-def do_sync_phase(ctx, execution, op, target, forwarded):
-    identity = execution.identity
+def reject_deletion_options(identity, forwarded):
     deletion = [token for token in forwarded
                 if token.split("=", 1)[0] in ("-D", "--delete_unused_deps", "--delete_unversioned_trees")]
     if deletion:
@@ -85,6 +84,11 @@ def do_sync_phase(ctx, execution, op, target, forwarded):
                             details={"options": deletion},
                             repairs=[repair(["bdev", "sync", "--checkout", str(identity.core)],
                                             note="Repeat without dependency-deletion options.")])
+
+
+def do_sync_phase(ctx, execution, op, target, forwarded):
+    identity = execution.identity
+    reject_deletion_options(identity, forwarded)
     conflicts = local_work_conflicts(ctx, identity)
     if conflicts:
         raise ScaffoldError("PREPARATION_CONFLICT",

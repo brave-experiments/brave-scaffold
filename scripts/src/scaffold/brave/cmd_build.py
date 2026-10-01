@@ -657,6 +657,7 @@ def cmd_sync(ctx):
                             "Mobile sync targets build --target_os from the checkout's existing targets; "
                             "remove --target_os from the forwarded arguments.")
     identity = ctx.identity()
+    sync_module.reject_deletion_options(identity, parsed.forwarded)
     mobile = "android" if "android" in targets else "mac"
     if parsed.get("plan"):
         arguments = sync_module.sync_arguments(ctx, mobile, parsed.forwarded, identity)
