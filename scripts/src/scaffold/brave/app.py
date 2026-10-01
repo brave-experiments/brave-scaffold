@@ -110,5 +110,5 @@ def run_command(command, parsed, handler, argv_environ=None, needs_config=True, 
         result.add_warning("LOG_WRITE_FAILED", "The diagnostic log could not be completed: %s" % error)
     emit(result, json_mode, stdout=stdout, stderr=stderr)
     if log.path:
-        log.message("Elapsed: %.2fs. Log: %s" % (elapsed, log.path))
+        log.message("⏱️ Elapsed: %.2fs\nLog: %s" % (elapsed, log.path))
     return result.exit_code

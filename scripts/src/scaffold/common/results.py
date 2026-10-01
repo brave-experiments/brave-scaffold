@@ -149,7 +149,7 @@ def error_result(command, error, context=None):
 
 
 def render_error_text(error):
-    lines = ["Error [%s]: %s" % (error["code"], error["message"])]
+    lines = ["❌ Error [%s]: %s" % (error["code"], error["message"])]
     details = error.get("details") or {}
     for key, value in details.items():
         if isinstance(value, (list, tuple)):

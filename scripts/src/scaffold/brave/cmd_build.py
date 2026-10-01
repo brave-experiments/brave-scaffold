@@ -316,7 +316,7 @@ def finish_build_result(command, outcome, execution, op):
     result.data = {"build": build_data(outcome, identity)}
     if outcome.artifact:
         result.artifacts = [outcome.artifact]
-        result.text = "Build completed. Verified output: %s" % outcome.artifact["path"]
+        result.text = "✅ Build completed.\nVerified output: %s" % outcome.artifact["path"]
     else:
         result.add_warning("ARTIFACT_UNRESOLVED", result.data["build"]["explanation"])
         result.text = result.data["build"]["explanation"]
