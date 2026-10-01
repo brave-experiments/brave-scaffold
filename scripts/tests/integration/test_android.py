@@ -53,6 +53,8 @@ DEVICES_TWO = "emulator-5554,device;R58M1234,device"
 
 @unittest.skipIf(SKIP, "needs direnv on a macOS host")
 class AndroidTestCase(BuildTestCase):
+    support_overlay = False
+
     def setUp(self):
         super().setUp()
         self.sandbox.install_script_contracts(script_contracts())
@@ -64,7 +66,7 @@ class AndroidTestCase(BuildTestCase):
         self.sandbox.commit_all("main")
         self.hook = self.sandbox.hook(ANDROID_HOOK)
         install_fake_adb(self.sandbox)
-        self.support = make_support_repo(self.sandbox.root, {"v154": 154, "v155": 155})
+        self.support = make_support_repo(self.sandbox.root, {"v154": 154, "v155": 155}, overlay=self.support_overlay)
 
     def setup_support(self, ref="v155", source=None, checkout="main"):
         return self.sandbox.bdev("--json", "--config", self.config, "--checkout", checkout, "android", "setup",

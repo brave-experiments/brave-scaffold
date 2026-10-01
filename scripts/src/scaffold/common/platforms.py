@@ -65,7 +65,7 @@ VALIDATED = {("mac", operation, "debug", "arm64") for operation in ("sync", "bui
 # (target, operation) pairs whose commands exist in this release.
 AVAILABLE_OPERATIONS = {("mac", operation) for operation in
                         ("sync", "build", "test", "run", "clean", "drift", "patches-update")} | {
-    ("android", operation) for operation in ("sync", "build", "deploy", "run", "clean")}
+    ("android", operation) for operation in ("sync", "build", "test", "deploy", "run", "clean")}
 
 
 def capability_table():
@@ -92,7 +92,8 @@ def capability_table():
     for operation in ("sync", "build", "deploy", "run", "clean"):
         add("android", operation, "debug", "arm64", SUPPORTED, "Debug arm64 APK." if operation == "build" else "")
     add("android", "build", "release", "arm64", LIMITED, "Not part of the validated workflow.")
-    add("android", "test", "debug", "arm64", UNSUPPORTED, "Android tests are not available.")
+    add("android", "test", "debug", "arm64", SUPPORTED,
+        "brave_junit_tests (host) and brave_java_unit_tests (device); needs the android-testing-prototype support branch.")
     add("ios", "build", "debug", "arm64", UNSUPPORTED, "iOS is not available.")
     for target in ("mac", "android"):
         add(target, "any", "debug", "arm64", UNSUPPORTED,

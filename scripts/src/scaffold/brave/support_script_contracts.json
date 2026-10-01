@@ -54,5 +54,15 @@
         "res/aapt2/aapt2"
       ]
     ]
+  },
+  "0b2e752627501e5c20c6a5b59cb87f9c5cc4401a0b09f70dcaf954453aa2b244": {
+    "script": "applyBraveCoreTestSupport.sh",
+    "patches": [],
+    "direct": [
+      "brave/build/commands/lib/androidTestMacHost.test.ts",
+      "brave/build/commands/lib/androidTestMacHost.ts",
+      "brave/build/commands/scripts/test.ts"
+    ],
+    "resources": []
   }
 }

@@ -67,6 +67,39 @@ handle_patch "nested" "$src_root/v8" "$PWD/patches/v8-nested.patch" || failures=
 exit $failures
 """
 
+OVERLAY_FILES = ("brave/build/commands/lib/androidTestMacHost.ts", "brave/build/commands/lib/androidTestMacHost.test.ts")
+
+OVERLAY_SCRIPT = """#!/bin/bash
+cd "$(dirname "$0")"
+mode=apply
+src=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --src-root) src="$2"; shift 2 ;;
+    --check) mode=check; shift ;;
+    --apply) mode=apply; shift ;;
+    --reverse) mode=reverse; shift ;;
+    *) exit 2 ;;
+  esac
+done
+patch="$PWD/patches/brave-core-android-tests-on-mac.patch"
+brave="$src/brave"
+applied() { (cd "$brave" && git apply --reverse --check "$patch") >/dev/null 2>&1; }
+can() { (cd "$brave" && git apply --check "$patch") >/dev/null 2>&1; }
+case "$mode" in
+  check) applied && exit 0; can && exit 1; exit 2 ;;
+  apply) applied && exit 0; can || exit 2; (cd "$brave" && git apply "$patch") ;;
+  reverse) applied || exit 0; (cd "$brave" && git apply --reverse "$patch") ;;
+esac
+"""
+
+
+def overlay_patch(*names):
+    return "".join(
+        "diff --git a/%(n)s b/%(n)s\nnew file mode 100644\n--- /dev/null\n+++ b/%(n)s\n@@ -0,0 +1 @@\n+export {}\n"
+        % {"n": name} for name in names)
+
+
 REALISTIC_PATCHES = {
     "build-config-fork.patch": (
         "diff --git forkSrcPrefix/build/config/support_fork.gni forkDstPrefix/build/config/support_fork.gni\n"
@@ -92,6 +125,7 @@ def script_contracts():
         (extra_copy, "copyMacRes.sh", [], [], resources + [["third_party/extra", "res/extra/current"]]),
         (APPLY_SCRIPT, "applyPatches.sh", [["", "support.patch"]],
          ["SUPPORT_PATCHED", "base/BUILD.gn", "base/support_target.cc"], []),
+        (OVERLAY_SCRIPT, "applyBraveCoreTestSupport.sh", [], list(OVERLAY_FILES), []),
         (REALISTIC_APPLY_SCRIPT, "applyPatches.sh", [["", "build-config-fork.patch"],
          ["", "support-a-prefix.patch"], ["v8", "v8-nested.patch"]], ["build/config/BUILDCONFIG.gn"], []),
     ]
@@ -134,7 +168,8 @@ def install_fake_aapt2(src):
     write_executable(Path(src) / "third_party" / "android_build_tools" / "aapt2" / "cipd" / "aapt2", FAKE_AAPT2)
 
 
-def make_support_repo(root: Path, versions: dict, realistic: bool = False, lfs: bool = False) -> Path:
+def make_support_repo(root: Path, versions: dict, realistic: bool = False, lfs: bool = False,
+                      overlay: bool = False) -> Path:
     """A support repository with one tagged commit per {tag: supported Chromium major}. Returns its path.
 
     A realistic repository applies real patches with upstream-style headers, including one in a nested
@@ -158,6 +193,10 @@ def make_support_repo(root: Path, versions: dict, realistic: bool = False, lfs: 
         else:
             (repo / "patches" / "marker").write_text("patched-for-%s\n" % tag)
             (repo / "patches" / "support.patch").write_text("diff --git a/base/support_target.cc b/base/support_target.cc\n")
+        if overlay:
+            write_executable(repo / "applyBraveCoreTestSupport.sh", OVERLAY_SCRIPT)
+            (repo / "patches" / "brave-core-android-tests-on-mac.patch").write_text(
+                overlay_patch(*(name.removeprefix("brave/") for name in OVERLAY_FILES)))
         (repo / "res" / "jdk" / "current").mkdir(parents=True, exist_ok=True)
         (repo / "res" / "jdk" / "current" / "release").write_text("JAVA_VERSION=25 %s\n" % tag)
         if lfs:

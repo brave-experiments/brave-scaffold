@@ -95,7 +95,7 @@ checks or your action.
 | `bdev capabilities` | Supported, limited, unverified, unsupported combinations | None; needs no checkout |
 | `bdev doctor [scope]` | Named readiness checks (`mac`, `android`, `rbe`, `shell`, `signing`) | None |
 | `bdev build [target]` | Prepare, compile, and verify the output ([macOS](macos.md)) | Writes build output; may apply patches |
-| `bdev test [target] <suite>` | Compile if needed and run one suite ([macOS](macos.md)) | Writes build output; runs tests |
+| `bdev test [target] <suite>` | Compile if needed and run one suite ([macOS](macos.md), [Android](android.md#tests)); `--device` for Android device suites | Writes build output; runs tests; Android also applies the support test overlay to Core's `build/commands` |
 | `bdev run [target]` | Restart the browser with an existing output; never builds | Quits and relaunches the application |
 | `bdev build-run` (`br`), `sync-build` (`sb`), `sync-build-run` (`sbr`) | Combined workflows; extras go to the build phase | Effects of each phase |
 | `bdev deploy android` | Install the APK on one device and launch it; same as `run android` ([Android](android.md)) | Installs over the existing app and restarts the package |

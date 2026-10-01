@@ -168,14 +168,19 @@ def resolve_output_dir(src, build_dir):
     return path if path.is_absolute() else Path(os.path.normpath(src / "out" / build_dir))
 
 
-def default_build_dir(target, configuration, arch):
-    """Directory name (under src/out) Core's build script uses by default."""
+def default_build_dir(target, configuration, arch, tests=False):
+    """Directory name (under src/out) Core's build script uses by default.
+
+    Android tests build in their own directory so they never change an app build's output.
+    """
     name = configuration if arch == "x64" else "%s_%s" % (configuration, arch)
+    if target == "android" and tests:
+        return "android_tests_" + name
     return name if target == "mac" else "%s_%s" % (target, name)
 
 
 def resolve_effective(src, forwarded_tokens, target, configuration, explicit_target, explicit_configuration,
-                      explicit_offline, default_arch="arm64"):
+                      explicit_offline, default_arch="arm64", tests=False):
     """Combine scaffold selections with interpreted forwarded options.
 
     Explicit scaffold selections that disagree with forwarded ones fail before
@@ -209,7 +214,7 @@ def resolve_effective(src, forwarded_tokens, target, configuration, explicit_tar
         generated.append("--target_os=%s" % effective_target)
     if fwd.target_arch is None:
         generated.append("--target_arch=%s" % arch)
-    default_dir = default_build_dir(effective_target, effective_configuration, arch)
+    default_dir = default_build_dir(effective_target, effective_configuration, arch, tests)
     build_dir_arg = fwd.build_dir if fwd.build_dir is not None else default_dir
     if fwd.build_dir is None:
         generated.extend(["-C", default_dir])

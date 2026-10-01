@@ -184,6 +184,36 @@ mismatch, pick a revision for this checkout only: `bdev android setup --ref <ref
 which switches a clean working copy, or switch it yourself. A working copy with
 local changes or unpushed commits is never switched for you.
 
+## `DEPENDENCY_INCOMPATIBLE` for the Android test branch
+
+*Meaning:* `bdev test android` needs the support working copy on the
+`android-testing-prototype` branch, and it is on another branch or a detached HEAD.
+Nothing was switched, prepared, or built.
+
+*Next:* switch it yourself: `git -C <working copy> switch android-testing-prototype`
+(the message gives the path). The scaffold never switches it.
+
+## `PREPARATION_CONFLICT` for the Android test overlay
+
+*Meaning:* Core has a partial or conflicting test overlay, the overlay patch writes
+files outside its reviewed list, or applying it changed other tracked files. Nothing
+was forced.
+
+*Next:* review `git -C <src>/brave status --short`. Reverse a partial overlay with
+`./applyBraveCoreTestSupport.sh --src-root <src> --reverse` from the support working
+copy once you have kept any wanted edits, then repeat the test.
+
+## `TEST_FAILED`, `NO_TESTS_RAN`, and `TEST_RESULTS_UNVERIFIED`
+
+*Meaning:* the Android test command exited 0 but the results file shows failed
+tests (`TEST_FAILED`) or no tests (`NO_TESTS_RAN`), or no readable results file was
+written (`TEST_RESULTS_UNVERIFIED`, a warning: the count is unverified). A nonzero
+runner exit is `CHILD_FAILED`.
+
+*Next:* read the saved log and `scaffold_test_results.json` in the test output
+directory. For `NO_TESTS_RAN`, fix the filter: `brave_junit_tests` needs a
+fully qualified class or a wildcard such as `*SomeTest*`.
+
 ## `DEVICE_AMBIGUOUS` and `DEVICE_UNAVAILABLE`
 
 *Meaning:* several usable Android devices are connected (choose one), or the

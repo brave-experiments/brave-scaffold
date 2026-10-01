@@ -17,7 +17,7 @@ from ..common.checks import readiness_error
 from ..common.platforms import RECOGNIZED_TARGETS, effective_target, normalize_target
 from ..common.procs import run_capture
 from ..common.results import Cancelled, Result, ScaffoldError, repair
-from . import (android, android_deps, buildopts, execution as execution_module, freshness, macos,
+from . import (android, android_deps, android_tests, buildopts, execution as execution_module, freshness, macos,
                packages, patches, steps as step_module, sync as sync_module)
 from .records import OutputState, output_states, track
 
@@ -34,7 +34,7 @@ def requested_configuration(ctx):
     return value.capitalize() if value else None
 
 
-def select_build(ctx, target_token, forwarded):
+def select_build(ctx, target_token, forwarded, tests=False):
     """Resolve identity and the effective build choices; conflicts fail before any effect."""
     identity = ctx.identity()
     target, _ = effective_target(target_token, ctx.config)
@@ -42,7 +42,7 @@ def select_build(ctx, target_token, forwarded):
     configuration = requested_configuration(ctx)
     effective = buildopts.resolve_effective(
         identity.src, forwarded, target, configuration or "Debug", explicit, configuration,
-        bool(ctx.parsed.get("offline")))
+        bool(ctx.parsed.get("offline")), tests=tests)
     require_available_target(effective.target)
     return identity, effective
 
@@ -178,11 +178,12 @@ def artifact_for(effective, identity, environ, log=None):
 FORCE_GN_ARGUMENT = "--force_gn_gen"
 
 
-def build_arguments(effective, subcommand, script_args, force_gn):
+def build_arguments(effective, subcommand, script_args, force_gn, tail=()):
+    """`tail` follows the forwarded arguments: the test command reads everything after an unknown option as unknown."""
     arguments = ["run", subcommand, *script_args, *effective.generated]
     if force_gn:
         arguments.append(FORCE_GN_ARGUMENT)
-    return [*arguments, *effective.forwarded]
+    return [*arguments, *effective.forwarded, *tail]
 
 
 @dataclass
@@ -351,7 +352,7 @@ def common_plan_steps(ctx, identity, target, phase, remote):
 
 
 def build_plan_steps(ctx, identity, effective, subcommand="build", script_args=(), sync_args=None, run_after=False,
-                     device_choice=None):
+                     device_choice=None, tail_args=()):
     """Plan an operation: the same step descriptions execution records, with unresolved parts reported."""
     remote = not effective.offline
     toolchain, steps = common_plan_steps(ctx, identity, effective.target, "sync" if sync_args is not None else "build",
@@ -383,8 +384,8 @@ def build_plan_steps(ctx, identity, effective, subcommand="build", script_args=(
         last, refreshes = plan_android_preparation(ctx, identity, effective, steps)
         changes_files = changes_files or refreshes
     explicit = subcommand == "build" and bool(ctx.parsed.get("force_gn"))
-    arguments = build_arguments(effective, subcommand, script_args, explicit)
-    conditional = [FORCE_GN_ARGUMENT] if subcommand == "build" and changes_files and not explicit else []
+    arguments = build_arguments(effective, subcommand, script_args, explicit, tail_args)
+    conditional = [FORCE_GN_ARGUMENT] if (subcommand == "build" or is_android) and changes_files and not explicit else []
     needs = [last, *(["sync"] if sync_args is not None else [])]
     steps.append(step_module.build_step(identity, effective, subcommand, arguments, package(arguments), needs,
                                         conditional))
@@ -505,21 +506,21 @@ def post_parse_test(spec, parsed):
     parsed.forwarded = positionals + parsed.forwarded
 
 
-def require_mac_tests(target, source, suite):
-    """Android tests are deferred; the effective target decides, wherever it was chosen."""
-    if target != "mac":
-        raise ScaffoldError("UNSUPPORTED_CAPABILITY",
-                            "Android tests are not available in this release; nothing was prepared or built.",
-                            details={"target": target, "target_source": source},
-                            repairs=[repair(["bdev", "test", "mac", suite], note="Run the suite on macOS instead.")])
+def log_test_phase(ctx, effective):
+    ctx.log.phase("Building and running test suite %s (%s, %s, %s)" % (
+        ctx.parsed.get("suite"), effective.target, effective.configuration, effective.arch))
+    ctx.log.phase("Output directory: %s" % (effective.output_dir or "unresolved"))
+    ctx.log.phase("Build mode: " + ("local (remote execution disabled)" if effective.offline
+                                   else "online (RBE/Siso requested)"))
 
 
 def cmd_test(ctx):
     parsed = ctx.parsed
-    if buildopts.interpret(parsed.forwarded).target_os is None:
-        require_mac_tests(effective_target(parsed.get("target"), ctx.config)[0], "scaffold", parsed.get("suite"))
-    identity, effective = select_build(ctx, parsed.get("target"), parsed.forwarded)
-    require_mac_tests(effective.target, effective.sources["target"], parsed.get("suite"))
+    identity, effective = select_build(ctx, parsed.get("target"), parsed.forwarded, tests=True)
+    if effective.target == "android":
+        return cmd_android_test(ctx, identity, effective)
+    if parsed.get("device"):
+        raise ScaffoldError("INVALID_INPUT", "--device applies to Android only.")
     script_args = [parsed.get("suite")]
     if parsed.get("filter"):
         script_args.append("--filter=%s" % parsed.get("filter"))
@@ -536,11 +537,7 @@ def cmd_test(ctx):
 
 
 def run_test_package(ctx, execution, effective, op, arguments):
-    ctx.log.phase("Building and running test suite %s (%s, %s)" % (
-        ctx.parsed.get("suite"), effective.configuration, effective.arch))
-    ctx.log.phase("Output directory: %s" % (effective.output_dir or "unresolved"))
-    ctx.log.phase("Build mode: " + ("local (remote execution disabled)" if effective.offline
-                                   else "online (RBE/Siso requested)"))
+    log_test_phase(ctx, effective)
     op.detail(effective={"target": effective.target, "configuration": effective.configuration,
                          "arch": effective.arch, "output_dir": str(effective.output_dir) if effective.output_dir else None,
                          "package_arguments": arguments})
@@ -551,6 +548,109 @@ def run_test_package(ctx, execution, effective, op, arguments):
     if state is not None:
         state.end_attempt_completed(op.id)
     return argv
+
+
+# --- Android tests -----------------------------------------------------------------------
+
+
+def android_test_arguments(ctx, kind, device):
+    """(options the test command parses, options it passes through) for one Android suite."""
+    parsed = ctx.parsed
+    known = [parsed.get("suite")]
+    if parsed.get("filter"):
+        known.append("--filter=%s" % parsed.get("filter"))
+    tail = []
+    if kind == android_tests.DEVICE:
+        known.append("--manual_android_test_device")
+        tail += android_tests.device_arguments(device[0], device[1]) if device else ["--device", "<device>", "--adb-path", "<adb>"]
+    return known, tail
+
+
+def cmd_android_test(ctx, identity, effective):
+    """Host-side JUnit or device-backed Java tests through Core's test command and the support test overlay."""
+    parsed = ctx.parsed
+    suite = parsed.get("suite")
+    kind = android_tests.suite_kind(suite)
+    android_tests.check_options(parsed, kind)
+    android_tests.require_support_branch(identity, ctx.log)
+    results = android_tests.results_path(effective)
+    own_results = not android_tests.forwarded_results_file(parsed.forwarded)
+    results_tail = ["--json-results-file=%s" % results] if own_results else []
+    if parsed.get("plan"):
+        return plan_result("test", effective, android_test_plan(ctx, identity, effective, kind, results_tail))
+    execution = execution_module.load(ctx, identity)
+    device = android.preflight_device(execution.context(ctx)) if kind == android_tests.DEVICE else None
+    execution = prepare(ctx, identity, "android", "build", not effective.offline, execution)
+    details = {"target": "android", "suite": suite, "device": device[1]["id"] if device else None}
+    with track(ctx, "test", identity, details, validated=True) as op:
+        known, tail = android_test_arguments(ctx, kind, device)
+        outcome = run_android_test(ctx, execution, effective, op, known, [*tail, *results_tail], suite,
+                                   results if own_results else None)
+        result = Result(command="test", child_exit_code=0, checks=[check.to_dict() for check in execution.checks])
+        argv, summary, warning = outcome
+        result.data = {"suite": suite, "argv": argv, "cwd": str(identity.core), "runs_on": kind,
+                       "device": device[1]["id"] if device else None, "output_dir": str(effective.output_dir),
+                       "results": summary}
+        result.text = "Test suite %s passed." % suite
+        if summary:
+            result.text = "Test suite %s passed (%d passed, %d skipped)." % (suite, summary["passed"], summary["skipped"])
+        if warning:
+            result.add_warning("TEST_RESULTS_UNVERIFIED", warning)
+        return op.complete(result)
+
+
+def android_test_plan(ctx, identity, effective, kind, results_tail):
+    device_step, device = None, None
+    if kind == android_tests.DEVICE:
+        try:
+            adb, chosen, source = android.preflight_device(ctx)
+            device = (adb, chosen)
+            device_step = step_module.select_device_step({"id": chosen["id"], "source": source})
+        except ScaffoldError as error:
+            device_step = step_module.select_device_step(error=error)
+    known, tail = android_test_arguments(ctx, kind, device)
+    steps = build_plan_steps(ctx, identity, effective, "test", known, tail_args=[*tail, *results_tail])
+    names = [step.name for step in steps]
+    steps.insert(names.index("gn-overrides"), android_tests.overlay_plan_step(ctx, identity))
+    steps[names.index("gn-overrides") + 1].needs = [android_tests.OVERLAY_STEP]
+    if device_step is not None:
+        steps.insert(names.index("readiness") + 1, device_step)
+    return steps
+
+
+def run_android_test(ctx, execution, effective, op, known, tail, suite, results):
+    identity = execution.identity
+    log_test_phase(ctx, effective)
+    with ctx.log.measure("Source preparation"):
+        changed, _ = prepare_patches(ctx, execution, op)
+        refreshed = android.prepare_support(ctx, execution, op, effective)
+        if refreshed:
+            patches.record_extra_expected(identity, ctx.state_root)
+        android_tests.prepare_overlay(ctx, execution, op)
+    arguments = build_arguments(effective, "test", known, changed or refreshed, tail)
+    described = step_module.gn_step(effective, effective.preparation_dir / "args.gn", effective.chosen_gn_keys)
+    op.start(described.name, **described.record())
+    op.detail(effective={"target": effective.target, "configuration": effective.configuration,
+                         "arch": effective.arch, "output_dir": str(effective.output_dir) if effective.output_dir else None,
+                         "package_arguments": arguments})
+
+    def before_child():
+        android.write_gn_overrides(identity, effective)
+        op.succeed("gn-overrides")
+        if results is not None:
+            results.unlink(missing_ok=True)
+
+    try:
+        argv, state = run_output_step(ctx, execution, effective, op, arguments, "test",
+                                      android.build_environment(execution.context(ctx)), before_child)
+    except ScaffoldError as error:
+        if error.code == "CHILD_FAILED" and results is not None:
+            error.details["results"] = android_tests.summarize_results(results)
+        raise
+    if state is not None:
+        state.end_attempt_completed(op.id)
+    summary, warning = android_tests.verify_outcome(effective, suite, results, results is not None)
+    return argv, summary, warning
 
 
 # --- run --------------------------------------------------------------------------------

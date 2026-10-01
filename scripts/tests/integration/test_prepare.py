@@ -194,18 +194,21 @@ print("suite test output", file=sys.stderr, flush=True)
         self.assertIn("brave_browser_tests", document["error"]["details"]["common_suites"])
         self.assertEqual(self.node_calls(), [])
 
-    def test_android_tests_are_unsupported_before_anything_is_loaded(self):
+    def test_other_android_suites_are_unsupported_before_anything_is_loaded(self):
         write_executable(self.sandbox.bin / "direnv", "#!/bin/sh\necho used >> '%s'\nexit 1\n" %
                          (self.sandbox.root / "direnv-used"))
-        result, document = self.document("test", "android", "brave_java_unit_tests")
+        result, document = self.document("test", "android", "brave_browser_tests")
         self.assertEqual((result.returncode, document["error"]["code"]), (2, "UNSUPPORTED_CAPABILITY"))
+        result, document = self.document("test", "android", "brave_java_unit_tests")
+        self.assertEqual((result.returncode, document["error"]["code"]), (3, "DEPENDENCY_INCOMPATIBLE"),
+                         "a supported suite stops at the missing support working copy")
         self.sandbox.config.write_text(self.sandbox.config.read_text() + '\n[defaults]\nplatform = "android"\n')
         result, document = self.document("test", "brave_browser_tests")
         self.assertEqual(document["error"]["code"], "UNSUPPORTED_CAPABILITY")
         self.assertFalse((self.sandbox.root / "direnv-used").exists())
         self.assertEqual(self.node_calls(), [])
 
-    def test_a_forwarded_android_target_is_unsupported_before_anything_is_loaded(self):
+    def test_a_forwarded_android_target_with_another_suite_is_unsupported_before_anything_is_loaded(self):
         write_executable(self.sandbox.bin / "direnv", "#!/bin/sh\necho used >> '%s'\nexit 1\n" %
                          (self.sandbox.root / "direnv-used"))
         for args in (["test", "brave_browser_tests", "--target_os=android"],

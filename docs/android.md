@@ -1,8 +1,9 @@
 # Android
 
 Existing-checkout Android workflows on an Apple Silicon Mac: a Debug arm64 APK
-build, and installing and restarting it on a device. Android tests, Android Studio
-project generation, and emulator launching are not available. Verified support is
+build, installing and restarting it on a device, and running Robolectric/JUnit and
+device-backed Java tests. Android Studio project generation and emulator launching
+are not available. Verified support is
 listed by `bdev capabilities`.
 
 Prerequisites: a registered checkout with an approved environment
@@ -144,6 +145,60 @@ The package name is read from the APK with the checkout's own `aapt2`. If that t
 missing or fails, the package is unproven: the result is `ARTIFACT_UNRESOLVED` (a warning
 for `build`, an error for the combined commands and `run`), and nothing is installed,
 stopped, or launched. No default package name is assumed.
+
+## Tests
+
+```sh
+# Host-side Robolectric/JUnit: runs on this Mac, no device
+bdev test android brave_junit_tests --filter='*BraveCommandLineInitUtilTest*'
+
+# Instrumented tests: run on the selected emulator or device
+bdev test android brave_java_unit_tests --filter='BraveAppearancePreferencesTest.*' --device=emulator-5554
+```
+
+Two suites are available. `brave_junit_tests` needs no device and rejects `--device`.
+`brave_java_unit_tests` runs on one device chosen as for `run` (`--device`, then
+`defaults.android_device`, then the only usable device; `DEVICE_AMBIGUOUS` and
+`DEVICE_UNAVAILABLE` apply) before anything is built. `--device` is a scaffold
+option: the scaffold passes the selected device and `adb` path to the test command
+itself, and forwarding `--device`, `-s`, or `--adb-path` is a `SELECTOR_CONFLICT`.
+Other suites fail with `UNSUPPORTED_CAPABILITY`.
+
+`--filter` reaches the suite's runner as a gtest-style filter. For
+`brave_junit_tests` use a fully qualified class (`org.example.SomeTest.*`) or a
+wildcard (`*SomeTest*`); a bare `SomeTest.*` can match no tests.
+
+**Required support branch.** The checkout's support working copy must be on the
+`android-testing-prototype` branch. This is checked before anything is prepared or
+built. Another branch or a detached HEAD fails with `DEPENDENCY_INCOMPATIBLE`. The
+scaffold never switches the repository; run `git -C <working copy> switch
+android-testing-prototype` yourself.
+
+**Core overlay.** Running an Android test is an explicit request that changes Core:
+the support repository's `applyBraveCoreTestSupport.sh` applies its test overlay to
+three files under Core's `build/commands` (`lib/androidTestMacHost.ts`,
+`lib/androidTestMacHost.test.ts`, `scripts/test.ts`). The script's identity and write
+list are reviewed, and a patch that writes elsewhere is refused. An overlay that is
+already applied is left alone; a partial or conflicting one is a
+`PREPARATION_CONFLICT` and is never forced. The overlay stays applied afterwards.
+Nothing else in Core changes, and `bdev setup` and `env init` never apply it. To
+remove it, run `./applyBraveCoreTestSupport.sh --src-root <src> --reverse` from the
+support working copy. A sync checks for local work and may stop on the applied
+overlay, so reverse it first if it does.
+
+**Preparation and build.** Patches and support files are prepared as for `build`,
+then the overlay. Tests build in `<src>/out/android_tests_Debug_arm64`, so an app
+build's output is not changed; `-C` selects another directory. Remote execution is
+requested by default; `--offline` compiles locally. `--plan` shows the steps,
+including the overlay and device choice, without changing anything.
+
+**Results.** The scaffold asks the runner for a JSON results file,
+`scaffold_test_results.json` in the output directory (unless you forward your own
+`--json-results-file`). A nonzero runner exit is `CHILD_FAILED` with the child's
+status and the result counts when readable. After a zero exit:
+`TEST_FAILED` if any recorded test failed, `NO_TESTS_RAN` if none ran (check the
+filter), and a `TEST_RESULTS_UNVERIFIED` warning if the file is missing. A missing
+runner script is `ARTIFACT_MISSING`. Success reports passed and skipped counts.
 
 ## Install and restart
 

@@ -118,14 +118,26 @@ def build_registry():
                     options=(CONFIGURATION, OFFLINE, FORCE_GN, PLAN, DEVICE, ADOPT, OVERWRITE, SKIP_SUPPORT_REFRESH), forward=True,
                     side_effects="Sync, build, and restart effects.", examples=("bdev sbr",),
                     notes="Extra arguments go to the build phase only."),
-        CommandSpec("test", "Compile if needed and run one test suite (macOS).", cmd_build.cmd_test,
-                    positionals=(TARGET, Positional("suite", True, help="Test suite, for example brave_unit_tests.")),
-                    options=(CONFIGURATION, OFFLINE, FILTER, PLAN), forward=True, max_positionals=2,
+        CommandSpec("test", "Compile if needed and run one test suite (macOS, or Android JUnit and device tests).",
+                    cmd_build.cmd_test,
+                    positionals=(TARGET, Positional("suite", True, help="Test suite, for example brave_unit_tests; on "
+                                                    "Android brave_junit_tests or brave_java_unit_tests.")),
+                    options=(CONFIGURATION, OFFLINE, FILTER, PLAN, DEVICE), forward=True, max_positionals=2,
                     post_parse=cmd_build.post_parse_test,
                     side_effects=BUILD_SIDE_EFFECTS.replace("Never cleans, installs, or launches anything.",
-                                                            "Runs the tests, which may launch test browsers."),
-                    notes="The suite must come before any forwarded arguments. --filter only narrows the suite.",
-                    examples=("bdev test brave_unit_tests", "bdev test mac brave_browser_tests --filter 'Example.*'")),
+                                                            "Runs the tests, which may launch test browsers.")
+                    + " Android: also requires the support working copy on the android-testing-prototype branch "
+                      "(never switched), applies the support repository's test overlay to Core's build/commands "
+                      "and leaves it applied, builds in out/android_tests_<configuration>_arm64, and "
+                      "brave_java_unit_tests runs on the selected device.",
+                    notes="The suite must come before any forwarded arguments. --filter only narrows the suite. "
+                          "On Android, brave_junit_tests runs on this Mac and takes no --device; "
+                          "brave_java_unit_tests needs a device (--device is a scaffold option, not forwarded). "
+                          "Host-side filters need a fully qualified class or a wildcard such as '*ExampleTest*'.",
+                    examples=("bdev test brave_unit_tests", "bdev test mac brave_browser_tests --filter 'Example.*'",
+                              "bdev test android brave_junit_tests --filter='*BraveCommandLineInitUtilTest*'",
+                              "bdev test android brave_java_unit_tests --filter='BraveAppearancePreferencesTest.*' "
+                              "--device=emulator-5554")),
         CommandSpec("run", "Restart the browser with an existing output; never builds.", cmd_build.cmd_run,
                     positionals=(TARGET,), options=(CONFIGURATION, ARTIFACT, PLAN, DEVICE),
                     side_effects="macOS: quits any running instance of the same application (from any checkout), "

@@ -24,6 +24,10 @@ NOT_RUN = {
     "bdev vpython3 [--checkout <name-or-path>] [--cwd <directory>] [--] <arguments...>": "syntax reference",
     "bdev android setup": "clones the default support repository from the network",
     "bdev android setup --ref <tag-or-sha>": "clones the default support repository from the network",
+    "bdev test android brave_junit_tests --filter='*BraveCommandLineInitUtilTest*'":
+        "needs the Android test support fixtures; run by tests.integration.test_android_tests",
+    "bdev test android brave_java_unit_tests --filter='BraveAppearancePreferencesTest.*' --device=emulator-5554":
+        "needs the Android test support fixtures; run by tests.integration.test_android_tests",
 }
 
 # Fixture state an example assumes, and the exit codes that show it behaved as documented.

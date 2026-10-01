@@ -88,11 +88,12 @@ just as they do for `bdev build`. Build and test output streams live to the cons
 and the diagnostic log. A failed package command returns scaffold exit 5 and saves
 the child's status as `child_exit_code` in JSON and the operation record.
 Other arguments go to `bpm run test` after the generated ones.
-Android tests are not available; asking for them (or omitting the target while
-`defaults.platform` is `android`, or forwarding `--target_os=android`) fails with
-`UNSUPPORTED_CAPABILITY` before anything is loaded or built. The effective target
-decides: forwarding `--target_os=mac` overrides an Android default, while
-`bdev test mac <suite> --target_os=android` is a `SELECTOR_CONFLICT`.
+Android tests are covered in [Android](android.md#tests). The effective target
+decides whether `test` runs the macOS or the Android path: an Android default
+platform or forwarded `--target_os=android` selects Android, forwarding
+`--target_os=mac` overrides an Android default, and
+`bdev test mac <suite> --target_os=android` is a `SELECTOR_CONFLICT`. `--device`
+applies to Android only.
 
 ## Run and restart
 
