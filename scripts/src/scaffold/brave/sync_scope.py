@@ -141,6 +141,7 @@ def local_work(identity, scope, expected, baseline, root=None, log=None, adopt=F
     Core is checked for any change, untracked files included. Every other repository is checked for tracked
     files that differ from HEAD, except paths that still hold what a scaffold step wrote (`expected`) or what
     Core's tools had left when the last sync finished (`baseline`). Incomplete discovery is itself a conflict.
+    Staged changes are checked separately and cannot be excused by working-file checksums.
     With `adopt` the tracked changes present now are recorded as Core's output instead of being reported;
     that never hides incomplete discovery or changes in Core.
     """
@@ -149,12 +150,20 @@ def local_work(identity, scope, expected, baseline, root=None, log=None, adopt=F
     if changes:
         conflicts.append({"path": str(identity.core), "reason": "Core has %d uncommitted change(s)" % len(changes)})
     current = snapshot(identity, scope, log)
+    staged = set()
+    for repository in scope.repositories:
+        if repository != identity.core:
+            staged |= {repository / relative for relative in gitstate.staged_paths(repository, log=log)}
+    conflicts += [{"path": _label(identity, path), "reason": "staged changes would be discarded by sync"}
+                  for path in sorted(staged)]
     if adopt and not conflicts:
         write_baseline(identity, current, root)
         baseline = current
     for label, files in current.items():
         base = identity.src if label == "." else identity.src / label
         for relative, digest in sorted(files.items()):
+            if base / relative in staged:
+                continue
             if base / relative in expected or (relative in baseline.get(label, {}) and baseline[label][relative] == digest):
                 continue
             conflicts.append({"path": _label(identity, base / relative),

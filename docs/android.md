@@ -94,7 +94,8 @@ scaffold supports one script layout and reads it directly:
 The build stops with `PREPARATION_CONFLICT`, changing nothing, and names the files, when
 
 - a patch target or directly edited file has unstaged, staged, or untracked changes that
-  differ from what the last refresh wrote;
+  differ from what the last refresh wrote. Staged changes block patch refresh even
+  when the working file matches that record;
 - a copied resource file changed since the last refresh, or exists with no record of where
   it came from. A file with no record is replaced only when it is identical to the support
   resource (a macOS binary counts as identical to its re-signed copy) or a repository

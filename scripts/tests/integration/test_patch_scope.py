@@ -108,6 +108,7 @@ class PatchScopeTests(BuildTestCase):
 
     def assert_stops(self, paths, args=("build",)):
         result, document = self.prepare_build(args)
+        self.assertEqual(result.returncode, 4, result.stderr)
         self.assertEqual((result.returncode, document["error"]["code"]), (4, "PREPARATION_CONFLICT"), result.stderr)
         self.assertEqual({item["path"] for item in document["error"]["details"]["files"]}, set(paths))
         self.assertEqual(self.node_calls(), [], "neither apply_patches nor the build ran")
@@ -147,6 +148,17 @@ class PatchScopeTests(BuildTestCase):
         self.assertEqual(self.prepare_build()[0].returncode, 0)
         self.change_patch(self.core / "patches" / "base-BUILD.gn.patch", "base/BUILD.gn", path)
         self.assertNotIn(path, (self.core / "patches" / "base-BUILD.gn.patchinfo").read_text())
+
+    def test_known_worktree_content_does_not_excuse_a_different_staged_version(self):
+        target = self.src / "base" / "BUILD.gn"
+        target.write_text("staged work\n")
+        git(self.src, "add", "base/BUILD.gn")
+        target.write_text("patched\n")
+        patch = self.core / "patches" / "base-BUILD.gn.patch"
+        patch.write_text(patch.read_text() + "\n")
+        self.assert_stops(["base/BUILD.gn"])
+        self.assertEqual(target.read_text(), "patched\n")
+        self.assertEqual(git(self.src, "show", ":base/BUILD.gn").stdout, "staged work\n")
 
     def test_a_patch_that_gains_a_target_stops_for_an_unstaged_edit_on_it(self):
         self.gain_target("base/added.cc")

@@ -274,10 +274,14 @@ def write_set_conflicts(identity, stale, known, extra, log):
                 raise ScaffoldError("PREPARATION_CONFLICT", "%s is not a Git repository, so local work in it cannot "
                                     "be inspected." % repository.path)
             dirty = gitstate.changed_paths(repository.path, sorted(relatives), log) if repository.path.exists() else set()
+            staged = gitstate.staged_paths(repository.path, sorted(relatives), log) if repository.path.exists() else set()
         except ScaffoldError as error:
             conflicts.append({"path": repository.rel or ".", "reason": error.message})
             continue
         for relative, key in sorted(relatives.items(), key=lambda item: item[1]):
+            if relative in staged:
+                conflicts.append({"path": key, "reason": "has staged changes that patch preparation could discard"})
+                continue
             reason = _write_conflict(identity, key, relative, keys[key], relative in dirty, known, extra)
             if reason:
                 conflicts.append({"path": key, "reason": reason})

@@ -42,7 +42,7 @@ def _require_root(repo, log):
                             "nothing was changed." % repo, details={"repository": str(repo)})
 
 
-def _status(repo, pathspec, untracked, log):
+def _status(repo, pathspec, untracked, log, staged_only=False):
     _require_root(repo, log)
     result = _git(repo, ["status", "--porcelain", "-z", "--untracked-files=" + untracked, *pathspec], log, timeout=600)
     if result.returncode != 0 or result.truncated:
@@ -54,9 +54,13 @@ def _status(repo, pathspec, untracked, log):
     for entry in entries:
         if len(entry) < 4:
             continue
-        changed.add(entry[3:])
+        selected = not staged_only or entry[0] not in (" ", "?")
+        if selected:
+            changed.add(entry[3:])
         if entry[0] in "RC" or entry[1] in "RC":
-            changed.add(next(entries, ""))
+            previous = next(entries, "")
+            if selected:
+                changed.add(previous)
     return changed
 
 
@@ -80,6 +84,20 @@ def tracked_changes(repo, log=None):
     Untracked files are not listed. Raises when Git cannot answer completely.
     """
     return _status(repo, [], "no", log)
+
+
+def staged_paths(repo, paths=None, log=None):
+    """Paths whose index differs from HEAD, independent of their working-file bytes.
+
+    With no path selection, inspect the whole repository. Renames include both names;
+    an unreadable repository fails rather than implying that its index is clean.
+    """
+    if paths is not None:
+        paths = list(paths)
+        if not paths:
+            return set()
+    selected = [] if paths is None else ["--", *paths]
+    return _status(repo, selected, "no", log, staged_only=True)
 
 
 def tracked_paths(repo, paths, log=None):
@@ -116,4 +134,3 @@ def nested_repositories(root):
     children = sorted(child for child in root.iterdir() if child.is_dir() and not child.is_symlink()
                       and (child / ".git").exists())
     return [root, *children]
-

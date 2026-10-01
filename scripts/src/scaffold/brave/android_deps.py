@@ -548,9 +548,10 @@ def protected_work(identity, wc, receipt, scripts, log=None):
         known = (receipt or {}).get("targets", {})
         for repo in {repo for repo, _ in files.values()}:
             paths = {relative: key for key, (owner, relative) in files.items() if owner == repo}
+            staged = gitstate.staged_paths(repo, paths, log)
             for relative in sorted(gitstate.changed_paths(repo, paths, log) & set(paths)):
                 key = paths[relative]
-                if known.get(key) != _sha(repo / relative):
+                if relative in staged or known.get(key) != _sha(repo / relative):
                     conflicts.append({"path": key, "reason": "has local edits that applying support patches "
                                       "could overwrite"})
     if "copyMacRes.sh" in scripts:

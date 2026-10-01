@@ -57,6 +57,19 @@ class ChangedPathsTests(unittest.TestCase):
         self.assertEqual(gitstate.changed_paths(self.repo, ["*.cc"]), set())
         self.assertEqual(gitstate.changed_paths(self.repo, ["star*.cc"]), {"star*.cc"})
 
+    def test_index_changes_are_separate_from_worktree_and_untracked_changes(self):
+        (self.repo / "staged.cc").write_text("index version\n")
+        self.git("add", "staged.cc")
+        (self.repo / "staged.cc").write_text("working version\n")
+        (self.repo / "modified.cc").write_text("unstaged\n")
+        (self.repo / "new.cc").write_text("untracked\n")
+        self.git("rm", "-q", "staged_deleted.cc")
+        self.git("mv", "moved_from.cc", "moved_to.cc")
+        self.assertEqual(gitstate.staged_paths(self.repo),
+                         {"staged.cc", "staged_deleted.cc", "moved_from.cc", "moved_to.cc"})
+        self.assertEqual(gitstate.staged_paths(self.repo, ["modified.cc", "staged.cc", "new.cc"]), {"staged.cc"})
+        self.assertEqual(gitstate.staged_paths(self.repo, []), set())
+
 
 class HeadTests(unittest.TestCase):
     """One reader answers 'what is checked out' for every supported repository layout."""

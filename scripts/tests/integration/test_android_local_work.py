@@ -120,6 +120,18 @@ class SupportRefreshLocalWorkTests(AndroidTestCase):
         self.change_support_patch()
         self.assert_blocked_without_changes([target])
 
+    def test_known_support_worktree_content_does_not_excuse_staged_work(self):
+        target = self.src / "build" / "config" / "support_fork.gni"
+        generated = target.read_text()
+        target.write_text("staged work\n")
+        git(self.src, "add", "build/config/support_fork.gni")
+        target.write_text(generated)
+        self.change_support_patch()
+        self.assert_blocked_without_changes([target])
+        indexed = subprocess.run(["git", "-C", str(self.src), "show", ":build/config/support_fork.gni"],
+                                 check=True, capture_output=True, text=True).stdout
+        self.assertEqual(indexed, "staged work\n")
+
     def test_an_edited_copied_resource_is_not_overwritten(self):
         release = self.src / "third_party" / "jdk" / "current" / "release"
         release.write_text("JAVA_VERSION=25 hand edited\n")

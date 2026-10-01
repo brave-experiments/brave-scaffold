@@ -27,6 +27,8 @@ gclient manages. The command reads those repositories from gclient's own records
 `PREPARATION_CONFLICT` when
 
 - Core has any uncommitted change, untracked files included;
+- another repository has staged changes, even when its working file matches a
+  recorded patch or sync result;
 - a tracked file in Chromium or in a dependency repository differs from `HEAD`, unless it still holds
   exactly what patch or Android support preparation last wrote there, or what Core's tools had left
   when the last sync finished;
@@ -67,7 +69,8 @@ subdirectories with no repository list are incomplete evidence, not an empty res
 
 Applying a patch resets every file it targets, so the command checks the whole write
 set of each patch Core would apply again: the files the current patch changes and the
-files its earlier metadata recorded. A file is safe when it still holds content the
+files its earlier metadata recorded. Staged changes block preparation independently
+of working-file content. Otherwise, a file is safe when it still holds content the
 metadata or the scaffold's receipt recorded for it. Otherwise it may hold local work,
 and the command stops with `PREPARATION_CONFLICT`, lists the files, and suggests
 `bdev drift --diff`. That covers a file that differs from its metadata and from the
