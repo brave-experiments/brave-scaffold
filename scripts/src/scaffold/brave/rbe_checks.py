@@ -101,7 +101,7 @@ def _selection(ctx):
 
 
 def _unchecked(names, scope, error, required, affects):
-    return [make_check(name, NOT_CHECKED, "No checkout is selected: %s" % error.message, scope, required=required,
+    return [make_check(name, NOT_CHECKED, error.message, scope, required=required,
                        affects=affects, repairs=error.repairs, **error.details) for name in names]
 
 

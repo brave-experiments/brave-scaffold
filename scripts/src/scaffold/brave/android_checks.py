@@ -48,7 +48,7 @@ def build_checks(ctx, scope, remote_required=False):
     local RBE configuration."""
     identity, error = _selected(ctx)
     if identity is None:
-        return [make_check("android-gclient-target", NOT_CHECKED, "No checkout is selected: %s" % error.message,
+        return [make_check("android-gclient-target", NOT_CHECKED, error.message,
                            scope, affects=("android build",), repairs=error.repairs, **error.details)]
     targets = sync_module.gclient_targets(identity)
     ok = targets is not None and "android" in targets
@@ -66,7 +66,7 @@ def support_checks(ctx, scope):
     """The per-checkout support working copy, its compatibility gate, and whether it is applied."""
     identity, error = _selected(ctx)
     if identity is None:
-        return [make_check(name, NOT_CHECKED, "No checkout is selected: %s" % error.message, scope,
+        return [make_check(name, NOT_CHECKED, error.message, scope,
                            affects=("android build",), repairs=error.repairs) for name in UNCHECKED_NAMES[1:]]
     wc = android_deps.working_copy(identity)
     facts = android_deps.inspect_working_copy(wc, ctx.log)

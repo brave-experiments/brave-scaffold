@@ -61,7 +61,7 @@ def readiness_error(checks):
     repairs = []
     for check in checks:
         if check.required and check.status in (BLOCKER, UNSUPPORTED, NOT_CHECKED):
-            repairs.extend(check.repairs)
+            repairs.extend(step for step in check.repairs if step not in repairs)
     return ScaffoldError(code, message, details={
         "blocking": [check.name for check in checks if check.required and check.status in (BLOCKER, UNSUPPORTED)],
         "incomplete": [check.name for check in checks if check.required and check.status == NOT_CHECKED]},

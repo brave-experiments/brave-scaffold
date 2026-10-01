@@ -30,6 +30,16 @@ class DoctorTests(SandboxTest):
     def statuses(self, document):
         return {check["name"]: check["status"] for check in document["checks"]}
 
+    def test_combined_scopes_report_shared_checks_once(self):
+        result, document = self.doctor("--checkout", "main")
+        names = [check["name"] for check in document["checks"]]
+        self.assertEqual(len(names), len(set(names)))
+        rbe = next(check for check in document["checks"] if check["name"] == "rbe-env")
+        self.assertTrue(rbe["required"])
+        self.assertEqual(rbe["scopes"], ["mac", "rbe", "android"])
+        repairs = document["error"]["repairs"]
+        self.assertEqual(len(repairs), len({json.dumps(step, sort_keys=True) for step in repairs}))
+
     def test_all_required_checks_pass(self):
         result, document = self.doctor("mac", "--checkout", "main")
         self.assertEqual((result.returncode, document["status"], document["error"]), (0, "ok", None))
@@ -103,8 +113,8 @@ class DoctorTests(SandboxTest):
     def test_text_mode_matches_the_json_verdict(self):
         result = self.sandbox.bdev("--config", self.config, "doctor", "mac", cwd=self.sandbox.root)
         self.assertEqual(result.returncode, 3)
-        self.assertIn("READINESS_INCOMPLETE", result.stderr)
-        self.assertIn("❔ checkout-selection", result.stdout)
+        self.assertIn("Readiness incomplete:", result.stdout)
+        self.assertIn("❔  Checkout checks need a selected checkout", result.stdout)
 
 
 if __name__ == "__main__":

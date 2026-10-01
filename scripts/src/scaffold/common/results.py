@@ -182,9 +182,12 @@ def emit(result, json_mode, stdout=None, stderr=None):
         return
     if result.text:
         stdout.write(result.text.rstrip("\n") + "\n")
+    doctor_report = result.command == "doctor" and result.text and result.checks
     for warning in result.warnings:
+        if doctor_report and warning["code"].startswith("CHECK_"):
+            continue
         stderr.write("Warning [%s]: %s\n" % (warning["code"], warning["message"]))
-    if result.error:
+    if result.error and not (doctor_report and result.error["code"] in ("READINESS_BLOCKED", "READINESS_INCOMPLETE")):
         stderr.write(render_error_text(result.error) + "\n")
     stdout.flush()
     stderr.flush()

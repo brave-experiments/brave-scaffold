@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import shlex
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -187,12 +188,82 @@ def group_checks(ctx, group, scope, state):
     return function(state.execution.context(ctx), scope)
 
 
-def render_text(scopes, checks):
-    """The readable report: one marked line per check, then what the markers mean."""
-    lines = ["Doctor scopes: %s" % ", ".join(scopes)]
+def merge_checks(checks):
+    """Report shared checks once, retaining the strongest result and every affected scope."""
+    merged = {}
+    rank = {PASS: 0, WARNING: 1, NOT_CHECKED: 2, UNSUPPORTED: 3, BLOCKER: 4}
     for check in checks:
-        lines.append("%s %s%s: %s" % (MARKERS[check.status], check.name, "" if check.required else " (optional)",
-                                      check.summary))
+        previous = merged.get(check.name)
+        if previous is None:
+            merged[check.name] = check
+            continue
+        scopes = tuple(dict.fromkeys((*previous.scopes, *check.scopes)))
+        affects = tuple(dict.fromkeys((*previous.affects, *check.affects)))
+        repairs = previous.repairs + [step for step in check.repairs if step not in previous.repairs]
+        required = previous.required or check.required
+        chosen = check if rank[check.status] > rank[previous.status] else previous
+        chosen.scopes, chosen.affects, chosen.repairs, chosen.required = scopes, affects, repairs, required
+        merged[check.name] = chosen
+    return list(merged.values())
+
+
+def render_text(scopes, checks):
+    """Group results and show each problem and suggested repair once."""
+    selection = next((check for check in checks if check.name == "checkout-selection"), None)
+    missing = selection is not None and selection.status == NOT_CHECKED
+    lines = ["🩺 Brave setup doctor", "Scopes: %s" % ", ".join(scopes)]
+    sections = {}
+    for check in checks:
+        if missing and check.status == NOT_CHECKED and (
+                check.name in ("checkout-selection", "checkout-layout", "environment", "local-tools", "services-key")
+                or check.name.startswith("android-")
+                or check.name.startswith("rbe-") and check.name != "rbe-reachability"):
+            continue
+        if check.name.startswith("rbe-"):
+            section = "RBE"
+        elif check.name in ("checkout-selection", "checkout-layout", "environment", "local-tools"):
+            section = "Checkout"
+        elif check.name in ("scaffold-runtime", "git", "direnv"):
+            section = "Runtime"
+        else:
+            section = {"mac": "macOS", "android": "Android", "shell": "Shell", "signing": "Signing"}.get(
+                check.scopes[0], check.scopes[0])
+        sections.setdefault(section, []).append(check)
+    for section, items in sections.items():
+        lines += ["", section]
+        for check in items:
+            lines.append("%s  %s%s: %s" % (MARKERS[check.status], check.name,
+                                           "" if check.required else " (optional)", check.summary))
+        if section == "Signing":
+            lines.append("Signing configuration only; signing availability was not tested.")
+    if missing:
+        lines += ["", "Checkout", "❔  Checkout checks need a selected checkout. " + selection.summary]
+    blocked = sum(check.required and check.status in (BLOCKER, UNSUPPORTED) for check in checks)
+    incomplete = sum(check.required and check.status == NOT_CHECKED for check in checks)
+    warnings = sum(check.status == WARNING for check in checks)
+    lines.append("")
+    if blocked:
+        lines.append("Readiness blocked: %d blocker(s), %d required check(s) not checked, %d warning(s)." % (
+            blocked, incomplete, warnings))
+    elif incomplete:
+        lines.append("Readiness incomplete: %s %d warning(s)." % (
+            "Select a checkout to finish the checks." if missing else
+            "%d required check(s) not checked." % incomplete, warnings))
+    else:
+        lines.append("Required checks passed; %d warning(s). Checks marked not checked remain unverified." % warnings)
+    repairs = []
+    for check in checks:
+        if check.status != PASS:
+            for step in check.repairs:
+                if step not in repairs:
+                    repairs.append(step)
+    for step in repairs:
+        command = shlex.join(step["argv"])
+        if step.get("cwd"):
+            command = "cd %s && %s" % (shlex.quote(step["cwd"]), command)
+        note = " — " + step["note"] if step.get("note") else ""
+        approval = " (requires you to act)" if step.get("requires_user_action") else ""
+        lines.append("Next: %s%s%s" % (command, approval, note))
     lines += ["", MARKER_LEGEND]
     return "\n".join(lines)
 
@@ -217,6 +288,10 @@ def run_doctor(ctx):
         for check in group_checks(ctx, group, group_scopes[0], state):
             check.scopes = tuple(group_scopes)
             checks.append(check)
+    if state.selection_error is not None and not any(check.name == "checkout-selection" for check in checks):
+        error = state.selection_error
+        checks.append(_check("checkout-selection", NOT_CHECKED, error.message, scopes[0], repairs=error.repairs))
+    checks = merge_checks(checks)
     result = Result(command="doctor", data={"scopes": scopes})
     result.checks = [check.to_dict() for check in checks]
     for check in checks:
