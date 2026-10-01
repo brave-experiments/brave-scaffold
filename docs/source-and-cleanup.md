@@ -88,6 +88,10 @@ a patch's targets cannot be read, or a patch's metadata is unusable (unreadable,
 schema version, or any entry without a valid relative path and checksum), the command
 stops as well; one bad entry makes that patch's whole metadata untrusted.
 
+The same checks cover Core's version update: `chrome/VERSION` and
+`chrome/VERSION.chromium`. An existing untracked version or sidecar needs a matching
+generated-content receipt, including when Git ignores it. Plans list both files.
+
 Resolve a conflict yourself: keep wanted edits with `bdev patches update` or
 restore the files, then run `bpm run apply_patches` if you want stale files
 replaced. The receipts live beside your configuration in `.bdev/`, never in Core.

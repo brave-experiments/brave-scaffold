@@ -92,7 +92,7 @@ class MacPlanTests(BuildTestCase):
         step = by_name(document)["patch-preparation"]
         self.assertTrue(set(targets) <= set(step["writes"]))
         result = self.sandbox.bdev("--config", self.config, "--checkout", "main", "build", "--plan", env=self.env())
-        self.assertIn("writes 121 file", result.stdout)  # 60 targets, 60 metadata files, the version file
+        self.assertIn("writes 122 file", result.stdout)  # 60 targets, 60 metadata files, two version files
         self.assertLess(result.stdout.count("planned/file_"), 60)
 
     def test_an_explicit_force_gn_is_in_the_planned_command_and_matches_dispatch(self):

@@ -14,7 +14,7 @@ from ..common.config import atomic_write
 from ..common.procs import run_capture
 from ..common.results import ScaffoldError, repair
 from . import gitstate
-from .patch_inventory import read_inventory, sha256_file, sha256_or_none
+from .patch_inventory import PatchRepository, read_inventory, sha256_file, sha256_or_none
 from .records import checkout_key, store_root
 
 SOURCE_CHANGED = "source changed after patch applied"
@@ -170,7 +170,7 @@ def write_receipt(identity, trees, files, root=None, extra_expected=_CARRY):
     atomic_write(receipt_path(identity, root), json.dumps(data, sort_keys=True, indent=1) + "\n")
 
 
-CORE_WRITTEN = ("chrome/VERSION",)  # written by Core's patch step itself (the version update), not by a patch
+CORE_WRITTEN = ("chrome/VERSION", "chrome/VERSION.chromium")  # Core's version update writes both files
 
 
 def core_output(identity):
@@ -235,7 +235,6 @@ def plan_patch_preparation(identity, log=None, root=None):
     if conflicts:
         return PatchPlan("conflict", "Applying patches could overwrite local Chromium edits.", report, trees,
                          conflicts, receipt is not None, writes)
-    writes = sorted({*writes, *CORE_WRITTEN})
     reasons = []
     if report.files:
         reasons.append("%d patched file(s) differ from the metadata" % len(report.files))
@@ -268,13 +267,22 @@ def write_set_conflicts(identity, stale, known, extra, log):
     for key, owners in keys.items():
         entry, relative = owners[0]
         by_repository.setdefault(entry.repository, {})[relative] = key
+    chromium = PatchRepository("", identity.src, identity.core / "patches")
+    for relative in CORE_WRITTEN:
+        keys.setdefault(relative, [])
+        by_repository.setdefault(chromium, {})[relative] = relative
     for repository, relatives in by_repository.items():
         try:
             if repository.path.exists() and not (repository.path / ".git").exists():
                 raise ScaffoldError("PREPARATION_CONFLICT", "%s is not a Git repository, so local work in it cannot "
                                     "be inspected." % repository.path)
-            dirty = gitstate.changed_paths(repository.path, sorted(relatives), log) if repository.path.exists() else set()
-            staged = gitstate.staged_paths(repository.path, sorted(relatives), log) if repository.path.exists() else set()
+            changes = gitstate.inspect_changes(repository.path, log, sorted(relatives)) \
+                if repository.path.exists() else gitstate.Changes()
+            dirty, staged = changes.all, changes.staged
+            if repository == chromium:
+                tracked = gitstate.tracked_paths(repository.path, CORE_WRITTEN, log)
+                dirty |= {path for path in CORE_WRITTEN if path not in tracked
+                          and (identity.src / path).exists()}
         except ScaffoldError as error:
             conflicts.append({"path": repository.rel or ".", "reason": error.message})
             continue

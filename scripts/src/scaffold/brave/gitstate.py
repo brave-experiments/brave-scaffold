@@ -92,9 +92,13 @@ def local_changes(repo, log=None):
     return inspect_changes(repo, log).all
 
 
-def inspect_changes(repo, log=None):
+def inspect_changes(repo, log=None, paths=None):
     """Tracked, staged, and untracked paths from one complete Git status read."""
-    return _status(repo, [], "all", log)
+    if paths is not None:
+        paths = list(paths)
+        if not paths:
+            return Changes()
+    return _status(repo, [] if paths is None else ["--", *paths], "all", log)
 
 
 def tracked_changes(repo, log=None):
