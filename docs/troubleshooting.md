@@ -124,23 +124,21 @@ The message names the field and shows a valid example.
 
 ## `PREPARATION_CONFLICT`
 
-*Meaning:* preparing sources could overwrite local work: patch application would
-touch a Chromium file that differs from both the patch metadata and the last
-recorded state (or has no record), or a selected sync reset, patch, version write,
-or hook threatens local work. The message lists files and the operation. An
-uncommitted Core change alone is not a conflict. A guard failure before preparation
-leaves files alone. A failure after scripts run can leave changes behind; read the
-message and inspect the checkout before retrying.
+*Meaning:* build or test preparation could overwrite local work: patch application
+or a version update would touch a file that differs from its recorded state, or
+Android support preparation threatens local changes. The message lists the
+files and operation. A guard failure before preparation leaves files alone. A
+failure after scripts run can leave changes behind; inspect the checkout before
+retrying.
 
 *Next:* review with `bdev drift --diff`. Keep wanted edits with
 `bdev patches update`, or restore the files yourself; then repeat the command.
-Unknown write scopes need complete repository data or reviewed scripts;
-overwrite approval cannot bypass them. `--skip-support-refresh` blocks a needed
-Android refresh; omit it only if you want support files replaced.
-The scaffold never stashes or discards edits as an automatic repair. Requested syncs can
-reset repositories through Core, after preservation checks. For a hook conflict,
-consider `--nohooks`; it does not skip pre-DEPS hooks. For a Chromium reset
-conflict, inspect whether `--sync_chromium=false` suits the requested operation.
+`--skip-support-refresh` blocks a needed Android refresh; omit it only if you want
+support files replaced. The scaffold never stashes or discards edits as an
+automatic repair.
+
+Source sync runs Core's own command, which may reset repositories and overwrite
+local work. Core failures appear as `CHILD_FAILED`; see [sync behavior](source-and-cleanup.md#sync-sources).
 
 ## `SELECTOR_CONFLICT`
 

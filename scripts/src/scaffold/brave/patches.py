@@ -178,12 +178,6 @@ def core_output(identity):
     return {path: digest for path in CORE_WRITTEN if (digest := sha256_or_none(identity.src / path))}
 
 
-def core_written_paths(identity, root=None):
-    """Paths that still hold what Core's patch step or a verified preparation step last wrote there."""
-    extra = (read_receipt(identity, root) or {}).get("extra_expected") or {}
-    return {identity.src / path for path, digest in extra.items() if digest and sha256_or_none(identity.src / path) == digest}
-
-
 def record_extra_expected(identity, root=None):
     """After a verified step changed patched files, remember exactly what it wrote there."""
     receipt = read_receipt(identity, root)
@@ -208,14 +202,14 @@ class PatchPlan:
     metadata_writes: list = field(default_factory=list)  # absolute paths of the metadata files Core rewrites
 
 
-def plan_patch_preparation(identity, log=None, root=None, extra_expected=None):
+def plan_patch_preparation(identity, log=None, root=None):
     """Decide whether patches need applying and whether applying could lose local work."""
     inventory = read_inventory(identity)
     report = collect_drift(identity, inventory)
     receipt = read_receipt(identity, root)
     # Another verified step (for example Android support preparation) may change patched files on
     # top of Core's patches. Those files are expected while they still hold what that step wrote.
-    extra = {**((receipt or {}).get("extra_expected") or {}), **(extra_expected or {})}
+    extra = (receipt or {}).get("extra_expected") or {}
     for repo_path, expected in extra.items():
         entry = report.files.get(repo_path)
         if entry is not None and entry.reasons == {SOURCE_CHANGED} and sha256_or_none(identity.src / repo_path) == expected:

@@ -110,11 +110,9 @@ checks or your action.
 | `bdev vpython3 [options] [--] <args>` | Checkout-local Python | Whatever the program does |
 | `bpm [options] <package args>` | Checkout's package manager | Whatever the package command does |
 
-Sync commands offer an interactive overwrite prompt for known local file conflicts.
-For noninteractive use, `--overwrite-local-changes` explicitly approves backing up
-and removing the listed changes for that invocation. JSON output never prompts;
-`--plan` never overwrites. See [overwrite approval](source-and-cleanup.md#approving-overwrites)
-for backups, recovery, and conflicts that still block sync.
+Sync commands run Core's package `sync` script with its normal resets, patches,
+and hooks. Local changes may be overwritten. Scaffold forwards Core options
+without adding an overwrite prompt or backup; see [sync behavior](source-and-cleanup.md#sync-sources).
 
 ### Forwarding to package commands
 
@@ -251,9 +249,9 @@ phases that finished (each with its `phase` name and outcome, for example a sync
 revisions or a build with its exit status and `artifact_status`), and `artifacts` keeps the
 verified output. A cancelled command lists them the same way.
 
-Sync results also include `scope`: the Chromium sync decision, reset repositories,
-other output writes, and incomplete preservation evidence. Plans check the same
-scope read-only and show conflicts before dispatch.
+Sync results include the dispatched `argv` and `revisions_before` and
+`revisions_after` for Core and Chromium. Core determines which updates to perform;
+Scaffold does not report a predicted reset or hook write scope.
 
 ## Plans
 
@@ -270,10 +268,11 @@ succeeds. Steps include Core patch preparation, Android support preparation (wit
 it would write), the GN overrides, the build command with its output directory, output
 verification, device selection, and the restart (stop running instances, install, launch).
 `argv` is `null` when the final command needs tools that are not available yet.
-`writes` is the complete list of files a step can write (for patch preparation: every
-target of each patch Core would apply, the metadata files it rewrites, and the version
-file; for a sync: every repository it can reset); the readable text names a few and a
-count. Decisions that depend on an earlier phase are not guessed: after a sync the patch
+`writes` lists the files or directories affected by a step. Patch preparation lists
+the patch targets, metadata, and version files. Sync lists the workspace `.gclient`
+and source tree as general write locations; Core determines the actual files and
+other effects at runtime. The readable text names a few entries and a count.
+Decisions that depend on an earlier phase are not guessed: after a sync the patch
 step is `unresolved`, and `conditional_arguments` lists what the build command adds only if
 preparation or a sync changes files (`--force_gn_gen`), while an explicit `--force-gn`
 is already in `argv`. The operation record of a real run carries the same descriptions for the steps that change

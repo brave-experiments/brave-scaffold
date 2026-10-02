@@ -2,13 +2,11 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this file,
 # You can obtain one at https://mozilla.org/MPL/2.0/.
-"""A source sync stops before it can reset local work anywhere gclient manages."""
+"""Sync delegates source changes and failures to Core's package command."""
 
-import hashlib
 import json
 import subprocess
 import unittest
-
 from tests.integration.test_build import SKIP, BuildTestCase
 
 
@@ -18,235 +16,84 @@ def git(repo, *args):
 
 
 @unittest.skipIf(SKIP, "needs direnv on a macOS host")
-class SyncScopeTests(BuildTestCase):
-    def setUp(self):
-        super().setUp()
-        self.workspace = self.src.parent
-        (self.src / "chrome").mkdir()
-        (self.src / "chrome" / "unpatched.cc").write_text("upstream\n")
-        self.sandbox.commit_all("main")
-
-    def add_dependency(self, name="v8", listed=True):
-        return self.sandbox.add_dependency("main", name, listed)
-
-    def assert_sync_stops(self, *paths):
-        result, document = self.document("sync", "--force")
-        self.assertEqual(result.returncode, 4, result.stderr)
-        self.assertEqual((result.returncode, document["error"]["code"]), (4, "PREPARATION_CONFLICT"), result.stderr)
-        self.assertEqual(self.node_calls(), [], "the sync must not start")
-        found = {item["path"] for item in document["error"]["details"].get("files", [])}
-        for path in paths:
-            self.assertIn(path, found)
-        return document
-
-    def test_an_edit_to_a_tracked_chromium_file_outside_the_patches_stops_the_sync(self):
-        (self.src / "chrome" / "unpatched.cc").write_text("my experiment\n")
-        self.assert_sync_stops("chrome/unpatched.cc")
-        self.assertEqual((self.src / "chrome" / "unpatched.cc").read_text(), "my experiment\n")
-
-    def test_overwrite_plan_never_changes_files_or_saves_backups(self):
-        wanted = self.src / "chrome" / "unpatched.cc"
-        wanted.write_text("my work\n")
-        result, document = self.document("sync", "--force", "--overwrite-local-changes", "--plan")
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(wanted.read_text(), "my work\n")
-        self.assertEqual(self.node_calls(), [])
-        self.assertFalse((self.sandbox.config.parent / '.bdev/backups').exists())
-        self.assertEqual(document['data']['plan']['steps'][-1]['status'], 'blocked')
-
-    def test_overwrite_cannot_bypass_unknown_scope(self):
-        (self.workspace / ".gclient_entries").write_text("entries = not python\n")
-        result, document = self.document("sync", "--force", "--overwrite-local-changes")
-        self.assertEqual(result.returncode, 4, result.stderr)
-        self.assertIn('unknown sync write scope', document['error']['message'])
-        self.assertEqual(self.node_calls(), [])
-
-    def test_a_staged_chromium_edit_stops_the_sync(self):
-        (self.src / "chrome" / "unpatched.cc").write_text("staged\n")
-        git(self.src, "add", "chrome/unpatched.cc")
-        self.assert_sync_stops("chrome/unpatched.cc")
-
-    def test_an_edit_in_a_dependency_repository_stops_the_sync(self):
-        repo = self.add_dependency()
-        (repo / "test.cc").write_text("my experiment\n")
-        self.assert_sync_stops("v8/test.cc")
-        self.assertEqual((repo / "test.cc").read_text(), "my experiment\n")
-
-    def test_a_clean_dependency_repository_does_not_stop_the_sync(self):
-        self.add_dependency()
-        result, document = self.document("sync", "--force")
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(len(self.node_calls()), 1)
-
-    def test_an_untracked_file_blocks_when_incoming_paths_are_unknown(self):
-        repo = self.add_dependency()
-        (repo / "notes.txt").write_text("scratch\n")
-        self.assert_sync_stops("v8/notes.txt")
-        self.assertEqual((repo / "notes.txt").read_text(), "scratch\n")
-
-    def test_incoming_tracked_file_cannot_replace_untracked_work(self):
-        self.assert_incoming_collision_preserved(directory=False)
-
-    def test_incoming_tracked_file_cannot_replace_an_untracked_directory(self):
-        self.assert_incoming_collision_preserved(directory=True)
-
-    def test_dependency_deletion_options_block_when_the_write_set_is_unknown(self):
-        for flag in ("-D", "--delete_unused_deps", "--delete_unversioned_trees"):
-            for plan in (False, True):
-                with self.subTest(flag=flag, plan=plan):
-                    result, document = self.document("sync", flag, *(["--plan"] if plan else []))
-                    self.assertEqual(result.returncode, 4, result.stderr)
-                    self.assertEqual(document["error"]["code"], "PREPARATION_CONFLICT")
-                    self.assertEqual(self.node_calls(), [])
-
-    def assert_incoming_collision_preserved(self, directory):
-        repo = self.add_dependency()
-        old = git(repo, "rev-parse", "HEAD").stdout.strip()
-        incoming = repo / "incoming.cc"
-        incoming.write_text("upstream\n")
-        git(repo, "add", "incoming.cc")
-        git(repo, "commit", "-q", "-m", "incoming file")
-        new = git(repo, "rev-parse", "HEAD").stdout.strip()
-        git(repo, "reset", "--hard", old)
-        if directory:
-            incoming.mkdir()
-            wanted = incoming / "notes.txt"
-        else:
-            wanted = incoming
-        wanted.write_text("local work\n")
+class SyncDispatchTests(BuildTestCase):
+    def test_core_receives_local_work_and_changed_sync_sources_without_preparation(self):
+        target = self.src / "base" / "BUILD.gn"
+        target.write_text("staged work\n")
+        git(self.src, "add", "base/BUILD.gn")
+        target.write_text("working edit\n")
+        dependency = self.sandbox.add_dependency("main", "v8")
+        (dependency / "test.cc").write_text("dependency edit\n")
+        (self.core / "notes.txt").write_text("untracked Core work\n")
+        (self.core / "pnpm-workspace.yaml").write_text("allowBuilds: {}\n")
+        package_path = self.core / "package.json"
+        package = json.loads(package_path.read_text())
+        package["scripts"] = {"sync": "node custom-sync.js", "presync": "node custom-presync.js"}
+        package_path.write_text(json.dumps(package))
         self.hook = self.sandbox.hook('''
 if "sync" in argv:
     import subprocess
-    subprocess.run(["git", "-C", %r, "reset", "--hard", %r], check=True)
-''' % (str(repo), new))
-        self.assert_sync_stops("v8/" + str(wanted.relative_to(repo)))
-        self.assertEqual(wanted.read_text(), "local work\n")
-        self.assertEqual(git(repo, "rev-parse", "HEAD").stdout.strip(), old)
-
-    def test_a_repository_that_cannot_be_inspected_stops_the_sync(self):
-        repo = self.add_dependency()
-        (repo / ".git" / "HEAD").write_text("garbage\n")
-        document = self.assert_sync_stops()
-        self.assertIn("could not be inspected", document["error"]["message"])
-        self.assertIn("v8", document["error"]["details"]["repository"])
-
-    def test_an_unreadable_dependency_list_stops_the_sync(self):
-        (self.workspace / ".gclient_entries").write_text("entries = not python\n")
-        document = self.assert_sync_stops()
-        self.assertIn(".gclient_entries", document["error"]["details"]["files"][0]["path"])
-
-    def test_recorded_patch_results_are_not_local_work(self):
-        target = self.src / "base" / "BUILD.gn"
-        target.write_text("original\n")
-        git(self.src, "add", "-A")
-        git(self.src, "commit", "-q", "-m", "upstream content")
-        target.write_text("patched\n")
-        info = next((self.core / "patches").glob("*.patchinfo"))
-        text = info.read_text().replace(
-            hashlib.sha256(b"patched\n").hexdigest(), hashlib.sha256(target.read_bytes()).hexdigest())
-        info.write_text(text)
-        self.assertIn("base/BUILD.gn", git(self.src, "status", "--porcelain").stdout)
+    from pathlib import Path
+    core = Path(os.environ["BRAVE_CORE_DIR"])
+    src = core.parent
+    assert (src / "base/BUILD.gn").read_text() == "working edit\\n"
+    assert subprocess.check_output(["git", "-C", str(src), "show", ":base/BUILD.gn"], text=True) == "staged work\\n"
+    assert (src / "v8/test.cc").read_text() == "dependency edit\\n"
+    assert (core / "notes.txt").read_text() == "untracked Core work\\n"
+    (src / "base/BUILD.gn").write_text("Core sync output\\n")
+''')
         result, document = self.document("sync", "--force")
-        self.assertEqual(result.returncode, 0, result.stderr + str(document.get("error")))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.build_argv(), ["run", "sync", "--force"])
+        self.assertEqual(len(self.node_calls()), 1)
+        self.assertEqual(target.read_text(), "Core sync output\n")
+        self.assertNotIn("scope", document["data"]["sync"])
+        self.assertNotIn("overwrite_backup", document["data"]["sync"])
+        state = self.sandbox.config.parent / ".bdev"
+        self.assertFalse(list(state.rglob("sync-baseline.json")))
+        self.assertFalse((state / "backups").exists())
 
-    def test_an_edit_on_top_of_a_patch_result_stops_the_sync(self):
-        (self.src / "base" / "BUILD.gn").write_text("patched and then edited by me\n")
-        self.assert_sync_stops("base/BUILD.gn")
+    def test_sync_forwards_core_options_including_dependency_deletion(self):
+        arguments = ["--force", "--nohooks", "--sync_chromium=false", "-D",
+                     "--delete_unused_deps", "--delete_unversioned_trees", "--custom-option=value"]
+        result, document = self.document("sync", *arguments)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.build_argv(), ["run", "sync", *arguments])
+        self.assertEqual(document["data"]["sync"]["argv"][2:], ["run", "sync", *arguments])
 
-    def test_staged_work_is_protected_when_the_worktree_matches_a_patch(self):
+    def test_plan_shows_dispatch_without_reading_sync_sources_or_changing_work(self):
         target = self.src / "base" / "BUILD.gn"
-        target.write_text("staged work that must survive\n")
-        git(self.src, "add", "base/BUILD.gn")
-        target.write_text("patched\n")
-        self.assert_sync_stops("base/BUILD.gn")
-        self.assertEqual(target.read_text(), "patched\n")
-        self.assertEqual(git(self.src, "show", ":base/BUILD.gn").stdout, "staged work that must survive\n")
+        target.write_text("local work\n")
+        (self.src.parent / ".gclient_entries").write_text("not a dependency inventory\n")
+        result, document = self.document("sync", "--force", "-D", "--plan")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        step = document["data"]["plan"]["steps"][-1]
+        self.assertEqual(step["status"], "planned")
+        self.assertEqual(step["argv"][2:], ["run", "sync", "--force", "-D"])
+        self.assertEqual(step["cwd"], str(self.core))
+        self.assertEqual(self.node_calls(), [])
+        self.assertEqual(target.read_text(), "local work\n")
 
-    def test_staged_work_is_protected_when_the_worktree_matches_a_sync_baseline(self):
-        target = self.src / "chrome" / "unpatched.cc"
+    def test_core_failure_keeps_partial_changes_and_stops_combined_commands(self):
+        target = self.src / "base" / "BUILD.gn"
         self.hook = self.sandbox.hook('''
 if "sync" in argv:
-    open(os.path.join(os.path.dirname(os.environ["BRAVE_CORE_DIR"]), "chrome", "unpatched.cc"), "w").write("generated\\n")
+    from pathlib import Path
+    (Path(os.environ["BRAVE_CORE_DIR"]).parent / "base/BUILD.gn").write_text("partial sync\\n")
+    print("Core sync failed after writing sources", flush=True)
+    raise SystemExit(9)
+raise AssertionError("no command may run after sync fails")
 ''')
-        self.assertEqual(self.document("sync")[0].returncode, 0)
-        self.sandbox.record.unlink()
-        target.write_text("staged work that must survive\n")
-        git(self.src, "add", "chrome/unpatched.cc")
-        target.write_text("generated\n")
-        self.assert_sync_stops("chrome/unpatched.cc")
-        self.assertEqual(target.read_text(), "generated\n")
-        self.assertEqual(git(self.src, "show", ":chrome/unpatched.cc").stdout, "staged work that must survive\n")
-
-    def test_blanket_adoption_cannot_persist_trust_before_a_rejected_or_failed_sync(self):
-        from scaffold.brave import records
-        state = self.sandbox.config.parent / ".bdev" / "state" / records.checkout_key(self.core)
-        baseline = state / "sync-baseline.json"
-        wanted = self.src / "chrome" / "unpatched.cc"
-        wanted.write_text("my work\n")
-        for command, extra in (("sync", ()), ("sync", ("--plan",)), ("sync-build", ()),
-                               ("sync-build-run", ("--plan",))):
-            with self.subTest(command=command, extra=extra):
-                result, document = self.document(command, "--adopt-local-changes", *extra,
-                                                  env=self.env(FAKE_EXIT="9"))
-                self.assertEqual(result.returncode, 4, result.stderr)
-                self.assertEqual(document["error"]["code"], "PREPARATION_CONFLICT")
-                self.assertFalse(baseline.exists(), "rejection cannot make an ordinary retry trust these bytes")
-                self.assertEqual(self.node_calls(), [])
-                self.assertEqual(wanted.read_text(), "my work\n")
-        self.assert_sync_stops("chrome/unpatched.cc")
-
-    def test_unknown_origin_baseline_cannot_approve_discarding_local_work(self):
-        from scaffold.brave import records
-        wanted = self.src / "chrome" / "unpatched.cc"
-        wanted.write_text("my work\n")
-        baseline = (self.sandbox.config.parent / ".bdev" / "state" / records.checkout_key(self.core)
-                    / "sync-baseline.json")
-        baseline.parent.mkdir(parents=True, exist_ok=True)
-        baseline.write_text(json.dumps({".": {"chrome/unpatched.cc": hashlib.sha256(wanted.read_bytes()).hexdigest()}}))
-        before = baseline.read_bytes()
-        self.hook = self.sandbox.hook("""
-if "sync" in argv:
-    open(os.path.join(os.path.dirname(os.environ["BRAVE_CORE_DIR"]), "chrome", "unpatched.cc"), "w").write("discarded\\n")
-""")
-        self.assert_sync_stops("chrome/unpatched.cc")
-        self.assertEqual(wanted.read_text(), "my work\n")
-        self.assertEqual(baseline.read_bytes(), before, "keep ambiguous historical evidence for review")
-
-    def test_rejected_adoption_keeps_an_existing_successful_sync_baseline(self):
-        from scaffold.brave import records
-        self.assertEqual(self.document("sync")[0].returncode, 0)
-        baseline = (self.sandbox.config.parent / ".bdev" / "state" / records.checkout_key(self.core)
-                    / "sync-baseline.json")
-        before = baseline.read_bytes()
-        self.sandbox.record.unlink()
-        wanted = self.src / "chrome" / "unpatched.cc"
-        wanted.write_text("my work\n")
-        result, document = self.document("sync", "--adopt-local-changes", env=self.env(FAKE_EXIT="9"))
-        self.assertEqual(result.returncode, 4, result.stderr)
-        self.assertEqual(document["error"]["code"], "PREPARATION_CONFLICT")
-        self.assertEqual(baseline.read_bytes(), before)
-        self.assertEqual(self.node_calls(), [])
-        self.assert_sync_stops("chrome/unpatched.cc")
-        self.assertEqual(wanted.read_text(), "my work\n")
-
-    def test_adopting_does_not_hide_uncommitted_work_in_core(self):
-        (self.core / "notes.txt").write_text("mine\n")
-        result, document = self.document("sync", "--adopt-local-changes")
-        self.assertEqual((result.returncode, document["error"]["code"]), (4, "PREPARATION_CONFLICT"))
-        self.assertEqual(self.node_calls(), [])
-
-    def test_changes_made_during_a_sync_are_recorded_and_later_edits_are_not(self):
-        self.hook = self.sandbox.hook("""
-if "sync" in argv:
-    open(os.path.join(os.path.dirname(os.environ["BRAVE_CORE_DIR"]), "chrome", "unpatched.cc"), "w").write("generated\\n")
-""")
-        result, _ = self.document("sync")
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.sandbox.record.unlink()
-        self.assertEqual(self.document("sync")[0].returncode, 0, "what the sync itself produced is not local work")
-        (self.src / "chrome" / "unpatched.cc").write_text("mine\n")
-        self.sandbox.record.unlink()
-        self.assert_sync_stops("chrome/unpatched.cc")
+        for command in ("sync", "sync-build", "sync-build-run"):
+            with self.subTest(command=command):
+                self.sandbox.record.unlink(missing_ok=True)
+                result, document = self.document(command)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual(document["error"]["code"], "CHILD_FAILED")
+                self.assertEqual(document["child_exit_code"], 9)
+                self.assertEqual([call["argv"][1:] for call in self.node_calls()], [["run", "sync"]])
+                self.assertEqual(target.read_text(), "partial sync\n")
+                self.assertIn("Core sync failed after writing sources", result.stderr)
 
 
 if __name__ == "__main__":

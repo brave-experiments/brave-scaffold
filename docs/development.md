@@ -32,9 +32,9 @@ Tooling code, launchers, and tests live under `scripts/`; there is no root
 | `common/platforms.py` | Targets and the capability table |
 | `brave/registry.py` | The command table: parsing, help, and dispatch all read it |
 | `brave/execution.py` | The selected checkout's execution context: identity, approved environment, resolved tools |
-| `brave/patch_inventory.py`, `brave/sync_scope.py` | Which repositories Core patches and a sync can reset, and what their metadata records |
+| `brave/patch_inventory.py`, `brave/sync_scope.py` | Patch inventory, dependency repository discovery, and tracked-change snapshots |
 | `brave/cmd_build.py`, `brave/cmd_patches.py`, `brave/cmd_tools.py`, `brave/cmd_setup.py`, `brave/clean.py`, `brave/android.py`, `brave/doctor.py` | Command handlers and their platform code |
-| `brave/sync.py` | Sync arguments, the target list kept across syncs, the local-work guard, and the sync phase |
+| `brave/sync.py` | Sync arguments, the target list kept across syncs, and dispatch to Core's sync command |
 | `brave/packages.py` | The one place a package command is turned into a child process (bpm and every phase use it) |
 | `brave/branch_tests.py`, `brave/cmd_test_local.py` | Modified-test discovery and mapping to suites and filters (read-only Git), and the `test-local` runner |
 | `brave/android_tests.py` | Android test suites, the required support branch, the Core test overlay, device arguments, and result checks |
@@ -112,36 +112,25 @@ results with the evidence.
    `brave/doctor.py`; execution paths reuse the same functions. Groups other than machine,
    shell, and signing run in the selected checkout's approved environment.
 
-## Sync preservation evidence
+## Sync dispatch
 
-`brave/sync_model.py` checks the selected Core implementation and reads its
-effective configuration through `sync_probe.mjs`. The probe has read permission
-only. `sync_contracts.json` identifies reviewed sync sources, version writers,
-and hook inventories with their source digests and conservative output scopes.
-An implementation change requires reviewing its mutation behavior before adding
-its digest. Never infer a hook's output scope from its name or silently accept a
-new script. Include pre-DEPS hooks and recursive DEPS files; `--nohooks` does not
-skip pre-DEPS hooks.
+`brave/sync.py` runs Core's package `sync` script through `brave/packages.py`.
+Core controls source updates, resets, package installation, patches, and hooks.
+Scaffold selects the checkout, resolves local tools, combines mobile targets,
+forwards arguments, streams output, and records the result. A failed sync stops
+later phases and leaves the checkout as Core left it.
 
-`incoming_hooks.py` reads incoming DEPS and hook sources through local Git
-objects, including an existing local origin cache when the checkout lacks the
-revision. It evaluates only supported expressions; it does not execute DEPS.
-Parent and custom variables control recursive dependency and hook conditions. Unsupported
-expressions and missing active dependencies leave the scope unknown.
+Plans describe the command and general checkout writes. They do not evaluate
+Core's sync implementation or promise preservation of local work. Keep sync
+independent of source hashes, hook inventories, and overwrite approval.
 
-Generated copies require exact source bytes. The reclient probe renders reviewed
-configuration text in memory, with filesystem writes and child execution denied;
-it never calls the setup/download entry point. DevTools sibling overrides require
-actual hardlinks from the reviewed producer. Untracked preservation uses both
-the current and incoming tree only for detached repositories and reviewed,
-non-updating depot_tools reset code; it never exempts a hook write. Source hashes must follow a review
-of the writer, not merely match whatever is currently installed.
+`brave/sync_scope.py` provides dependency discovery and tracked-change snapshots
+for build freshness and Android support checks. Those checks and patch
+preparation guards belong to their respective operations, not the sync phase.
 
-The same model supplies plans and execution guards. Patch metadata identifies
-materialized bytes even when the patch input has changed. A sync baseline accepts
-new output, not unchanged developer work. Regression fixtures must distinguish
-the index, working bytes, and untracked collisions, and cover both reset and
-non-reset operations.
+Regression tests exercise dispatch with local changes, changed Core scripts,
+forwarded options, and child failures. Use isolated fake package commands to
+verify that Scaffold passes control to Core without editing the checkout first.
 
 ## Evidence for support claims
 

@@ -123,10 +123,10 @@ class MacPlanTests(BuildTestCase):
         self.assertIn("after the sync", steps["patch-preparation"]["detail"])
         self.assertEqual(steps["build"]["conditional_arguments"], ["--force_gn_gen"])
 
-    def test_the_sync_plan_lists_the_repositories_a_sync_can_reset(self):
+    def test_the_sync_plan_describes_core_dispatch_and_checkout_writes(self):
         self.sandbox.add_dependency("main")
         step = by_name(self.plan("sync"))["sync"]
-        self.assertIn(str(self.src / "v8"), step["writes"])
+        self.assertIn("Core determines the affected files", step["detail"])
         self.assertIn(str(self.src), step["writes"])
 
     def records(self):

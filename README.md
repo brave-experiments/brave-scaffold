@@ -8,6 +8,8 @@ Brave Scaffold (`brave-scaffold`) is entirely supplementary to Brave Core
 (`brave-core`). Using it is optional. Adopting or using the scaffold requires no
 changes to Brave Core's source, configuration, or development workflow. Brave
 Core's own supported commands remain usable without the scaffold.
+`bdev sync` runs Core's sync script with its normal effects, including resets,
+patches, and hooks. Core controls which local files it updates or overwrites.
 
 Scaffold configuration and integration files stay outside Brave Core. Explicitly
 requested builds, syncs, and source preparation still perform their normal

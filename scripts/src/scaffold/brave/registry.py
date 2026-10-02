@@ -27,10 +27,6 @@ FILTER = Opt("--filter", "filter", metavar="PATTERN", help="Only run tests match
 DEVICE = Opt("--device", "device", metavar="ID", help="Android device id (required when several are usable).")
 SOURCE = Opt("--source", "source", metavar="URL_OR_PATH", help="Support repository to clone (default: the standard source).")
 REF = Opt("--ref", "ref", metavar="REF", help="Support repository branch, tag, or commit for this checkout only.")
-ADOPT = Opt("--adopt-local-changes", "adopt_local_changes", takes_value=False,
-            help="Disabled: blanket adoption cannot establish which local changes may be discarded.")
-OVERWRITE = Opt("--overwrite-local-changes", "overwrite_local_changes", takes_value=False,
-                help="Back up and overwrite the listed local file changes for this sync only.")
 DIFF = Opt("--diff", "diff", takes_value=False, help="Print the Git diff of each drifted file.")
 BASE = Opt("--base", "base", metavar="REF", help="Compare the branch with this ref (default: origin/master).")
 SCOPE = Opt("--scope", "scope", choices=("both", "committed", "worktree"), metavar="SCOPE",
@@ -104,21 +100,20 @@ def build_registry():
                     side_effects=BUILD_SIDE_EFFECTS + " Then stops any running instance of the same application and "
                                                      "launches the new build.",
                     examples=("bdev br",)),
-        CommandSpec("sync", "Run the supported Core source sync.", cmd_build.cmd_sync,
+        CommandSpec("sync", "Run Core's source sync command.", cmd_build.cmd_sync,
                     positionals=(Positional("targets", help="Comma-separated targets: mac, android."),),
-                    options=(PLAN, ADOPT, OVERWRITE), forward=True,
-                    side_effects="Updates the checkout's sources and dependencies. Stops first if local work "
-                                 "could be overwritten; interactive use offers backup and overwrite approval. "
+                    options=(PLAN,), forward=True,
+                    side_effects="Runs Core's sync, including its resets, patches, and hooks; local changes may be overwritten. "
                                  "Mobile targets keep the checkout's existing target_os values.",
                     examples=("bdev sync", "bdev sync mac,android --plan")),
         CommandSpec("sync-build", "Sync, then build; stops at the first failed phase.", cmd_build.cmd_sync_build,
                     aliases=("sb",), positionals=(TARGET,),
-                    options=(CONFIGURATION, OFFLINE, FORCE_GN, PLAN, ADOPT, OVERWRITE, SKIP_SUPPORT_REFRESH),
+                    options=(CONFIGURATION, OFFLINE, FORCE_GN, PLAN, SKIP_SUPPORT_REFRESH),
                     forward=True, side_effects="Sync effects, then build effects.", examples=("bdev sb",),
                     notes="Extra arguments go to the build phase only."),
         CommandSpec("sync-build-run", "Sync, build, then restart the browser with the built output.",
                     cmd_build.cmd_sync_build_run, aliases=("sbr",), positionals=(TARGET,),
-                    options=(CONFIGURATION, OFFLINE, FORCE_GN, PLAN, DEVICE, ADOPT, OVERWRITE, SKIP_SUPPORT_REFRESH), forward=True,
+                    options=(CONFIGURATION, OFFLINE, FORCE_GN, PLAN, DEVICE, SKIP_SUPPORT_REFRESH), forward=True,
                     side_effects="Sync, build, and restart effects.", examples=("bdev sbr",),
                     notes="Extra arguments go to the build phase only."),
         CommandSpec("test", "Compile if needed and run one test suite (macOS, or Android JUnit and device tests).",

@@ -138,45 +138,6 @@
         },
         "revisions_after": {
           "type": "object"
-        },
-        "overwrite_backup": {
-          "type": "string"
-        },
-        "scope": {
-          "type": "object",
-          "required": [
-            "chromium_sync",
-            "reset_repositories",
-            "other_writes",
-            "incomplete_evidence"
-          ],
-          "properties": {
-            "chromium_sync": {
-              "enum": [
-                "required",
-                "skipped",
-                "unresolved"
-              ]
-            },
-            "reset_repositories": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            },
-            "other_writes": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            },
-            "incomplete_evidence": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            }
-          }
         }
       }
     },

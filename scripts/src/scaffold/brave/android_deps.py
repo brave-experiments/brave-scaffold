@@ -424,20 +424,6 @@ def freshness_inputs(identity, log=None):
             "support_resources": digest.hexdigest()}
 
 
-def recorded_results(identity, state_root):
-    """Paths that still hold exactly what the last support preparation wrote there."""
-    receipt = _read_state(identity, state_root) or {}
-    found = {identity.src / key for key, digest in (receipt.get("targets") or {}).items()
-             if digest and _sha(identity.src / key) == digest}
-    for key, signatures in (receipt.get("resources") or {}).items():
-        destination = identity.src / key
-        for relative, signature in signatures.items():
-            path = destination / relative
-            if os.path.lexists(path) and _stat_signature(path) == signature:
-                found.add(path)
-    return found
-
-
 def planned_writes(identity, wc, scripts, log=None):
     """Source-relative paths the given support scripts would write (read-only)."""
     writes = []

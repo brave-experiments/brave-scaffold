@@ -24,128 +24,27 @@ directory. Mobile targets build `--target_os` from the union of the checkout's
 existing `.gclient` values and the requested mobile target; the host platform is
 never written there.
 
-The guard checks the operation Core will perform. Core keeps its own repository
-as an unmanaged gclient solution. Ordinary Core source edits and edited patch
-inputs, including staged content, can remain in place when no output write
-threatens them. A clean Core checkout is not required.
+Core owns sync behavior, including package installation, repository updates and
+resets, patch application, and hooks. Scaffold runs the checkout's package
+`sync` script with its local Node and package manager and streams its output.
+The same applies to the sync phase of `sync-build` and `sync-build-run`.
 
-Chromium sync is conditional. Core compares its selected ref, Chromium HEAD,
-the generated `.gclient`, and its last successful sync record. A required or
-forced Chromium sync uses gclient `--reset --upstream`; that can discard tracked
-and staged work, reset a branch to its upstream, and replace untracked files
-that obstruct incoming paths. Local commits ahead of the upstream also stop the
-guard; preserve them on a branch or select a non-reset operation.
-`--sync_chromium=false` skips that reset even with `--force`, but `--force` still
-resets Brave dependencies. A Brave-only update without force uses Git's clean
-checks and ordinary checkout/rebase. It may refuse local work; it does not force
-that work away.
+Sync can overwrite local changes according to Core's commands and the options
+you pass. Save any work you need before running it. Scaffold does not inspect
+upstream script hashes, predict hook writes, prompt for overwrites, back up
+changes, or restore files before dispatch. Core and gclient report their own
+conflicts and failures. Options such as `--force`, `--nohooks`,
+`--sync_chromium=false`, and dependency deletion options go to Core unchanged.
 
-Scaffold inspects the effective configuration read-only with the checkout-local
-Node. Node's permission model permits reads and denies writes, child processes,
-and workers. The probe captures normal default-file and cache-directory creation without
-writing anything. Unreviewed constructor writes, lifecycle commands, and Node
-preloads stop before dispatch. Unknown sync implementations retain
-conservative guards and name the missing evidence.
+`--plan` shows the command, working directory, prerequisites, and general checkout
+writes without running sync. Core decides which repositories and files to change
+when the command runs; the plan does not predict that decision or certify that
+local work will survive.
 
-Core's package script also runs a frozen package install before syncing; its
-`node_modules` output and reviewed installation lifecycle are included.
-Skipping Chromium sync does not skip patch reapplication, version updates, or
-hooks. The guard checks stale patch targets, both version files, metadata writes,
-and reviewed hook output scopes. Changed patch inputs can reapply their old,
-identified patch output; an additional developer edit to that output still stops
-preparation. Regular hooks can be skipped with `--nohooks`. gclient's pre-DEPS
-hooks still run and remain guarded. Conditional hook outputs are included conservatively, except when every hook in
-a reviewed group is proven disabled by the effective dependency variables. New hook inventories or changed hook sources need inspection;
-they do not gain authority to replace local work.
-
-A conflict identifies each threatened file, the operation, and a next step.
-Unrelated staged and untracked work can remain in repositories that will not be
-reset or overwritten. Untracked files can stay in a detached repository when the reviewed reset code,
-current and incoming Git trees, and hook scopes prove those paths cannot be
-replaced. The check includes parent paths and case differences. Unknown incoming
-paths, a branch reset, changed reset code, or lean sync retain the conservative
-untracked-file guard. When depot_tools would auto-update, the reset code may
-change after inspection. Setting `DEPOT_TOOLS_UPDATE=0` for the invocation can
-keep a reviewed existing version in use; it does not bypass a required depot_tools
-reinstallation, changed source checks, or file conflicts. Scaffold does not stash or roll back edits. It removes local changes only after the overwrite approval below.
-Options that delete unused dependencies or unversioned trees remain blocked when
-their complete deletion scope is unknown. CI's automatic dependency deletion and
-custom gclient solution/deletion settings also stop before dispatch.
-
-Known generated working bytes can be identified by patch metadata, verified
-preparation receipts, exact version-writer output, or a successful sync record.
-The guard also recognizes byte-for-byte branding copies, reviewed reclient
-configuration output, and verified DevTools source/override hardlinks. Stale
-branding copies need a prior Core checkout for the recorded successful Chromium
-sync, the same reviewed copier, and exact Git blob content. Missing history does
-not grant permission to replace a file. A filename or
-generated-file header alone proves nothing. An additional edit remains protected.
-For an incoming Chromium revision, the guard reads available local Git objects
-and follows enabled recursive dependency pins to check the incoming hooks. It
-does not fetch, change refs, or switch the checkout during inspection. Missing
-revisions and unreviewed sources remain explicit uncertainties.
-
-Conflict paths are relative to the Chromium source root. A clean `brave-core`
-status does not describe the separate Chromium and dependency repositories.
-They never excuse staged content threatened by a reset. A successful sync records
-new output and retains matching prior output evidence. It does not adopt unchanged
-local edits that the operation preserved. Older records without a successful-sync
-origin remain on disk but cannot excuse local work.
-
-### Approving overwrites
-
-When sync finds local file changes it may overwrite, an interactive terminal lists
-each file once with its reasons and asks:
-
-```text
-Overwrite these changes? [y/N] (d: show diffs):
-```
-
-Enter `d` to see the working and staged diffs, `y` to approve, or anything else
-to stop. An empty answer or end of input stops without changing files. The prompt
-uses stderr. JSON output and commands without an interactive terminal never prompt;
-they stop with the file list unless you explicitly use:
-
-```sh
-bdev sync --checkout main --overwrite-local-changes
-```
-
-Review `bdev sync --plan` first when using the flag. Approval covers only the
-listed files for this invocation. `sync-build` and `sync-build-run` accept the
-same option for their sync phase. `--plan` never backs up or overwrites files,
-even with the option.
-
-Before removing changes, sync checks the scope, file bytes, modes, HEAD and staged
-entries again. If they changed during review, it stops for a new review. It saves
-the approved working files, binary-capable Git diffs, staged diffs and a manifest
-under `.bdev/backups/<operation-id>/sync-overwrite/`, outside Core. The result and
-operation record include the backup path, which is also printed before overwriting.
-Backups remain after success, failure or interruption and are not pruned with
-operation records. They hold original file content, which may include secrets;
-keep them private.
-
-Sync restores approved tracked files and staged entries to HEAD and removes
-approved untracked files, then repeats its preservation checks before running
-Core's sync. Other changes stay in place. This can remove Android support edits;
-the Android build must prepare support again afterwards. It does not grant a
-permanent exception for these files or record them as generated output.
-
-To recover, consult `manifest.json` for repository paths and numbered backup
-directories. Each `worktree/` directory contains the original existing files and
-modes; missing files are recorded in the manifest. `staged.patch` can restore the
-saved staged changes with `git apply --cached` against the recorded HEAD. Review
-current files before restoring; recovery is manual and never runs automatically.
-
-Unknown write scope, local commits, merge conflicts, and symlink or non-file
-conflicts still block sync, even with overwrite approval. Dependency deletion
-options with unknown scope remain blocked.
-
-`--adopt-local-changes` remains disabled. It saves no approval baseline and starts
-no sync. No separate approval mechanism is needed to preserve work outside the
-selected operation's write set. Plans show the inspected scope and conflicts;
-execution checks them again with the approved environment. The operation record
-and result include the selected reset repositories, other write scopes, and
-incomplete evidence. A partial sync remains as Core left it.
+A nonzero child exit stops the operation, including any later build or launch.
+Scaffold records the child exit status and leaves partial changes as Core left
+them. Successful results include the dispatched command and the Core and Chromium
+revisions before and after sync.
 
 Sync writes inside the checkout are the requested browser operation; scaffold
 setup remains external and optional. Core's supported standalone workflow stays
@@ -156,14 +55,6 @@ Android additions: `bdev sync android` requires nothing beyond the existing
 and its refresh are described in [Android](android.md#android-on-mac-support-repository);
 a refresh that would overwrite local Chromium edits stops with `PREPARATION_CONFLICT`
 like patch preparation does.
-
-### Validated sync workflow
-
-A macOS arm64 source update has completed on an existing checkout with retained
-mobile targets, normal Core patches and hooks, and `DEPOT_TOOLS_UPDATE=0`.
-Core stayed clean, unrelated untracked dependency files retained their exact
-bytes, and the next ordinary sync plan required no Chromium reset. This does not
-validate lean sync, every forwarded option, or every upstream source revision.
 
 ## Patch preparation
 

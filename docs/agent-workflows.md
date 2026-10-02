@@ -21,11 +21,12 @@ the scope, or human approval is expressly required.
 | Deferred features, changed scope, weaker safeguards | Needs a separate user decision |
 | Pushing or publishing | Needs explicit authorization; permission to commit locally does not include it |
 
-`--adopt-local-changes` is disabled. Blanket approval cannot identify which local
-bytes a sync may discard; the command saves no baseline and starts no sync.
-The sync guard permits local work outside the selected operation's reset and
-write scopes. A successful sync records new generated output, without adopting
-unchanged developer work that it preserved. Read-only plans need no sync authority.
+Sync runs Core's package script with its normal source and dependency effects.
+Authorization to sync covers that operation, including the effects of forwarded
+options. Scaffold adds no local-work preservation checks or overwrite prompt to
+sync. Inspect and save wanted work before requesting source changes. Read-only
+plans need no sync authority and do not establish which local files Core will
+preserve.
 
 A suggested repair in a result, or a passing `doctor`, grants nothing. `requires_user_action` says only whether a step needs a person; `false`
 does not mean it is permitted. For an unresolved checkout, list candidates with

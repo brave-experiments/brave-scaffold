@@ -109,7 +109,8 @@ refresh warns, and script, compatibility, or write-inventory errors block readin
 A differing resource with no matching saved copy record has an unknown origin;
 that difference alone does not prove local edits. Doctor shows "Android support files";
 JSON keeps the check name `android-support-currency`. Doctor never refreshes support.
-Sync retains its separate overwrite approval process.
+Sync runs Core's own command and can overwrite local changes; see
+[sync behavior](source-and-cleanup.md#sync-sources).
 
 After execution, a tracked change outside the declared scope is an adapter failure:
 the build stops, records nothing as prepared, and leaves the files for review.

@@ -363,7 +363,7 @@ def build_plan_steps(ctx, identity, effective, subcommand="build", script_args=(
 
     last = "readiness"
     if sync_args is not None:
-        steps.append(sync_module.plan_step(ctx, identity, sync_args, toolchain, ["readiness"]))
+        steps.append(sync_module.plan_step(identity, sync_args, toolchain, ["readiness"]))
         steps.append(step_module.Step(
             "readiness-after-sync", "Check tools and build readiness again once the sync has changed the checkout.",
             "unresolved", needs=["sync"], on_failure="The build does not start.",
@@ -433,8 +433,6 @@ def plan_restart_after_build(ctx, effective, is_android, device_choice):
 
 
 def do_build(ctx, command, sync_first=False, run_after=False):
-    if sync_first:
-        sync_module.reject_blanket_adoption(ctx)
     parsed = ctx.parsed
     target_token = parsed.positionals[0] if parsed.positionals else None
     identity, effective = select_build(ctx, target_token, parsed.forwarded)
@@ -765,7 +763,6 @@ def cmd_run(ctx):
 
 
 def cmd_sync(ctx):
-    sync_module.reject_blanket_adoption(ctx)
     parsed = ctx.parsed
     tokens = [item.strip() for item in (parsed.positionals[0].split(",") if parsed.positionals else [])]
     targets = []
@@ -782,12 +779,11 @@ def cmd_sync(ctx):
                             "Mobile sync targets build --target_os from the checkout's existing targets; "
                             "remove --target_os from the forwarded arguments.")
     identity = ctx.identity()
-    sync_module.reject_deletion_options(identity, parsed.forwarded)
     mobile = "android" if "android" in targets else "mac"
     if parsed.get("plan"):
         arguments = sync_module.sync_arguments(ctx, mobile, parsed.forwarded, identity)
         toolchain, steps = common_plan_steps(ctx, identity, "mac", "sync", False)
-        steps.append(sync_module.plan_step(ctx, identity, arguments, toolchain, ["readiness"]))
+        steps.append(sync_module.plan_step(identity, arguments, toolchain, ["readiness"]))
         result = Result(command="sync")
         result.data = {"plan": {"argv_arguments": arguments, "cwd": str(identity.core),
                                 "writes": ["source tree and dependencies"], "steps": [step.to_dict() for step in steps]}}

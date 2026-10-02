@@ -23,7 +23,7 @@ from ..common.checks import BLOCKER, NOT_CHECKED, WARNING, display_label, readin
 from ..common.redaction import redact_argv
 
 NO_CLEANUP = "None; the scaffold does not roll back or clean up after a failure."
-TEXT_WRITES = 5  # the readable plan names this many written files; the structured plan lists every one
+TEXT_WRITES = 5  # maximum affected paths shown inline; the structured plan keeps every entry
 
 
 @dataclass
@@ -130,22 +130,14 @@ def patches_step(identity, plan, argv, after_sync=False):
                 on_failure="Stops before the build; files it had already patched stay patched.", cleanup=NO_CLEANUP)
 
 
-def sync_step(identity, arguments, argv, needs=(), model=None, conflicts=()):
-    from . import sync_scope
-    repositories = [str(path) for path in (model.resets if model is not None
-                    else sync_scope.sync_repositories(identity).repositories)]
-    outputs = sorted(map(str, model.writes)) if model is not None else []
-    detail = "arguments: " + " ".join(redact_argv(arguments))
-    if model is not None:
-        detail += "; Chromium sync: " + model.chromium
-    if conflicts:
-        detail += "; " + "; ".join(item["path"] + ": " + item["reason"] for item in conflicts[:5])
-    return Step("sync", "Sync sources and dependencies with Core's own sync command.", "blocked" if conflicts else "planned",
-                reads=[str(identity.workspace / ".gclient")],
-                writes=[str(identity.workspace / ".gclient"), *repositories, *outputs],
+def sync_step(identity, arguments, argv, needs=()):
+    return Step("sync", "Run Core's sync command; Core controls source updates, patches, and hooks.", "planned",
+                reads=[str(identity.core / "package.json"), str(identity.workspace / ".gclient")],
+                writes=[str(identity.workspace / ".gclient"), str(identity.src)],
                 argv=argv, cwd=str(identity.core), needs=list(needs),
                 on_failure="Stops before any later phase; a partial sync stays as it is.", cleanup=NO_CLEANUP,
-                detail=detail)
+                detail="arguments: " + " ".join(redact_argv(arguments)) +
+                       "; Core determines the affected files and may overwrite local changes.")
 
 
 def build_step(identity, effective, subcommand, arguments, argv, needs, conditional_arguments=()):
