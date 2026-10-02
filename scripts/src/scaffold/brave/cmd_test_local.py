@@ -58,6 +58,7 @@ def render_summary(discovery, phase_results):
             if not passed:
                 detail += "; phase failed"
         lines.append("  %s %-7s %-*s  %s" % (marker, phase.target, width, phase.suite, detail))
+        lines.append("     --filter=%s" % phase.filter)
     for phase in discovery.phases[len(phase_results):]:
         lines.append("     %-7s %-*s  not run" % (phase.target, width, phase.suite))
     if len(phase_results) == len(discovery.phases) and all(

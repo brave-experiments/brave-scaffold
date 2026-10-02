@@ -83,6 +83,11 @@ class TestLocalTests(AndroidTestsTestCase):
             self.assertIn("✅", row)
             self.assertIn("%d run, %d passed, 0 failed, 1 skipped" % (count, count), row)
         self.assertIn("✅ All run tests passed.", summary)
+        rows = summary.splitlines()
+        for suite, expected_filter in (("brave_junit_tests", "org.example.app.BarUnitTest.*"),
+                                       ("brave_java_unit_tests", "FooTest.*")):
+            index = next(i for i, row in enumerate(rows) if suite in row)
+            self.assertEqual(rows[index + 1], "     --filter=" + expected_filter)
         notice = "Not run (Android native tests are not available through bdev):"
         for output in (result.stderr, summary):
             self.assertIn(notice, output)
