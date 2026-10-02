@@ -3,6 +3,9 @@
 Skill source lives directly in `.agents/skills/`. `.claude/skills` links to that
 directory so both clients use the same files.
 
+- [bdev-new-full-build-context](../.agents/skills/bdev-new-full-build-context/SKILL.md):
+  Build Brave for macOS or Android and run tests changed by the selected branch or
+  working tree, including guarded Android test preparation.
 - [simplify-code](../.agents/skills/simplify-code/SKILL.md): Find duplicated logic and
   remove needless code and structure while preserving behavior and making the
   result easier to understand.

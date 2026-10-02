@@ -1,0 +1,8 @@
+# Copyright (c) 2026 The Brave Authors. All rights reserved.
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this file,
+# You can obtain one at https://mozilla.org/MPL/2.0/.
+interface:
+  display_name: "Bdev New Full Build Context"
+  short_description: "Build Brave and run branch-modified tests"
+  default_prompt: "Use $bdev-new-full-build-context to build the relevant Brave platform and run applicable tests from my current branch."
