@@ -5,6 +5,7 @@
 """`bdev test-local`: modified tests become suite phases that run through the existing test paths."""
 
 import subprocess
+from pathlib import Path
 
 from tests.integration.test_android_tests import BRANCH, DEVICES_TWO, ONE_DEVICE, AndroidTestsTestCase
 
@@ -60,6 +61,50 @@ class TestLocalTests(AndroidTestsTestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.adb_calls(), [])
 
+    def summary_run(self, **env):
+        return self.sandbox.bdev("--config", self.config, "--checkout", "main", "test-local", "android",
+                                 "--base", "base-ref", env=self.env(FAKE_ADB_DEVICES=ONE_DEVICE, **env))
+
+    def test_final_summary_counts_each_suite_and_repeats_unmapped_files(self):
+        self.on_test_branch()
+        self.add_tests("junit", "java", "native")
+        hook = Path(self.hook)
+        hook.write_text(hook.read_text().replace(
+            "    if targets and mode in tests:",
+            "    if suite == 'brave_java_unit_tests':\n"
+            "        del tests['pass']['a.B#two']\n"
+            "    if targets and mode in tests:"))
+        result = self.summary_run()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        summary = result.stdout.split("Test summary:", 1)[1]
+        for suite, count in (("brave_junit_tests", 2), ("brave_java_unit_tests", 1)):
+            row = next(line for line in summary.splitlines() if suite in line)
+            self.assertIn("✅", row)
+            self.assertIn("%d run, %d passed, 0 failed, 1 skipped" % (count, count), row)
+        self.assertIn("✅ All run tests passed.", summary)
+        notice = "Not run (Android native tests are not available through bdev):"
+        for output in (result.stderr, summary):
+            self.assertIn(notice, output)
+            self.assertIn("  browser/extensions/android/n_unittest.cc", output)
+
+    def test_unverified_counts_do_not_claim_all_tests_passed(self):
+        self.on_test_branch()
+        self.add_tests("junit")
+        result = self.summary_run(FAKE_RESULTS="none")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("passed; counts unavailable", result.stdout)
+        self.assertNotIn("✅", result.stdout)
+
+    def test_failed_test_counts_appear_in_the_final_summary(self):
+        self.on_test_branch()
+        self.add_tests("junit", "native")
+        result, document = self.local(FAKE_RESULTS="fail")
+        self.assertEqual(result.returncode, 5, result.stderr)
+        summary = document["error"]["message"].split("Test summary:", 1)[1]
+        self.assertIn("2 run, 1 passed, 1 failed, 0 skipped; phase failed", summary)
+        self.assertNotIn("✅", summary)
+        self.assertIn("browser/extensions/android/n_unittest.cc", summary)
+
     def test_a_failing_phase_does_not_stop_the_others_and_fails_the_command(self):
         self.on_test_branch()
         self.add_tests("junit", "unit")
@@ -69,6 +114,7 @@ class TestLocalTests(AndroidTestsTestCase):
         self.assertEqual([(p["suite"], p["status"]) for p in phases],
                          [("brave_junit_tests", "passed"), ("brave_unit_tests", "failed")])
         self.assertEqual(phases[1]["child_exit_code"], 2)
+        self.assertIn("failed; counts unavailable", document["error"]["message"])
 
     def test_android_problems_stop_everything_before_any_build(self):
         self.setup_support(ref="v155")
@@ -76,6 +122,7 @@ class TestLocalTests(AndroidTestsTestCase):
         result, document = self.local()
         self.assertEqual(document["error"]["code"], "DEPENDENCY_INCOMPATIBLE")
         self.assertEqual(self.runner_calls(), [])
+
         self.on_test_branch_again = subprocess.run(["git", "-C", str(self.wc()), "switch", "-q", BRANCH], check=True)
         result, document = self.local(devices=DEVICES_TWO)
         self.assertEqual(document["error"]["code"], "DEVICE_AMBIGUOUS")
@@ -122,6 +169,11 @@ class TestLocalTests(AndroidTestsTestCase):
         result, document = self.local()
         self.assertEqual((result.returncode, document["error"]["code"]), (4, "PREPARATION_CONFLICT"))
         self.assertEqual(document["error"]["details"]["not_run"], ["brave_junit_tests", "brave_unit_tests"])
+        summary = document["error"]["message"].split("Test summary:", 1)[1]
+        self.assertIn("brave_junit_tests", summary)
+        self.assertIn("brave_unit_tests", summary)
+        self.assertEqual(summary.count("not run"), 2)
+        self.assertNotIn("✅", summary)
         self.assertEqual(self.runner_calls(), [])
 
     def test_the_failure_message_names_each_failed_phase(self):

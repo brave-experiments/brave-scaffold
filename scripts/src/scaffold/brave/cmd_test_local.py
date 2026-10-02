@@ -27,11 +27,45 @@ def phase_context(ctx, phase, device):
 def failure_record(phase, error):
     return {"target": phase.target, "suite": phase.suite, "filter": phase.filter, "status": "failed",
             "error": {"code": error.code, "message": error.message}, "child_exit_code": error.child_exit_code,
-            "operation_id": error.operation_id}
+            "operation_id": error.operation_id, "results": error.details.get("results")}
 
 
 SCOPE_WORDS = {"both": "committed and working-tree changes", "committed": "committed changes",
                "worktree": "working-tree changes"}
+
+
+def render_not_run(discovery):
+    lines = []
+    reasons = {}
+    for path, reason in discovery.unmapped:
+        reasons.setdefault(reason, []).append(path)
+    for reason, paths in reasons.items():
+        lines += ["", "Not run (%s):" % reason] + ["  " + path for path in paths]
+    return lines
+
+
+def render_summary(discovery, phase_results):
+    lines = ["Test summary:"]
+    width = max(len(p.suite) for p in discovery.phases)
+    for phase, outcome in zip(discovery.phases, phase_results):
+        counts = outcome.get("results")
+        passed = outcome["status"] == "passed"
+        marker = "✅" if passed and counts and counts["ran"] > 0 and counts["failed"] == 0 else "  "
+        detail = "%s; counts unavailable" % outcome["status"]
+        if counts:
+            detail = "%d run, %d passed, %d failed, %d skipped" % (
+                counts["ran"], counts["passed"], counts["failed"], counts["skipped"])
+            if not passed:
+                detail += "; phase failed"
+        lines.append("  %s %-7s %-*s  %s" % (marker, phase.target, width, phase.suite, detail))
+    for phase in discovery.phases[len(phase_results):]:
+        lines.append("     %-7s %-*s  not run" % (phase.target, width, phase.suite))
+    if len(phase_results) == len(discovery.phases) and all(
+            p["status"] == "passed" and p.get("results") and p["results"]["ran"] > 0
+            and p["results"]["failed"] == 0 for p in phase_results):
+        lines.append("✅ All run tests passed.")
+    lines += render_not_run(discovery)
+    return "\n".join(lines)
 
 
 def render_discovery(discovery):
@@ -42,12 +76,7 @@ def render_discovery(discovery):
         width = max(len(p.suite) for p in discovery.phases)
         lines += ["", "Will run:"] + ["  %d. %-7s %-*s  --filter=%s" % (n, p.target, width, p.suite, p.filter)
                                       for n, p in enumerate(discovery.phases, 1)]
-    if discovery.unmapped:
-        reasons = {}
-        for path, reason in discovery.unmapped:
-            reasons.setdefault(reason, []).append(path)
-        for reason, paths in reasons.items():
-            lines += ["", "Not run (%s):" % reason] + ["  " + path for path in paths]
+    lines += render_not_run(discovery)
     return "\n".join(lines) + "\n"
 
 
@@ -87,6 +116,7 @@ def cmd_test_local(ctx):
             if error.code not in TEST_OUTCOME_CODES:
                 error.details.setdefault("test_phases", phase_results)
                 error.details.setdefault("not_run", [p.suite for p in discovery.phases[number - 1:]])
+                error.message += "\n\n" + render_summary(discovery, phase_results)
                 raise
             failures.append(failure_record(phase, error))
             phase_results.append(failures[-1])
@@ -100,10 +130,11 @@ def cmd_test_local(ctx):
         raise ScaffoldError(
             "CHILD_FAILED", "%d of %d test phase(s) failed:\n%s" % (
                 len(failures), len(phase_results), "\n".join(
-                    "  %s %s: %s" % (f["target"], f["suite"], f["error"]["message"]) for f in failures)),
+                    "  %s %s: %s" % (f["target"], f["suite"], f["error"]["message"]) for f in failures))
+            + "\n\n" + render_summary(discovery, phase_results),
             details={"phases": phase_results, "discovery": discovery.to_dict()},
             child_exit_code=next((f["child_exit_code"] for f in failures if f["child_exit_code"]), None))
     result.child_exit_code = 0
-    result.text = "All %d test phase(s) passed: %s." % (
-        len(phase_results), ", ".join("%s %s" % (p["target"], p["suite"]) for p in phase_results))
+    result.text = render_summary(discovery, phase_results)
+    ctx.log.save(result.text + "\n")
     return result

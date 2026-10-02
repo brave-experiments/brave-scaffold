@@ -330,9 +330,15 @@ files, or both (the default). Deleted tests are ignored.
 | desktop WebUI `.ts`/`.js` under `chrome/test/data/webui` | macOS `brave_browser_tests` | the C++ harness that registers the changed Mocha suite |
 
 A `mac` or `android` target runs only that platform's suites. Phases run quick host suites first (JUnit, device Java, unit, browser) and all run even
-if one fails; the command then fails and lists each phase's outcome. Android
+if one has a test failure; setup errors stop the remaining phases. The command
+fails and lists each phase's outcome. Android
 requirements are checked, and the device chosen, before the first build. The filters are
 logged for every phase. Files the command cannot map, including C++ tests under an
-`android/` or `ios/` directory, are listed once under "Not run" with the reason, and in `data.discovery.unmapped`. The
-command never guesses a filter. `--plan` prints the phases and filters without running or
+`android/` or `ios/` directory, are listed under "Not run" with the reason, and in `data.discovery.unmapped`. The
+command never guesses a filter. The final summary shows each suite's test counts
+when available (Android suites use the runner's JSON results), or says that counts
+are unavailable. ✅ marks a passing phase with verified counts; the summary says
+"✅ All run tests passed" only when every phase has verified passing tests. Skipped
+tests have a separate count. The summary repeats the "Not run" files and reasons.
+`--plan` prints the phases and filters without running or
 changing anything. Android phases follow the rules in [Android tests](android.md#tests).
