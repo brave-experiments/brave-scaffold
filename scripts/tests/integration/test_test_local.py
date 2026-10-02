@@ -46,9 +46,12 @@ class TestLocalTests(AndroidTestsTestCase):
         device_run = self.runner_calls()[1]["argv"]
         self.assertEqual(device_run[device_run.index("--device") + 1], "emulator-5554")
         self.assertEqual([p["status"] for p in document["data"]["phases"]], ["passed"] * 3)
-        self.assertEqual([w["code"] for w in document["warnings"]], ["TEST_UNMAPPED"])
+        self.assertEqual([item["path"] for item in document["data"]["discovery"]["unmapped"]],
+                         ["browser/extensions/android/n_unittest.cc"])
+        self.assertEqual(result.stderr.count("browser/extensions/android/n_unittest.cc"), 1, "listed once, not repeated")
+        self.assertIn("Not run (Android native tests are not available through bdev):", result.stderr)
         self.assertIn("--filter=FooTest.*", result.stderr, "the filters run are in the log")
-        self.assertIn("Test phase 2/3", result.stderr)
+        self.assertIn("Phase 2/3: android brave_java_unit_tests", result.stderr)
 
     def test_a_host_only_branch_needs_no_device(self):
         self.on_test_branch()

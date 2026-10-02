@@ -26,6 +26,27 @@ def failure_record(phase, error):
             "operation_id": error.operation_id}
 
 
+SCOPE_WORDS = {"both": "committed and working-tree changes", "committed": "committed changes",
+               "worktree": "working-tree changes"}
+
+
+def render_discovery(discovery):
+    """What was found and what will run, as one aligned block (also saved to the log)."""
+    lines = ["Found %d modified test file(s) among %d changed files, against %s (%s)" % (
+        len(discovery.test_files), discovery.considered, discovery.base, SCOPE_WORDS[discovery.scope])]
+    if discovery.phases:
+        width = max(len(p.suite) for p in discovery.phases)
+        lines += ["", "Will run:"] + ["  %d. %-7s %-*s  --filter=%s" % (n, p.target, width, p.suite, p.filter)
+                                      for n, p in enumerate(discovery.phases, 1)]
+    if discovery.unmapped:
+        reasons = {}
+        for path, reason in discovery.unmapped:
+            reasons.setdefault(reason, []).append(path)
+        for reason, paths in reasons.items():
+            lines += ["", "Not run (%s):" % reason] + ["  " + path for path in paths]
+    return "\n".join(lines) + "\n"
+
+
 def cmd_test_local(ctx):
     parsed = ctx.parsed
     identity = ctx.identity()
@@ -37,23 +58,15 @@ def cmd_test_local(ctx):
             raise ScaffoldError("INVALID_INPUT", "%r is not a test-local target; use mac or android." % parsed.positionals[0],
                                 details={"example": "bdev test-local android"})
         discovery.phases = [phase for phase in discovery.phases if phase.target == target]
-    ctx.log.phase("Modified tests against %s (%s): %d of %d changed files" % (
-        discovery.base, discovery.scope, len(discovery.test_files), discovery.considered))
-    for phase in discovery.phases:
-        ctx.log.phase("  %s %s --filter=%s" % (phase.target, phase.suite, phase.filter))
-    for path, reason in discovery.unmapped:
-        ctx.log.phase("  not run: %s (%s)" % (path, reason))
+    ctx.log.phase(render_discovery(discovery))
     result = Result(command="test-local")
     result.data = {"discovery": discovery.to_dict(), "phases": []}
-    for path, reason in discovery.unmapped:
-        result.add_warning("TEST_UNMAPPED", "%s: %s" % (path, reason))
     if not discovery.phases:
         result.text = "No modified %stests could be mapped to a suite; nothing was run." % (
             parsed.positionals[0] + " " if parsed.positionals else "")
         return result
     if parsed.get("plan"):
-        result.text = "Would run (nothing was run):\n" + "\n".join(
-            "  bdev test %s %s --filter=%s" % (p.target, p.suite, p.filter) for p in discovery.phases)
+        result.text = "Plan only: nothing was run."
         return result
     device = None
     if any(p.target == "android" for p in discovery.phases):
@@ -63,8 +76,7 @@ def cmd_test_local(ctx):
         device = android.preflight_device(execution.context(ctx))[1]["id"]
     phase_results, failures = [], []
     for number, phase in enumerate(discovery.phases, 1):
-        ctx.log.phase("Test phase %d/%d: %s %s --filter=%s" % (number, len(discovery.phases), phase.target, phase.suite,
-                                                                phase.filter))
+        ctx.log.phase("Phase %d/%d: %s %s" % (number, len(discovery.phases), phase.target, phase.suite))
         try:
             done = cmd_build.cmd_test(phase_context(ctx, phase, device))
         except ScaffoldError as error:

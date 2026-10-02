@@ -333,6 +333,6 @@ A `mac` or `android` target runs only that platform's suites. Phases run quick h
 if one fails; the command then fails and lists each phase's outcome. Android
 requirements are checked, and the device chosen, before the first build. The filters are
 logged for every phase. Files the command cannot map, including C++ tests under an
-`android/` or `ios/` directory, are listed as `TEST_UNMAPPED` warnings and not run. The
+`android/` or `ios/` directory, are listed once under "Not run" with the reason, and in `data.discovery.unmapped`. The
 command never guesses a filter. `--plan` prints the phases and filters without running or
 changing anything. Android phases follow the rules in [Android tests](android.md#tests).
