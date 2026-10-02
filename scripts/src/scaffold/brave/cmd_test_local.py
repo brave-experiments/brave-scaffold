@@ -14,6 +14,10 @@ from ..common.results import Result, ScaffoldError
 from . import android, android_tests, branch_tests, cmd_build, execution as execution_module
 
 
+# Outcomes of running tests. Any other error is a setup problem that every later phase would hit too.
+TEST_OUTCOME_CODES = ("CHILD_FAILED", "TEST_FAILED", "NO_TESTS_RAN", "ARTIFACT_MISSING")
+
+
 def phase_context(ctx, phase, device):
     values = {**ctx.parsed.values, "suite": phase.suite, "target": phase.target, "filter": phase.filter,
               "base": None, "scope": None, "device": device if phase.suite == "brave_java_unit_tests" else None}
@@ -80,6 +84,10 @@ def cmd_test_local(ctx):
         try:
             done = cmd_build.cmd_test(phase_context(ctx, phase, device))
         except ScaffoldError as error:
+            if error.code not in TEST_OUTCOME_CODES:
+                error.details.setdefault("test_phases", phase_results)
+                error.details.setdefault("not_run", [p.suite for p in discovery.phases[number - 1:]])
+                raise
             failures.append(failure_record(phase, error))
             phase_results.append(failures[-1])
             ctx.log.phase("Phase failed: %s: %s" % (error.code, error.message))
@@ -90,8 +98,9 @@ def cmd_test_local(ctx):
     result.data["phases"] = phase_results
     if failures:
         raise ScaffoldError(
-            "CHILD_FAILED", "%d of %d test phase(s) failed: %s." % (
-                len(failures), len(phase_results), ", ".join("%s %s" % (f["target"], f["suite"]) for f in failures)),
+            "CHILD_FAILED", "%d of %d test phase(s) failed:\n%s" % (
+                len(failures), len(phase_results), "\n".join(
+                    "  %s %s: %s" % (f["target"], f["suite"], f["error"]["message"]) for f in failures)),
             details={"phases": phase_results, "discovery": discovery.to_dict()},
             child_exit_code=next((f["child_exit_code"] for f in failures if f["child_exit_code"]), None))
     result.child_exit_code = 0

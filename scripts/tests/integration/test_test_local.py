@@ -113,3 +113,19 @@ class TestLocalTests(AndroidTestsTestCase):
         self.assertEqual(self.runner_calls(), [])
         result, document = self.local("ios")
         self.assertEqual((result.returncode, document["error"]["code"]), (2, "INVALID_INPUT"))
+
+    def test_a_setup_error_stops_the_remaining_phases_and_is_reported_as_itself(self):
+        self.on_test_branch()
+        self.add_tests("junit", "unit")
+        self.overlay_file.parent.mkdir(parents=True, exist_ok=True)
+        self.overlay_file.write_text("local work\n")
+        result, document = self.local()
+        self.assertEqual((result.returncode, document["error"]["code"]), (4, "PREPARATION_CONFLICT"))
+        self.assertEqual(document["error"]["details"]["not_run"], ["brave_junit_tests", "brave_unit_tests"])
+        self.assertEqual(self.runner_calls(), [])
+
+    def test_the_failure_message_names_each_failed_phase(self):
+        self.on_test_branch()
+        self.add_tests("junit", "unit")
+        result, document = self.local(FAKE_MAC_EXIT="2")
+        self.assertIn("1 of 2 test phase(s) failed:\n  mac brave_unit_tests:", document["error"]["message"])
