@@ -45,7 +45,7 @@ def render_not_run(discovery):
 
 
 def render_summary(discovery, phase_results):
-    lines = ["Test summary:"]
+    lines = ["", "--------------------------------", "Test summary:"]
     width = max(len(p.suite) for p in discovery.phases)
     for phase, outcome in zip(discovery.phases, phase_results):
         counts = outcome.get("results")

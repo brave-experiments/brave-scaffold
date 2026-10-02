@@ -76,6 +76,7 @@ class TestLocalTests(AndroidTestsTestCase):
             "    if targets and mode in tests:"))
         result = self.summary_run()
         self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("\n--------------------------------\nTest summary:\n", result.stdout)
         summary = result.stdout.split("Test summary:", 1)[1]
         for suite, count in (("brave_junit_tests", 2), ("brave_java_unit_tests", 1)):
             row = next(line for line in summary.splitlines() if suite in line)
