@@ -315,7 +315,7 @@ after real validation on a checkout; until then it is reported `unverified`.
 
 ## test-local
 
-`bdev test-local [--base REF] [--scope both|committed|worktree] [--device ID] [--offline] [--plan]`
+`bdev test-local [mac|android] [--base REF] [--scope both|committed|worktree] [--device ID] [--offline] [--plan]`
 compares the selected checkout's Core with `--base` (default `origin/master`), finds the
 test files it modifies, builds the filters from those files, and runs each suite with
 `bdev test`. `--scope` chooses committed branch changes, staged, unstaged, and untracked
@@ -329,7 +329,7 @@ files, or both (the default). Deleted tests are ignored.
 | `*_browsertest.cc`, `*_uitest.cc` | macOS `brave_browser_tests` | `Fixture.*` for each fixture in the file |
 | desktop WebUI `.ts`/`.js` under `chrome/test/data/webui` | macOS `brave_browser_tests` | the C++ harness that registers the changed Mocha suite |
 
-Phases run quick host suites first (JUnit, device Java, unit, browser) and all run even
+A `mac` or `android` target runs only that platform's suites. Phases run quick host suites first (JUnit, device Java, unit, browser) and all run even
 if one fails; the command then fails and lists each phase's outcome. Android
 requirements are checked, and the device chosen, before the first build. The filters are
 logged for every phase. Files the command cannot map, including C++ tests under an

@@ -92,3 +92,21 @@ class TestLocalTests(AndroidTestsTestCase):
         result, document = self.local()
         self.assertEqual((result.returncode, document["data"]["phases"]), (0, []))
         self.assertEqual(self.runner_calls(), [])
+
+    def test_a_target_limits_the_run_to_that_platforms_suites(self):
+        self.on_test_branch()
+        self.add_tests("junit", "unit")
+        result, document = self.local("android", devices="")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual([p["suite"] for p in document["data"]["phases"]], ["brave_junit_tests"])
+        result, document = self.local("mac")
+        self.assertEqual([p["suite"] for p in document["data"]["phases"]], ["brave_unit_tests"])
+        self.assertEqual(len(self.runner_calls()), 2)
+
+    def test_a_target_without_matching_tests_is_a_no_op_and_an_unknown_target_is_refused(self):
+        self.add_tests("unit")
+        result, document = self.local("android")
+        self.assertEqual((result.returncode, document["data"]["phases"]), (0, []))
+        self.assertEqual(self.runner_calls(), [])
+        result, document = self.local("ios")
+        self.assertEqual((result.returncode, document["error"]["code"]), (2, "INVALID_INPUT"))

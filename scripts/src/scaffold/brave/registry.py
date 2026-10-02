@@ -142,7 +142,7 @@ def build_registry():
                               "bdev test android brave_java_unit_tests --filter='BraveAppearancePreferencesTest.*' "
                               "--device=emulator-5554")),
         CommandSpec("test-local", "Run the tests this branch or working tree modifies, one suite after another.",
-                    cmd_test_local.cmd_test_local, options=(BASE, SCOPE, CONFIGURATION, OFFLINE, DEVICE, PLAN),
+                    cmd_test_local.cmd_test_local, positionals=(TARGET,), options=(BASE, SCOPE, CONFIGURATION, OFFLINE, DEVICE, PLAN),
                     side_effects=BUILD_SIDE_EFFECTS.replace("Never cleans, installs, or launches anything.",
                                                             "Runs the tests, which may launch test browsers.")
                     + " Reads Git state only to choose tests. Android phases need the android-testing-prototype "
@@ -150,8 +150,8 @@ def build_registry():
                     notes="Finds modified Android javatests and junit tests, C++ unit and browser tests, and desktop "
                           "WebUI tests; builds the filters from the files; runs each suite with 'bdev test'. Phases "
                           "run quick host suites first and all run even if one fails. Files it cannot map are listed "
-                          "and skipped. The filters run are in the log. --plan lists them without running.",
-                    examples=("bdev test-local", "bdev test-local --device=emulator-5554", "bdev test-local --scope worktree")),
+                          "and skipped. The filters run are in the log. --plan lists them without running. A target (mac or android) limits the run to that platform's suites.",
+                    examples=("bdev test-local", "bdev test-local android --device=emulator-5554", "bdev test-local mac --scope worktree")),
         CommandSpec("run", "Restart the browser with an existing output; never builds.", cmd_build.cmd_run,
                     positionals=(TARGET,), options=(CONFIGURATION, ARTIFACT, PLAN, DEVICE),
                     side_effects="macOS: quits any running instance of the same application (from any checkout), "

@@ -9,6 +9,7 @@ from __future__ import annotations
 import dataclasses
 
 from ..common.cli import Parsed
+from ..common.platforms import normalize_target
 from ..common.results import Result, ScaffoldError
 from . import android, android_tests, branch_tests, cmd_build, execution as execution_module
 
@@ -30,6 +31,12 @@ def cmd_test_local(ctx):
     identity = ctx.identity()
     discovery = branch_tests.discover(identity.core, parsed.get("base") or branch_tests.DEFAULT_BASE,
                                       parsed.get("scope") or "both", ctx.log)
+    if parsed.positionals:
+        target = normalize_target(parsed.positionals[0])
+        if target not in ("mac", "android"):
+            raise ScaffoldError("INVALID_INPUT", "%r is not a test-local target; use mac or android." % parsed.positionals[0],
+                                details={"example": "bdev test-local android"})
+        discovery.phases = [phase for phase in discovery.phases if phase.target == target]
     ctx.log.phase("Modified tests against %s (%s): %d of %d changed files" % (
         discovery.base, discovery.scope, len(discovery.test_files), discovery.considered))
     for phase in discovery.phases:
@@ -41,7 +48,8 @@ def cmd_test_local(ctx):
     for path, reason in discovery.unmapped:
         result.add_warning("TEST_UNMAPPED", "%s: %s" % (path, reason))
     if not discovery.phases:
-        result.text = "No modified tests could be mapped to a suite; nothing was run."
+        result.text = "No modified %stests could be mapped to a suite; nothing was run." % (
+            parsed.positionals[0] + " " if parsed.positionals else "")
         return result
     if parsed.get("plan"):
         result.text = "Would run (nothing was run):\n" + "\n".join(
