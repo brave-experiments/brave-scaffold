@@ -94,10 +94,17 @@
         "third_party/reclient_configs/src/configure_reclient.py": "8155ed0836890722d853617f2d227de33247f6cf85f554c7fac30a4a2ca7e266",
         "tools/chromium_src/generate_clang_format.py": [
           "b69592305e7af92665e4bbf6ae350189914c8245e781cc7f3dc5a307d9cb2560",
-          "01ed33b0ed7d083bd5b745cd2e09fdd8a80733b9ccb35cc61df5bbb604ad4605"
+          "01ed33b0ed7d083bd5b745cd2e09fdd8a80733b9ccb35cc61df5bbb604ad4605",
+          "2581572eaf4ca4d384e0e7a166a67348f3edf39f6f684f565b92a413ff73baf0"
         ],
-        "tools/cr/install_extra_deps.py": "3b0634ed32881f20075289e296fb090ad95edfd71874c3cd03924d82cbc39c48",
-        "tools/remove_stale_files.py": "701839eaa9454d6a019aad9e191540013c676548293aa317f5c16898fc7ae2ec"
+        "tools/cr/install_extra_deps.py": [
+          "3b0634ed32881f20075289e296fb090ad95edfd71874c3cd03924d82cbc39c48",
+          "b0465674acbb2e4ad978d573909bf7db4c74f96ebee8636e7fa308a9ba08751d"
+        ],
+        "tools/remove_stale_files.py": [
+          "701839eaa9454d6a019aad9e191540013c676548293aa317f5c16898fc7ae2ec",
+          "158ebcbd4dfe05cc2b028d1f21fe2ecd609edc60addb646c962bbcbe7d8aab93"
+        ]
       },
       "writes": [
         ".claude/skills",
@@ -334,7 +341,8 @@
       "098d01a97c6ed8c788cf5c56a6fadb32bf7658d2e1b5ac1d9f1899ef2917aa0b"
     ],
     "pnpm-workspace.yaml": [
-      "df5b4a2f3c18a58f2ab919d5d2f175ed1dc88885a790fb2d0e568cc85dd97a3d"
+      "df5b4a2f3c18a58f2ab919d5d2f175ed1dc88885a790fb2d0e568cc85dd97a3d",
+      "0388420e88309b325e3aa8eb86f152d0b9bc13c9e2eb63cfb5334427fca340c4"
     ],
     "vendor/depot_tools/gclient.py": [
       "ac100091d3d3c02993cbcad11d13cd1e25ae8adb4346746bf85886dd96094913"
