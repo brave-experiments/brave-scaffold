@@ -11,6 +11,7 @@ __pycache__/
 /brave-scaffold.toml
 /environments/
 /.bdev/
+/.cache/
 /.worktrees/
 /.claude/settings.local.json
 
