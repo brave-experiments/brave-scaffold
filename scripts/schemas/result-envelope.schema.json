@@ -746,6 +746,22 @@
           }
         }
       }
+    },
+    {
+      "if": {
+        "properties": {
+          "command": {
+            "const": "cd"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "$ref": "command-data.schema.json#/$defs/cd"
+          }
+        }
+      }
     }
   ]
 }

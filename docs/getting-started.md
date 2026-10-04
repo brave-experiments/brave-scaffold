@@ -36,6 +36,12 @@ the next steps. It changes nothing inside Brave Core.
 To type `bdev` and `bpm` without a path, put `scripts/` on your `PATH`. That is
 optional; every example works with `scripts/bdev`.
 
+To change directories with `bdev cd main` or `bdev cd alt-1`, also source
+`scripts/bdev-shell.sh` in your Bash or Zsh startup file. These commands enter
+the selected checkout's `src/brave` directory. A separate process cannot change
+your shell's directory, so running `scripts/bdev cd main` directly prints the
+path instead.
+
 ## Register a checkout
 
 ```sh

@@ -149,6 +149,15 @@ def _git_head(repo, log=None):
     return gitstate.head_description(repo, log)
 
 
+def cd(ctx):
+    selector = ctx.parsed.positionals[0]
+    if ctx.parsed.get("checkout") not in (None, selector):
+        raise ScaffoldError("SELECTOR_CONFLICT", "The checkout argument conflicts with --checkout.")
+    ctx.parsed.values["checkout"] = selector
+    identity = ctx.identity()
+    return Result(command="cd", data={"directory": str(identity.core)}, text=str(identity.core))
+
+
 def context(ctx):
     identity = ctx.identity(required=False, validate=False)
     config = ctx.config

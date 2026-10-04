@@ -44,6 +44,10 @@ GROUPS = {"checkout": ("add", "list"), "env": ("init", "export", "check"), "tool
 
 def build_registry():
     specs = [
+        CommandSpec("cd", "Print a checkout directory; the shell function changes directory.",
+                    cmd_setup.cd, positionals=(Positional("checkout", required=True, help="Checkout alias or path."),),
+                    examples=("bdev cd main", "bdev cd alt-1"),
+                    notes="Source scripts/bdev-shell.sh in Bash or Zsh to change the current shell directory."),
         CommandSpec("context", "Show the resolved checkout, environment mapping, configuration, and tool state.",
                     cmd_setup.context, examples=("bdev context", "bdev context --checkout main --json")),
         CommandSpec("capabilities", "List supported, limited, unverified, and unsupported combinations.",

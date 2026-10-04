@@ -1324,6 +1324,18 @@
           }
         }
       }
+    },
+    "cd": {
+      "type": "object",
+      "required": [
+        "directory"
+      ],
+      "properties": {
+        "directory": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": true
     }
   }
 }

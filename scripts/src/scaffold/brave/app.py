@@ -38,7 +38,7 @@ class Context:
             path = os.path.join(self.cwd, path)
         self.config = config_module.load_config(path, explicit=bool(explicit) and not may_create)
         self.log.verbosity = self.parsed.get("verbosity", self.config.verbosity)
-        if not self.log.path and self.command != "env export" and not self.parsed.get("plan"):
+        if not self.log.path and self.command not in ("env export", "cd") and not self.parsed.get("plan"):
             self.log.open(self.config.directory)
         return self.config
 

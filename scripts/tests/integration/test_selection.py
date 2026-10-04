@@ -6,11 +6,13 @@
 
 import os
 import shutil
+import shlex
 import stat
+import subprocess
 import unittest
 from pathlib import Path
 
-from tests.support import SandboxTest, write_executable
+from tests.support import SandboxTest, SCRIPTS, write_executable
 
 
 def context(sandbox, *args, cwd=None, env=None):
@@ -19,6 +21,39 @@ def context(sandbox, *args, cwd=None, env=None):
 
 
 class SelectionTests(SandboxTest):
+    def test_cd_prints_only_the_selected_path_and_rejects_unknown_alias(self):
+        main = self.sandbox.make_checkout("main")
+        other = self.sandbox.make_checkout("other")
+        self.sandbox.write_config([("main", main, None), ("alt-1", other, None)])
+        for alias, expected in [("main", main), ("alt-1", other)]:
+            result = self.sandbox.bdev("cd", alias, "--config", str(self.sandbox.config))
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stdout, str(expected) + "\n")
+            self.assertEqual(result.stderr, "")
+        result, document = self.sandbox.bdev_json("cd", "missing", "--config", str(self.sandbox.config))
+        self.assertEqual(result.returncode, 2)
+        self.assertEqual(document["error"]["code"], "CHECKOUT_NOT_FOUND")
+
+    def test_cd_shell_function_changes_directory_and_failure_keeps_cwd(self):
+        main = self.sandbox.make_checkout("main")
+        self.sandbox.write_config([("main", main, None)])
+        # Use the real launcher with an isolated config; no user shell startup files.
+        env = self.sandbox.env()
+        env["PATH"] = str(SCRIPTS) + os.pathsep + env["PATH"]
+        env["BDEV_TEST_CONFIG"] = str(self.sandbox.config)
+        script = 'source "$1"; bdev cd main || exit; pwd -P; if bdev cd missing >/dev/null 2>&1; then exit 1; fi; pwd -P'
+        # The launcher reads its default config; a tiny PATH wrapper selects this fixture.
+        wrapper = self.sandbox.root / "bin"
+        wrapper.mkdir(exist_ok=True)
+        write_executable(wrapper / "bdev", '#!/bin/sh\nexec ' + shlex.quote(str(SCRIPTS / "bdev")) + ' --config "$BDEV_TEST_CONFIG" "$@"\n')
+        env["PATH"] = str(wrapper) + os.pathsep + env["PATH"]
+        for shell in ("bash", "zsh"):
+            result = subprocess.run([shell, "-f", "-c", script, shell, str(SCRIPTS / "bdev-shell.sh")],
+                                    cwd=self.sandbox.root, env=env, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stdout.splitlines(), [str(main), str(main)])
+            self.assertEqual(result.stderr, "cd " + str(main) + "\n")
+
     def test_explicit_selector_beats_cwd_and_needs_no_alias(self):
         main = self.sandbox.make_checkout("main")
         other = self.sandbox.make_checkout("other")

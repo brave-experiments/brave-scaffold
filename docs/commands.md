@@ -32,7 +32,7 @@ look, and what the codes mean. Only delivered commands appear here.
   for a persistent default. CLI verbosity wins.
 - Each configured invocation saves a mode-0600 log under `.bdev/logs/` beside its
   configuration, at every verbosity level. `--plan` previews create no log files.
-  Pure `env export` also creates no log and remains silent on stderr. The final stderr line reports elapsed
+  Pure `env export` and checkout navigation with `cd` create no log and remain silent on stderr on success. The final stderr line reports elapsed
   time and the log path, including in JSON mode. The JSON envelope stays unchanged.
   Logs contain effective commands, directories, phase messages, probe exit status,
   and streamed child output. Captured probe payloads are excluded because they may
@@ -347,3 +347,11 @@ are unavailable. ✅ marks a passing phase with verified counts; the summary say
 tests have a separate count. The summary repeats the "Not run" files and reasons.
 `--plan` prints the phases and filters without running or
 changing anything. Android phases follow the rules in [Android tests](android.md#tests).
+
+## cd
+
+`bdev cd main` and `bdev cd alt-1` enter the selected checkout’s `src/brave`
+directory when `scripts/bdev-shell.sh` is sourced in Bash or Zsh and `scripts/`
+is on `PATH`. Other commands pass through to the launcher. Without the shell
+function, `bdev cd <checkout>` prints the resolved directory. An unknown checkout
+returns an error and leaves the current directory unchanged.
