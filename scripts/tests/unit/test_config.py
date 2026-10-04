@@ -47,9 +47,17 @@ class ConfigTests(unittest.TestCase):
         self.fails("schema_version = 1\nbogus = 1\n", "bogus")
         self.fails("schema_version = 1\n[logging]\ncommands = true\n", "logging.commands")
         self.fails('schema_version = 1\n[defaults]\nplatform = "linux"\n', "defaults.platform")
-        error = self.fails('schema_version = 1\n[[checkouts]]\ncore = "relative/path"\n', "checkouts[0].core")
+        error = self.fails('schema_version = 1\n[[checkouts]]\ncore = ""\n', "checkouts[0].core")
         self.assertIn("example", error.details)
         self.fails('schema_version = 1\n[[checkouts]]\ncore = "/a/src/brave"\nextra = 1\n', "checkouts[0].extra")
+
+    def test_relative_core_is_based_on_config_directory_and_upsert_preserves_it(self):
+        config = self.load('schema_version = 1\n[[checkouts]]\ncore = "browser/src/brave"\n')
+        expected = self.path.parent / "browser/src/brave"
+        self.assertEqual(config.checkouts[0].core_real, expected.resolve())
+        self.assertEqual(config_module.upsert_checkout(self.path, str(expected), alias="main"), "updated")
+        self.assertIn('core = "browser/src/brave"', self.path.read_text())
+        self.assertEqual(len(config_module.load_config(self.path).checkouts), 1)
 
     def test_default_android_device_is_validated(self):
         config = self.load('schema_version = 1\n[defaults]\nandroid_device = "emulator-5554"\n')

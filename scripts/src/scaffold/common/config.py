@@ -132,8 +132,8 @@ def _validate(path, data):
         where = "checkouts[%d]" % index
         _expect_table(path, entry, where, CHECKOUT_FIELDS)
         core = entry.get("core")
-        if not isinstance(core, str) or not os.path.isabs(core):
-            raise _invalid(path, where + ".core", "is required and must be an absolute path to src/brave",
+        if not isinstance(core, str) or not core:
+            raise _invalid(path, where + ".core", "is required and must be a path to src/brave",
                            EXAMPLE)
         alias = entry.get("alias")
         if alias is not None and (not isinstance(alias, str) or not ALIAS_PATTERN.fullmatch(alias)):
@@ -149,6 +149,8 @@ def _validate(path, data):
             if not env_dir.is_absolute():
                 env_dir = path.parent / env_dir
             env_dir = Path(os.path.normpath(env_dir))
+        if not os.path.isabs(core):
+            core = str(path.parent / core)
         core_real = Path(os.path.realpath(core))
         for table, key, label in ((seen_alias, alias, "alias"), (seen_core, core_real, "core"),
                                   (seen_env, env_dir, "direnv_dir")):
@@ -228,6 +230,8 @@ def upsert_checkout(path, core, alias=None, direnv_dir=None):
     match = None
     for start, end in _block_ranges(lines):
         found = _record_of("".join(lines[start:end])).get("core")
+        if found and not os.path.isabs(found):
+            found = str(path.absolute().parent / found)
         if found and Path(os.path.realpath(found)) == core_real:
             match = (start, end)
     if match is None:
