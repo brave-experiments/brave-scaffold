@@ -39,7 +39,7 @@ class SupportLargeFileTests(AndroidTestCase):
         pointer = subprocess.run(["git", "-C", str(self.wc()), "show", "HEAD:res/jdk/current/large.bin"],
                                  capture_output=True, check=True).stdout
         self.large_file().write_bytes(pointer)
-        shutil.rmtree(self.sandbox.config.parent / ".bdev" / "cache" / "android-support-lfs")
+        shutil.rmtree(self.wc() / ".git" / "lfs")
         self.assertEqual(len(self.pointers()), 1)
 
     def test_content_missing_from_the_local_store_is_fetched_and_verified_during_setup(self):

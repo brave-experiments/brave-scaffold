@@ -19,24 +19,38 @@ checkout's Android support working copy (below). `bdev doctor android --checkout
    `bdev sync-build android` does this first and then checks the build's readiness
    (the Android target, and the local RBE configuration unless you compile with
    `--offline`) again; a standalone `bdev build android` needs the target already.
-2. Create the checkout's own support working copy: `bdev android setup`. This is
-   the only step that uses the network.
+2. Create the shared support checkout and workspace link: `bdev android setup`. This is
+   the step that fetches support resources.
 
 ## Android-on-Mac support repository
 
 Compiling Android from macOS needs resources and patches Chromium does not ship,
 kept in a separate support repository. Setup defaults to its `android-testing-prototype`
-branch. Each checkout gets its own working copy
-at `<workspace>/brave-android-mac-support`, beside (not inside) its sources. Two
-checkouts that need different revisions therefore never switch a shared tree. Only
-content-addressed storage is shared: the Git object cache
-(`.bdev/cache/android-support.git` next to your configuration) and the store of
-Git LFS objects beside it. Working copies are local clones of the cache, so objects
-are hardlinked on the same filesystem, and their large files are written from the
-shared store. A local `--source` seeds both without using the network.
+branch. One shared checkout lives at `brave-android-mac-support` beside the scaffold's
+configuration file. Each browser workspace links to it at
+`<workspace>/brave-android-mac-support`. All linked checkouts use the same revision;
+changing it affects each checkout. There is no separate bare Git cache or shared
+LFS store: large-file objects belong to the shared checkout.
 
-`bdev android setup` is also the only command that fetches large files. It writes what
-the shared store holds, fetches whatever is missing from the source, and then lists the
+This dependency is optional and only serves Android builds on macOS. Scaffold
+setup, shell activation, macOS/iOS builds, and other host platforms do not install
+or require it. The scaffold's current Android build support remains macOS arm64.
+
+Set `android_support_path` in local `brave-scaffold.toml` to choose another location.
+Relative paths are resolved from that file; absolute paths also work. For example,
+`android_support_path = "dependencies/brave-android-mac-support"` belongs at the top
+level, before any table headers.
+
+Explicit setup adopts an existing workspace copy when the shared location is
+empty and on the same filesystem. Otherwise, it preserves a real workspace copy as
+`brave-android-mac-support.previous` before creating the link. It stops if that
+backup already exists or the workspace links to another location. Existing local
+changes and commits stay in the adopted or preserved checkout. Old caches are
+left for separate cleanup. Do not run setup or switch the shared revision while
+another checkout is building. Concurrent builds have not been verified.
+
+`bdev android setup` is also the only command that fetches large files. It materializes content from
+the checkout’s LFS store, fetches whatever is missing from the source, and then lists the
 large files that are still pointers: if any remain, it fails with `CHILD_FAILED` (a
 plain `git lfs checkout` reports success while leaving pointers), and it verifies an
 existing working copy the same way when you run it again after an interruption. `bdev
@@ -45,12 +59,12 @@ or `DEPENDENCY_INCOMPATIBLE` that names `bdev android setup`, and nothing is fet
 
 ```sh
 bdev android setup                     # clone at the default ref
-bdev android setup --ref <tag-or-sha>  # use a revision for this checkout only
+bdev android setup --ref <tag-or-sha>  # change the revision for all linked checkouts
 bdev android setup --source <url-or-path>
 ```
 
-The scaffold never resets, cleans, or switches an existing working copy. `--ref`
-switches one only when it has no local changes and no unpushed commits; otherwise
+The scaffold never resets or cleans an existing working copy. `--ref`
+switches the shared checkout only when it has no local changes and no unpushed commits; otherwise
 the command stops with `PREPARATION_CONFLICT` and lists what it found. Any branch
 or commits you keep there are used as they are.
 
@@ -237,3 +251,7 @@ launch; they do not scan sources or compare build freshness. `adb` comes from `A
   Debug arm64 build through RBE/Siso, and deploying to the only connected device
   without naming it. Not yet verified: `bdev sync android`, cleanup, a second
   checkout at a different support revision, and physical devices.
+
+`android setup --json` uses result schema version 2. Its data reports
+`shared_checkout`, `workspace_link`, and `preserved_copy` instead of bare-cache
+fields. Other commands keep result schema version 1.

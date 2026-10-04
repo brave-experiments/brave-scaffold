@@ -14,24 +14,25 @@ GIT = ["git", "-c", "user.name=Test", "-c", "user.email=t@example.com", "-c", "c
 
 COPY_SCRIPT = """#!/bin/bash
 cd "$(dirname "$0")"
-major=$(grep '^MAJOR=' ../src/chrome/VERSION | cut -d= -f2)
+src_root=$(cd ../src && pwd -P)
+major=$(grep '^MAJOR=' "$src_root/chrome/VERSION" | cut -d= -f2)
 supported=$(cat SUPPORTS_CHROMIUM)
 if [ "$major" != "$supported" ]; then
   echo "❌ Error: this revision supports Chromium $supported but the checkout is $major." >&2
   exit 1
 fi
 if [ "$1" = "-v" ]; then exit 0; fi
-patch_dependency() { mkdir -p "../src/$2" && cp -R "$4" "../src/$2/"; }
+patch_dependency() { mkdir -p "$src_root/$2" && cp -R "$4" "$src_root/$2/"; }
 patch_dependency "JDK" "third_party/jdk" "Version: 25" "res/jdk/current" "third_party/jdk/README.chromium"
 """
 
 APPLY_SCRIPT = """#!/bin/bash
 cd "$(dirname "$0")"
+src_root=$(cd ../src && pwd -P)
 if [ "$1" = "-v" ]; then
-  cmp -s patches/marker ../src/SUPPORT_PATCHED
+  cmp -s patches/marker "$src_root/SUPPORT_PATCHED"
   exit $?
 fi
-src_root=../src
 cp patches/marker "$src_root/SUPPORT_PATCHED"
 mkdir -p "$src_root/base" && echo "support patched" > "$src_root/base/support_target.cc"
 if [ -f "$src_root/base/BUILD.gn" ] && ! grep -q "support edit" "$src_root/base/BUILD.gn"; then

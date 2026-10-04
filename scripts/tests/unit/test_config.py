@@ -59,6 +59,12 @@ class ConfigTests(unittest.TestCase):
         self.assertIn('core = "browser/src/brave"', self.path.read_text())
         self.assertEqual(len(config_module.load_config(self.path).checkouts), 1)
 
+    def test_android_support_location_is_optional_and_relative_to_config(self):
+        self.assertIsNone(self.load('schema_version = 1\n').android_support_path)
+        config = self.load('schema_version = 1\nandroid_support_path = "dependencies/android"\n')
+        self.assertEqual(config.android_support_path, self.path.parent / "dependencies/android")
+        self.fails('schema_version = 1\nandroid_support_path = 5\n', "android_support_path")
+
     def test_default_android_device_is_validated(self):
         config = self.load('schema_version = 1\n[defaults]\nandroid_device = "emulator-5554"\n')
         self.assertEqual(config.default_android_device, "emulator-5554")

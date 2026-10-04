@@ -252,3 +252,8 @@ commands stop with `LOCAL_TOOL_MISSING`, and `bdev tools setup` refuses to insta
 `third_party/node` that leaves the checkout. It also has to be verifiable: the checkout's payload metadata must report the pinned
 Node (and, for pnpm checkouts, pnpm) as deployed. Without that evidence, or with a
 compatible version but no pin to compare it to, the command stops.
+
+`android_support_path` is optional. It selects the shared Android-on-Mac support
+checkout, with paths relative to this configuration file or absolute. Its default
+is `brave-android-mac-support` beside the file. Only explicit `bdev android setup`
+on macOS creates it. See [Android support](android.md#android-on-mac-support-repository).

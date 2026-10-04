@@ -235,9 +235,11 @@ def run_android(ctx, identity, validated=False):
 
 
 def cmd_android_setup(ctx):
+    if host_platform() != "mac":
+        raise ScaffoldError("UNSUPPORTED_CAPABILITY", "Android-on-Mac support setup is only needed on macOS.")
     identity = ctx.identity()
     with track(ctx, "android setup", identity, {"ref": ctx.parsed.get("ref"), "source": ctx.parsed.get("source")}) as op:
-        outcome = android_deps.setup_working_copy(identity, ctx.state_root, ctx.parsed.get("source"),
+        outcome = android_deps.setup_working_copy(identity, ctx.config, ctx.parsed.get("source"),
                                                   ctx.parsed.get("ref"), ctx.log)
         wc = android_deps.working_copy(identity)
         ok, detail = android_deps.run_gate(wc, "copyMacRes.sh", ctx.environ, ctx.log)
@@ -246,8 +248,8 @@ def cmd_android_setup(ctx):
         op.detail(support_head=outcome["working_copy"]["head"], compatible=ok)
         result = Result(command="android setup", data=outcome)
         facts = outcome["working_copy"]
-        result.text = "Support working copy: %s (%s @ %s)\nShared object cache: %s (%s)\nCompatibility gate: %s" % (
-            wc, facts["branch"] or "detached", (facts["head"] or "")[:12], outcome["cache"], outcome["cache_action"],
+        result.text = "Shared support checkout: %s (%s @ %s)\nWorkspace link: %s\nCompatibility gate: %s" % (
+            outcome["shared_checkout"], facts["branch"] or "detached", (facts["head"] or "")[:12], wc,
             "passed" if ok else "FAILED - " + str(detail))
         if not ok:
             result.add_warning("DEPENDENCY_INCOMPATIBLE",

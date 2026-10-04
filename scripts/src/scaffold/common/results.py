@@ -109,7 +109,7 @@ class Result:
 
     def to_dict(self):
         return {
-            "schema_version": SCHEMA_VERSION,
+            "schema_version": 2 if self.command == "android setup" else SCHEMA_VERSION,
             "status": self.status,
             "command": self.command,
             "operation_id": self.operation_id,

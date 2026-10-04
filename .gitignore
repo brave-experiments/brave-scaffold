@@ -19,3 +19,6 @@ __pycache__/
 /brave-browser*/
 /support/
 /bot/
+
+# Optional shared Android-on-Mac build dependency
+/brave-android-mac-support/

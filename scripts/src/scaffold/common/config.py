@@ -20,7 +20,7 @@ SCHEMA_VERSION = 1
 CONFIG_NAME = "brave-scaffold.toml"
 ALIAS_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]*")
 PLATFORM_NAMES = ("mac", "macos", "android")
-TOP_FIELDS = {"schema_version", "logging", "defaults", "checkouts"}
+TOP_FIELDS = {"schema_version", "logging", "defaults", "checkouts", "android_support_path"}
 LOGGING_FIELDS = {"verbosity"}
 DEFAULT_FIELDS = {"platform", "android_device"}
 CHECKOUT_FIELDS = {"alias", "core", "direnv_dir"}
@@ -51,6 +51,8 @@ class Config:
     default_platform: str | None = None
     default_android_device: str | None = None
     checkouts: list = field(default_factory=list)
+
+    android_support_path: Path | None = None
 
     @property
     def directory(self):
@@ -124,6 +126,12 @@ def _validate(path, data):
                 raise _invalid(path, "defaults.android_device", "must be a device id string",
                                '[defaults]\nandroid_device = "emulator-5554"')
             config.default_android_device = device
+    support = data.get("android_support_path")
+    if support is not None:
+        if not isinstance(support, str) or not support:
+            raise _invalid(path, "android_support_path", "must be a non-empty directory path")
+        support = Path(support).expanduser()
+        config.android_support_path = support if support.is_absolute() else path.parent / support
     raw = data.get("checkouts", [])
     if not isinstance(raw, list):
         raise _invalid(path, "checkouts", "must be an array of tables", EXAMPLE)

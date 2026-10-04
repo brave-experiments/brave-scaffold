@@ -2,13 +2,7 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this file,
 # You can obtain one at https://mozilla.org/MPL/2.0/.
-"""Android-on-Mac support repository: per-checkout working copies, compatibility, and preparation.
-
-Each checkout owns a working copy of the support repository beside its source
-workspace, so two checkouts can use different revisions without switching one
-shared tree. Only the Git object cache is shared. Existing working copies are
-never reset, switched, or cleaned by the scaffold.
-"""
+"""Optional shared Android-on-Mac support checkout, compatibility, and preparation."""
 
 from __future__ import annotations
 
@@ -45,8 +39,23 @@ def working_copy(identity):
     return identity.workspace / WORKING_COPY_NAME
 
 
-def cache_path(state_root):
-    return store_root(state_root) / "cache" / "android-support.git"
+def shared_path(config):
+    return config.android_support_path or config.directory / WORKING_COPY_NAME
+
+
+def require_workspace_link(identity, config):
+    wc = working_copy(identity)
+    shared = shared_path(config)
+    if not wc.is_symlink() or wc.resolve() != shared.resolve():
+        raise ScaffoldError(
+            "DEPENDENCY_INCOMPATIBLE", "The workspace support path must link to %s; run Android setup." % shared,
+            details={"working_copy": str(wc), "shared_checkout": str(shared)},
+            repairs=[repair(["bdev", "android", "setup", "--checkout", str(identity.core)])])
+
+
+def script_environment(wc, environ):
+    # Bash needs the workspace link as its logical cwd for the scripts' ../src paths.
+    return {**environ, "PWD": str(Path(wc).absolute())}
 
 
 def _git(path, args, log=None, timeout=300):
@@ -70,72 +79,66 @@ def inspect_working_copy(path, log=None):
 # --- explicit acquisition ---------------------------------------------------------------------
 
 
-def setup_working_copy(identity, state_root, source, ref, log=None):
-    """Create or update the shared object cache and this checkout's working copy.
-
-    This is the only step that uses the network (when `source` is remote). An
-    existing working copy is only switched to an explicitly requested ref, and
-    only when it has no local changes and no unpushed commits.
-    """
-    source = source or metadata()["url"]
-    cache = cache_path(state_root)
-    cache.parent.mkdir(parents=True, exist_ok=True)
-    if cache.exists():
-        current = _git(cache, ["remote", "get-url", "origin"], log).stdout.strip()
-        if current and current != source:
-            raise ScaffoldError("PREPARATION_CONFLICT",
-                                "The shared object cache uses %s, not %s." % (current, source),
-                                details={"cache": str(cache)})
-        fetched = _git(cache, ["fetch", "--prune", "origin", "+refs/*:refs/*"], log, timeout=1800)
-        action = "fetched"
-    else:
-        fetched = run_capture(["git", "clone", "--mirror", source, str(cache)], str(cache.parent), None, log,
-                              timeout=3600)
-        action = "cloned"
-    if fetched.returncode != 0:
-        raise ScaffoldError("CHILD_FAILED", "Updating the shared object cache failed: %s" % fetched.stderr.strip()[-500:],
-                            details={"cache": str(cache)}, child_exit_code=fetched.returncode)
+def setup_working_copy(identity, config, source, ref, log=None):
+    """Prepare one shared checkout and preserve existing workspace copies before linking."""
+    shared = shared_path(config).absolute()
     wc = working_copy(identity)
-    if (wc / ".git").exists() and lfs_pointers(wc, log):
-        materialize_lfs(wc, source, cache.parent / "android-support-lfs", log)
-    facts = inspect_working_copy(wc, log)
-    if wc.exists() and facts is None:
-        raise ScaffoldError("OWNERSHIP_CONFLICT",
-                            "%s exists but is not a Git working copy; move it aside yourself and repeat." % wc,
-                            details={"path": str(wc)})
-    if facts is None:
-        # A local clone hardlinks the cache's objects; unlike an alternates reference it also works when
-        # the cache is shallow and does not break if the cache is later removed.
-        cloned = run_capture(["git", "clone", str(cache), str(wc)], str(wc.parent), _no_smudge_env(), log,
-                             timeout=3600)
-        if cloned.returncode == 0:
-            cloned = run_capture(["git", "-C", str(wc), "remote", "set-url", "origin", source], str(wc), None, log,
-                                 timeout=60)
-        if cloned.returncode != 0:
-            raise ScaffoldError("CHILD_FAILED", "Creating the working copy failed: %s" % cloned.stderr.strip()[-500:],
-                                details={"path": str(wc)}, child_exit_code=cloned.returncode)
-        target = ref or metadata()["default_ref"]
-        if ref or target != (inspect_working_copy(wc, log) or {}).get("branch"):
-            _checkout(wc, target, log)
-        materialize_lfs(wc, source, cache.parent / "android-support-lfs", log)
-        created = True
-    else:
-        created = False
-        if ref and ref not in (facts["branch"], facts["head"]):
-            if facts["dirty"] or facts["unpushed_commits"]:
-                raise ScaffoldError(
-                    "PREPARATION_CONFLICT",
-                    "The working copy has local changes or unpushed commits, so it was not switched to %s." % ref,
-                    details={"path": str(wc), "dirty_files": facts["dirty"][:20],
-                             "unpushed_commits": facts["unpushed_commits"]})
-            fetch = _git(wc, ["fetch", "origin"], log, timeout=1800)
-            if fetch.returncode != 0:
-                raise ScaffoldError("CHILD_FAILED", "Fetching into the working copy failed.",
-                                    child_exit_code=fetch.returncode)
-            _checkout(wc, ref, log)
-            materialize_lfs(wc, source, cache.parent / "android-support-lfs", log)
-    return {"cache": str(cache), "cache_action": action, "working_copy": inspect_working_copy(wc, log),
-            "created": created}
+    if shared == wc.absolute() or shared.is_relative_to(wc.absolute()):
+        raise ScaffoldError("CONFIG_INVALID", "The shared support path must be outside the workspace support path.")
+    if wc.is_symlink() and wc.resolve() != shared.resolve():
+        raise ScaffoldError("OWNERSHIP_CONFLICT", "%s links to another location; review it before setup." % wc)
+    if not shared.exists():
+        shared.parent.mkdir(parents=True, exist_ok=True)
+    adopt = (not shared.exists() and wc.exists() and not wc.is_symlink()
+             and wc.stat().st_dev == shared.parent.stat().st_dev)
+    backup = None
+    if wc.exists() and not wc.is_symlink() and not adopt:
+        backup = wc.with_name(wc.name + ".previous")
+        if backup.exists() or backup.is_symlink():
+            raise ScaffoldError("OWNERSHIP_CONFLICT", "%s already exists; review it before replacing the workspace copy." % backup)
+    for path in (shared, wc):
+        if path.exists() and inspect_working_copy(path, log) is None:
+            raise ScaffoldError("OWNERSHIP_CONFLICT", "%s exists but is not a support Git checkout." % path)
+    if adopt:
+        shared.parent.mkdir(parents=True, exist_ok=True)
+        wc.rename(shared)
+        try:
+            wc.symlink_to(os.path.relpath(shared, wc.parent), target_is_directory=True)
+        except OSError:
+            shared.rename(wc)
+            raise
+    created = not shared.exists()
+    source = source or metadata()["url"]
+    if created:
+        shared.parent.mkdir(parents=True, exist_ok=True)
+        result = run_capture(["git", "clone", source, str(shared)],
+                             str(shared.parent), _no_smudge_env(), log, timeout=3600)
+        if result.returncode:
+            raise ScaffoldError("CHILD_FAILED", "Cloning the shared support checkout failed.",
+                                child_exit_code=result.returncode)
+        _checkout(shared, ref or metadata()["default_ref"], log)
+    facts = inspect_working_copy(shared, log)
+    resolved_ref = _git(shared, ["rev-parse", "--verify", ref + "^{commit}"], log).stdout.strip() if ref else None
+    if ref and ref != facts["branch"] and resolved_ref != facts["head"]:
+        if facts["dirty"] or facts["unpushed_commits"] != 0:
+            raise ScaffoldError("PREPARATION_CONFLICT", "The shared support checkout has local work; its revision was not changed.",
+                                details={"path": str(shared), "dirty_files": facts["dirty"][:20],
+                                         "unpushed_commits": facts["unpushed_commits"]})
+        result = _git(shared, ["fetch", "origin"], log, timeout=1800)
+        if result.returncode:
+            raise ScaffoldError("CHILD_FAILED", "Fetching the shared support checkout failed.", child_exit_code=result.returncode)
+        _checkout(shared, ref, log)
+    materialize_lfs(shared, source, shared / ".git" / "lfs", log)
+    if backup:
+        wc.rename(backup)
+    if not wc.is_symlink():
+        try:
+            wc.symlink_to(os.path.relpath(shared, wc.parent), target_is_directory=True)
+        except OSError:
+            if backup: backup.rename(wc)
+            raise
+    return {"shared_checkout": str(shared), "working_copy": inspect_working_copy(shared, log),
+            "workspace_link": str(wc), "preserved_copy": str(backup) if backup else None, "created": created}
 
 
 def _no_smudge_env():
@@ -197,6 +200,18 @@ def materialize_lfs(wc, source, store, log=None):
     `git lfs checkout` succeeds while leaving a pointer for content that is not local, so success is judged
     by listing the files that are still pointers. Fetching uses the network and is only for explicit setup.
     """
+    previous = _git(wc, ["config", "--get", "lfs.storage"], log).stdout.strip()
+    if previous:
+        previous = Path(previous)
+        if not previous.is_absolute(): previous = Path(wc) / previous
+        if previous.resolve() != store.resolve() and (previous / "objects").is_dir():
+            for path in (previous / "objects").rglob("*"):
+                if not path.is_file(): continue
+                target = store / "objects" / path.relative_to(previous / "objects")
+                if target.exists(): continue
+                target.parent.mkdir(parents=True, exist_ok=True)
+                try: os.link(path, target)
+                except OSError: shutil.copy2(path, target)
     store.mkdir(parents=True, exist_ok=True)
     if os.path.isdir(str(source)):
         _seed_lfs_store(source, store)
@@ -229,7 +244,7 @@ def _checkout(wc, ref, log):
 def run_gate(wc, script, environ, log=None):
     """Run a support script in verify mode. Returns (ok, first error line)."""
     support_scripts.require_contracts(wc)
-    result = run_capture(["bash", "./" + script, "-v"], str(wc), environ, log, timeout=300)
+    result = run_capture(["bash", "./" + script, "-v"], str(wc), script_environment(wc, environ), log, timeout=300)
     if result.returncode == 0:
         return True, None
     output = result.stdout + result.stderr
@@ -243,7 +258,7 @@ def incompatible(identity, wc, detail, facts=None):
         "The Android-on-Mac support revision in %s does not match this checkout: %s" % (wc, detail),
         details={"working_copy": facts or {"path": str(wc)}, "checkout": str(identity.core), "reason": detail},
         repairs=[repair(["git", "-C", str(wc), "log", "--oneline", "-n", "10"],
-                        note="Choose a newer or older support revision for this checkout only, then run "
+                        note="Choose a newer or older support revision for every linked checkout, then run "
                              "'bdev android setup --ref <ref>' or switch the working copy yourself."),
                  repair(["bdev", "android", "setup", "--checkout", str(identity.core), "--ref", "<ref>"],
                         note="Placeholder ref; switches only a clean working copy.")])
@@ -254,8 +269,7 @@ def missing_working_copy(identity, wc):
         "DEPENDENCY_INCOMPATIBLE", "The Android-on-Mac support working copy is missing: %s" % wc,
         details={"working_copy": str(wc), "checkout": str(identity.core)},
         repairs=[repair(["bdev", "android", "setup", "--checkout", str(identity.core)],
-                        note="Explicit preparation: clones the support repository (network) into this checkout's "
-                             "own working copy.")])
+                        note="Explicit preparation: clones the support repository (network) into one shared working copy.")])
 
 
 # --- resources and currency --------------------------------------------------------------------
@@ -462,6 +476,7 @@ def _identical(origin, copied):
 
 def plan_preparation(ctx, identity, log=None):
     """Decide which support scripts must run within their reviewed write scope."""
+    require_workspace_link(identity, ctx.config)
     wc = working_copy(identity)
     facts = inspect_working_copy(wc, log)
     if facts is None:
@@ -556,7 +571,7 @@ def refresh(ctx, identity, loaded, plan, log=None):
     steps = []
     for script in plan.scripts:
         argv = ["bash", "./" + script]
-        code = run_streaming(argv, str(wc), loaded, ctx.log, json_mode=ctx.json_mode)
+        code = run_streaming(argv, str(wc), script_environment(wc, loaded), ctx.log, json_mode=ctx.json_mode)
         steps.append({"argv": argv, "cwd": str(wc), "exit": code})
         if code != 0:
             raise ScaffoldError("CHILD_FAILED", "%s failed (exit %d)." % (script, code),

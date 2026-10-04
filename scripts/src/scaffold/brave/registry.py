@@ -26,7 +26,7 @@ ARTIFACT = Opt("--artifact", "artifact", metavar="PATH", help="Application to ru
 FILTER = Opt("--filter", "filter", metavar="PATTERN", help="Only run tests matching the pattern within the suite.")
 DEVICE = Opt("--device", "device", metavar="ID", help="Android device id (required when several are usable).")
 SOURCE = Opt("--source", "source", metavar="URL_OR_PATH", help="Support repository to clone (default: the standard source).")
-REF = Opt("--ref", "ref", metavar="REF", help="Support repository branch, tag, or commit for this checkout only.")
+REF = Opt("--ref", "ref", metavar="REF", help="Shared support repository branch, tag, or commit.")
 DIFF = Opt("--diff", "diff", takes_value=False, help="Print the Git diff of each drifted file.")
 BASE = Opt("--base", "base", metavar="REF", help="Compare the branch with this ref (default: origin/master).")
 SCOPE = Opt("--scope", "scope", choices=("both", "committed", "worktree"), metavar="SCOPE",
@@ -164,12 +164,11 @@ def build_registry():
                     side_effects="Installs the APK over the existing app on one device (data is kept), stops that "
                                  "package there, and launches it.",
                     examples=("bdev deploy android", "bdev deploy android --device emulator-5554")),
-        CommandSpec("android setup", "Create this checkout's Android-on-Mac support working copy.",
+        CommandSpec("android setup", "Prepare shared Android-on-Mac support and link this workspace.",
                     android.cmd_android_setup, options=(SOURCE, REF),
-                    side_effects="Uses the network: updates a shared Git object cache under .bdev/cache and clones "
-                                 "the support repository into <workspace>/brave-android-mac-support for this "
-                                 "checkout. An existing working copy is switched only to an explicit --ref, and only "
-                                 "when it has no local changes and no unpushed commits.",
+                    side_effects="On macOS only: clones one shared support checkout and fetches its large files. "
+                                 "Links the selected workspace, preserving existing copies. An explicit --ref "
+                                 "changes the shared revision only when it has no local work; every linked checkout sees it.",
                     examples=("bdev android setup --checkout main", "bdev android setup --ref main")),
         CommandSpec("drift", "Compare patched Chromium files with the patch metadata (read-only).", cmd_patches.cmd_drift,
                     options=(DIFF,), examples=("bdev drift", "bdev drift --diff")),

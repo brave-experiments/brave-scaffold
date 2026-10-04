@@ -107,7 +107,7 @@ without selecting a browser checkout. See [support repositories](support-reposit
 | `bdev run [target]` | Restart the browser with an existing output; never builds | Quits and relaunches the application |
 | `bdev build-run` (`br`), `sync-build` (`sb`), `sync-build-run` (`sbr`) | Combined workflows; extras go to the build phase | Effects of each phase |
 | `bdev deploy android` | Install the APK on one device and launch it; same as `run android` ([Android](android.md)) | Installs over the existing app and restarts the package |
-| `bdev android setup` | Create this checkout's Android support working copy | Uses the network; writes the shared object cache and the working copy |
+| `bdev android setup` | Prepare shared Android-on-Mac support and link this workspace | Uses the network; writes the shared checkout and preserves existing workspace copies |
 | `bdev sync [targets]` | Core source sync ([details](source-and-cleanup.md)) | Changes sources and dependencies |
 | `bdev drift [--diff]` | Compare patched Chromium files with patch metadata | None |
 | `bdev patches update` | Regenerate patch files from local Chromium edits | Rewrites patch files; commits nothing |

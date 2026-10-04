@@ -248,39 +248,70 @@ class SupportPatchedFileTests(AndroidTestCase):
 
 
 class SupportWorkingCopyTests(AndroidTestCase):
-    def test_a_shallow_local_source_still_produces_an_isolated_working_copy(self):
+    def test_a_shallow_local_source_produces_a_shared_checkout(self):
         shallow = self.sandbox.root / "shallow-support"
         subprocess.run(["git", "clone", "-q", "--depth", "1", "file://" + str(self.support), str(shallow)], check=True)
         result = self.setup_support("v155", source=shallow)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.head(self.wc()), self.head(self.support))
         self.assertTrue(subprocess.run(["git", "-C", str(self.wc()), "config", "lfs.storage"], capture_output=True,
-                                       text=True).stdout.strip().endswith("android-support-lfs"))
+                                       text=True).stdout.strip().endswith("brave-android-mac-support/.git/lfs"))
 
-    def test_two_checkouts_use_different_revisions_without_sharing_a_working_copy(self):
+    def test_two_checkouts_link_to_one_shared_revision(self):
         other = self.sandbox.make_checkout("other", git=True)
         (other.parent / "chrome").mkdir()
-        (other.parent / "chrome" / "VERSION").write_text("MAJOR=154\n")
-        self.sandbox.configure_rbe("other")
-        with open(other.parent.parent / ".gclient", "a") as stream:
-            stream.write("target_os = ['android']\n")
-        self.sandbox.add_patch("other", "base/BUILD.gn")
-        self.sandbox.commit_all("other")
+        (other.parent / "chrome" / "VERSION").write_text("MAJOR=155\n")
         self.sandbox.write_config([("main", self.core, "environments/main"), ("other", other, "environments/other")])
-        for name in ("main", "other"):
-            self.sandbox.bdev("env", "init", "--checkout", name, "--config", self.config)
-            self.sandbox.approve(name)
         self.assertEqual(self.setup_support("v155", checkout="main").returncode, 0)
-        main_head = self.head(self.wc("main"))
-        self.assertEqual(self.setup_support("v154", checkout="other").returncode, 0)
-        self.assertEqual(self.head(self.wc("main")), main_head, "the first working copy was not switched")
-        self.assertNotEqual(self.head(self.wc("main")), self.head(self.wc("other")))
-        self.assertEqual(sorted(item.name for item in (Path(self.config).parent / ".bdev" / "cache").iterdir()),
-                         ["android-support-lfs", "android-support.git"], "one shared object cache and large-file store")
-        result = self.sandbox.bdev("--json", "--config", self.config, "build", "android", "--checkout", "other",
-                                   env=self.env())
-        self.assertEqual(json.loads(result.stdout)["status"], "ok", result.stderr)
-        self.assertEqual(self.head(self.wc("main")), main_head)
+        self.assertEqual(self.setup_support("v155", checkout="other").returncode, 0)
+        self.assertTrue(self.wc("main").is_symlink())
+        self.assertEqual(self.wc("main").resolve(), self.wc("other").resolve())
+        self.assertFalse((Path(self.config).parent / ".bdev/cache/android-support.git").exists())
+        result = self.setup_support("v154", checkout="other")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.head(self.wc("main")), self.head(self.wc("other")))
+        self.assertEqual((self.wc("main") / "SUPPORTS_CHROMIUM").read_text().strip(), "154")
+
+    def test_setup_accepts_a_commit_id(self):
+        ref = self.head(self.support)
+        result = self.setup_support(ref)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.head(self.wc()), ref)
+
+    def test_wrong_workspace_link_is_reported_without_building(self):
+        self.assertEqual(self.setup_support().returncode, 0)
+        self.wc().unlink()
+        self.wc().symlink_to(self.support)
+        result, document = self.document("build", "android")
+        self.assertEqual(document["error"]["code"], "DEPENDENCY_INCOMPATIBLE")
+        self.assertEqual(document["error"]["repairs"][0]["argv"][:3], ["bdev", "android", "setup"])
+        self.assertFalse(any("build" in record["argv"] for record in self.node_calls()))
+
+    def test_custom_shared_location_is_relative_to_configuration(self):
+        path = Path(self.config)
+        path.write_text('android_support_path = "dependencies/android"\n' + path.read_text())
+        result = self.setup_support()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.wc().resolve(), path.parent / "dependencies/android")
+
+    def test_existing_workspace_copy_is_adopted_without_losing_local_files(self):
+        subprocess.run(["git", "clone", "-q", str(self.support), str(self.wc())], check=True)
+        (self.wc() / "local-notes").write_text("keep me")
+        result = self.setup_support("v155")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(self.wc().is_symlink())
+        self.assertEqual((self.wc() / "local-notes").read_text(), "keep me")
+
+    def test_existing_second_copy_is_preserved_before_linking(self):
+        self.assertEqual(self.setup_support().returncode, 0)
+        shared = self.wc().resolve()
+        self.wc().unlink()
+        subprocess.run(["git", "clone", "-q", str(self.support), str(self.wc())], check=True)
+        (self.wc() / "local-notes").write_text("keep me")
+        result = self.setup_support()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.wc().resolve(), shared)
+        self.assertEqual((self.wc().with_name("brave-android-mac-support.previous") / "local-notes").read_text(), "keep me")
 
     def test_incompatible_revision_is_reported_with_the_gate_reason_and_repairs(self):
         self.setup_support("v154")

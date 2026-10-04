@@ -566,23 +566,15 @@
         {
           "type": "object",
           "required": [
-            "cache",
-            "cache_action",
             "working_copy",
             "created",
             "compatible",
-            "compatibility_detail"
+            "compatibility_detail",
+            "shared_checkout",
+            "workspace_link",
+            "preserved_copy"
           ],
           "properties": {
-            "cache": {
-              "type": "string"
-            },
-            "cache_action": {
-              "enum": [
-                "cloned",
-                "fetched"
-              ]
-            },
             "created": {
               "type": "boolean"
             },
@@ -640,6 +632,18 @@
                   ]
                 }
               }
+            },
+            "shared_checkout": {
+              "type": "string"
+            },
+            "workspace_link": {
+              "type": "string"
+            },
+            "preserved_copy": {
+              "type": [
+                "string",
+                "null"
+              ]
             }
           }
         }

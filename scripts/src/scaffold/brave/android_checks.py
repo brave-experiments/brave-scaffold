@@ -11,6 +11,7 @@ import shutil
 
 from ..common.checks import BLOCKER, NOT_CHECKED, PASS, WARNING, make_check
 from ..common.procs import run_capture
+from ..common.platforms import host_platform
 from ..common.results import ScaffoldError, repair
 from . import adb, android_deps, rbe_checks
 from . import sync as sync_module
@@ -25,6 +26,8 @@ def machine_checks(ctx, scope):
     checks = [make_check("adb", PASS if path else BLOCKER,
                          path or "adb was not found (set ANDROID_HOME or put adb on PATH).", scope,
                          affects=("android run", "android deploy"), path=path)]
+    if host_platform() != "mac":
+        return checks
     lfs = run_capture(["git", "lfs", "version"], os.getcwd(), ctx.environ, ctx.log, timeout=30)
     checks.append(make_check(
         "git-lfs", PASS if lfs.returncode == 0 else WARNING,
@@ -66,15 +69,22 @@ def build_checks(ctx, scope, remote_required=False):
 
 
 def support_checks(ctx, scope):
-    """The per-checkout support working copy, its compatibility gate, and whether it is applied."""
+    """Optional macOS support link, its compatibility gate, and whether it is applied."""
+    if host_platform() != "mac":
+        return []
     identity, error = _selected(ctx)
     if identity is None:
         return [make_check(name, NOT_CHECKED, error.message, scope,
                            affects=("android build",), repairs=error.repairs) for name in UNCHECKED_NAMES[1:]]
+    try:
+        android_deps.require_workspace_link(identity, ctx.config)
+    except ScaffoldError as error:
+        return [make_check("android-support-working-copy", BLOCKER, error.message, scope,
+                           affects=("android build",), repairs=error.repairs, **error.details)]
     wc = android_deps.working_copy(identity)
     facts = android_deps.inspect_working_copy(wc, ctx.log)
     setup = repair(["bdev", "android", "setup", "--checkout", str(identity.core)],
-                   note="Explicit preparation; clones the support repository (network) for this checkout only.")
+                   note="Explicit preparation; clones the support repository (network) and links this workspace to the shared checkout.")
     if facts is None:
         return [make_check("android-support-working-copy", BLOCKER, "No support working copy at %s." % wc, scope,
                            affects=("android build",), repairs=[setup])] + [
