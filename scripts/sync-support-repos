@@ -1,0 +1,39 @@
+#!/bin/sh
+# Copyright (c) 2026 The Brave Authors. All rights reserved.
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this file,
+# You can obtain one at https://mozilla.org/MPL/2.0/.
+
+# Resolve this installation through any symlinks, then run the tooling with the
+# scaffold-owned interpreter. There is no PATH fallback.
+self=$0
+while [ -h "$self" ]; do
+  case $self in
+    */*) link_dir=${self%/*} ;;
+    *) link_dir=. ;;
+  esac
+  link_dir=$(cd -P "$link_dir" && pwd)
+  target=$(PATH="$PATH:/usr/bin:/bin" readlink "$self")
+  case $target in
+    /*) self=$target ;;
+    *) self=$link_dir/$target ;;
+  esac
+done
+case $self in
+  */*) scripts_dir=${self%/*} ;;
+  *) scripts_dir=. ;;
+esac
+scripts_dir=$(cd -P "$scripts_dir" && pwd)
+python="$scripts_dir/.venv/bin/python"
+
+if [ ! -x "$python" ] || [ ! -f "$scripts_dir/src/scaffold/launch.py" ]; then
+  {
+    echo "sync-support-repos: the scaffold Python runtime is missing or broken: $python"
+    echo "Recreate only this virtual environment with Python 3.14 or newer:"
+    echo "  python3.14 -m venv --clear --without-pip '$scripts_dir/.venv'"
+    echo "An absolute path to another compatible Python also works."
+  } >&2
+  exit 3
+fi
+
+exec "$python" -I "$scripts_dir/src/scaffold/launch.py" sync-support-repos "$@"

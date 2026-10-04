@@ -241,3 +241,13 @@ Only processes this command started in its own group are signalled. An interrupt
 revalidation; a command killed outright leaves an operation record still marked
 incomplete in `.bdev/operations/` beside your configuration. Inspect the checkout
 before retrying anything that modifies it.
+
+## Support repositories are skipped
+
+Run `scripts/sync-support-repos --status` and inspect each repository's
+path, branch, and local state. Sync skips local changes, a different branch or
+origin URL, and history that cannot fast-forward. Prune also preserves ignored
+files, stashes, local commits, shallow history, and linked or nested repositories.
+A skipped sync or prune exits 6. Inspect the repository before choosing an
+explicit reset or removal; a warning grants no authority to discard work.
+See [support repositories](support-repositories.md) for the command contracts.

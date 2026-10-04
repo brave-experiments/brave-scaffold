@@ -61,6 +61,18 @@ class LauncherTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(json.loads(result.stdout)["status"], "ok")
 
+    def test_support_launcher_uses_its_installation_and_isolated_runtime_through_a_symlink(self):
+        (self.installation / "support-repos.toml").write_text(
+            '[[repos]]\nname = "example"\nurl = "git@example.invalid:example.git"\nbranch = "main"\n')
+        link = self.root / "support-command"
+        link.symlink_to(self.installation / "scripts" / "sync-support-repos")
+        result = self.run_bdev("--status", launcher=link,
+                               env={"PYTHONHOME": "/nonexistent", "PYTHONPATH": "/nonexistent"})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), "example: missing")
+        self.assertIn(str(self.installation / ".bdev" / "logs"), result.stderr)
+        self.assertFalse((self.installation / "support").exists())
+
     def test_missing_runtime_shows_the_recreation_command_and_never_uses_path_python(self):
         bare = self.root / "bare"
         shutil.copytree(self.installation / "scripts", bare / "scripts",

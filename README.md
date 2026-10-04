@@ -1,8 +1,8 @@
 # Brave development scaffold
 
 Local tools for building, testing, running, and inspecting Brave checkouts.
-Browser checkouts and support repositories may live anywhere and are selected
-through local configuration.
+Browser checkouts may live anywhere and are selected through local configuration.
+Shared support repositories live in this scaffold's `support/` folder.
 
 Brave Scaffold (`brave-scaffold`) is entirely supplementary to Brave Core
 (`brave-core`). Using it is optional. Adopting or using the scaffold requires no
@@ -17,7 +17,7 @@ checkout writes; those are the requested work, not scaffold installation changes
 
 ## What works today
 
-Two commands, `bdev` and `bpm`, both under `scripts/`:
+`bdev` and `bpm` live under `scripts/`:
 
 - `bdev` inspects checkouts, generates and checks their external direnv
   environments, reports readiness, syncs sources, builds, tests, runs, and cleans
@@ -25,6 +25,9 @@ Two commands, `bdev` and `bpm`, both under `scripts/`:
   Python.
 - `bpm` runs the checkout's own package manager with its own Node.js, never a
   global one.
+
+`scripts/sync-support-repos` separately clones, updates, inspects, and prunes
+shared support repositories ([guide](docs/support-repositories.md)).
 
 Android builds an arm64 APK and installs and restarts it on a device.
 `bdev capabilities` lists what is supported and what has been verified on a
@@ -60,6 +63,7 @@ Nothing requires a `PATH` change, a shell hook, or an edit inside Brave Core.
 | Sync sources, patches, and cleanup | [Source and cleanup](docs/source-and-cleanup.md) |
 | Configure checkouts and environments | [Configuration and environments](docs/configuration-and-environments.md) |
 | Look up commands, options, results, exit codes | [Commands](docs/commands.md) |
+| Manage shared support repositories | [Support repositories](docs/support-repositories.md) |
 | Sign commits | [Commit signing](docs/signing.md) |
 | Diagnose a failure | [Troubleshooting](docs/troubleshooting.md) |
 | Drive the tools from an agent | [Agent workflows](docs/agent-workflows.md) |

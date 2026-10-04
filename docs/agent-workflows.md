@@ -35,6 +35,10 @@ does not mean it is permitted. For an unresolved checkout, list candidates with
 An implementation task authorizes code changes and isolated tests. It does not by
 itself authorize builds, tests, or launches on a developer's checkout or device.
 
+Support-repository sync, explicit discard, and prune deletion also need authority
+for the scaffold's `support/` directory. Use `scripts/sync-support-repos --status`
+or `--prune` for inspection; neither authorizes updates or removal.
+
 ## Example validation agreement
 
 State once, before real-checkout work:
@@ -53,7 +57,7 @@ checkout at a time; the scaffold does not lock.
 - Every call is a fresh process. Nothing depends on a shell hook, activation, or
   state from an earlier call; pass `--checkout` explicitly unless the working
   directory is inside the checkout.
-- Use `--json`. Read `status`, `error.code`, and `exit_code`; treat
+- For `bdev` and `bpm`, use `--json`. Read `status`, `error.code`, and `exit_code`; treat
   `child_exit_code` as the child's own result. Stdout has one document; child
   output is on stderr.
 - Interpret `error.repairs` as suggestions. Run one only when the current task

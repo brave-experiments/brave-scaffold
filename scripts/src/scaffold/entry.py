@@ -10,6 +10,8 @@ import sys
 def run_tool(tool, argv):
     if tool == "bdev":
         from .brave.bdev import main
+    elif tool == "sync-support-repos":
+        from .support import main
     elif tool == "bpm":
         from .brave.bpm import main
     elif tool == "git-sign-with-1password":

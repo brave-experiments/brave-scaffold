@@ -81,6 +81,12 @@ long evidence lists. Use `--json` for the full returned evidence. Diagnostic log
 retain the structured error details. Repairs are suggestions and may need further
 checks or your action.
 
+## Support repository command
+
+`scripts/sync-support-repos` manages shared repositories separately from `bdev`.
+It accepts status, prune, and explicit discard operations
+without selecting a browser checkout. See [support repositories](support-repositories.md).
+
 ## Command index
 
 | Command | Purpose | Side effects |

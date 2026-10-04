@@ -4,7 +4,7 @@
 
 ```text
 scripts/
-  bdev, bpm                 launchers (POSIX sh); resolve their own installation
+  bdev, bpm, sync-support-repos  launchers (POSIX sh); resolve their own installation
   pyproject.toml            project metadata; no dependencies
   .venv/                    scaffold runtime (ignored)
   schemas/                  versioned JSON schemas for results
@@ -21,6 +21,7 @@ Tooling code, launchers, and tests live under `scripts/`; there is no root
 
 | Module | Responsibility |
 | --- | --- |
+| `support.py` | Separate support-repository CLI, manifest validation, Git sync and prune |
 | `common/results.py` | Result envelope, exit codes, error type, text rendering |
 | `common/config.py` | TOML parsing, validation, in-place record edits |
 | `common/identity.py` | Checkout discovery, selection, Git linked-worktree detection |

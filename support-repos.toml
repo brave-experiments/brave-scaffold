@@ -1,0 +1,75 @@
+# Copyright (c) 2026 The Brave Authors. All rights reserved.
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this file,
+# You can obtain one at https://mozilla.org/MPL/2.0/.
+
+
+[[repos]]
+name = "handbook"
+url = "git@github.com:brave/handbook.git"
+branch = "master"
+
+[[repos]]
+name = "internal.wiki"
+url = "git@github.com:brave/internal.wiki.git"
+branch = "master"
+
+[[repos]]
+name = "devops"
+url = "git@github.com:brave/devops.git"
+branch = "master"
+
+[[repos]]
+name = "devops.wiki"
+url = "git@github.com:brave/devops.wiki.git"
+branch = "master"
+
+[[repos]]
+name = "brave-dev-bot"
+url = "git@github.com:brave-experiments/brave-dev-bot.git"
+branch = "master"
+
+[[repos]]
+name = "brave-core-tools"
+url = "git@github.com:brave-experiments/brave-core-tools.git"
+branch = "master"
+
+[[repos]]
+name = "brave-browser.wiki"
+url = "git@github.com:brave/brave-browser.wiki.git"
+branch = "master"
+
+[[repos]]
+name = "qa-resources"
+url = "git@github.com:brave/qa-resources.git"
+branch = "master"
+
+[[repos]]
+name = "qa-resources.wiki"
+url = "git@github.com:brave/qa-resources.wiki.git"
+branch = "master"
+
+[[repos]]
+name = "security-action"
+url = "git@github.com:brave/security-action.git"
+branch = "main"
+
+[[repos]]
+name = "workflows"
+url = "git@github.com:brave/workflows.git"
+branch = "main"
+
+[[repos]]
+name = "pull-merge"
+url = "git@github.com:brave/pull-merge.git"
+branch = "main"
+
+[[repos]]
+name = "leo"
+url = "git@github.com:brave/leo.git"
+branch = "main"
+
+[[repos]]
+name = "design.wiki"
+url = "git@github.com:brave/design.wiki.git"
+branch = "master"
