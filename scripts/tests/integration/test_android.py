@@ -313,6 +313,16 @@ class SupportWorkingCopyTests(AndroidTestCase):
         self.assertEqual(self.wc().resolve(), shared)
         self.assertEqual((self.wc().with_name("brave-android-mac-support.previous") / "local-notes").read_text(), "keep me")
 
+    def test_legacy_directory_of_links_is_preserved_before_linking(self):
+        self.wc().mkdir()
+        for name in ("copyMacRes.sh", "applyPatches.sh", "res"):
+            (self.wc() / name).symlink_to(self.support / name)
+        result = self.setup_support()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(self.wc().is_symlink())
+        backup = self.wc().with_name("brave-android-mac-support.previous")
+        self.assertEqual((backup / "copyMacRes.sh").readlink(), self.support / "copyMacRes.sh")
+
     def test_incompatible_revision_is_reported_with_the_gate_reason_and_repairs(self):
         self.setup_support("v154")
         result, document = self.document("build", "android")

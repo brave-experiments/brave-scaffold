@@ -89,7 +89,11 @@ def setup_working_copy(identity, config, source, ref, log=None):
         raise ScaffoldError("OWNERSHIP_CONFLICT", "%s links to another location; review it before setup." % wc)
     if not shared.exists():
         shared.parent.mkdir(parents=True, exist_ok=True)
-    adopt = (not shared.exists() and wc.exists() and not wc.is_symlink()
+    legacy_links = (wc.is_dir() and not wc.is_symlink()
+                    and (wc / "copyMacRes.sh").is_symlink()
+                    and (wc / "applyPatches.sh").is_symlink()
+                    and all(entry.is_symlink() for entry in wc.iterdir()))
+    adopt = (not shared.exists() and wc.exists() and not wc.is_symlink() and not legacy_links
              and wc.stat().st_dev == shared.parent.stat().st_dev)
     backup = None
     if wc.exists() and not wc.is_symlink() and not adopt:
@@ -97,6 +101,8 @@ def setup_working_copy(identity, config, source, ref, log=None):
         if backup.exists() or backup.is_symlink():
             raise ScaffoldError("OWNERSHIP_CONFLICT", "%s already exists; review it before replacing the workspace copy." % backup)
     for path in (shared, wc):
+        if path == wc and legacy_links:
+            continue
         if path.exists() and inspect_working_copy(path, log) is None:
             raise ScaffoldError("OWNERSHIP_CONFLICT", "%s exists but is not a support Git checkout." % path)
     if adopt:
