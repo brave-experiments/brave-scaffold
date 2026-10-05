@@ -24,7 +24,7 @@ SKIP_SUPPORT_REFRESH = Opt("--skip-support-refresh", "skip_support_refresh", tak
                            help="Stop an Android build if support patches or resources need refreshing.")
 ARTIFACT = Opt("--artifact", "artifact", metavar="PATH", help="Application to run instead of the default output.")
 FILTER = Opt("--filter", "filter", metavar="PATTERN", help="Only run tests matching the pattern within the suite.")
-DEVICE = Opt("--device", "device", metavar="ID", help="Android device id (required when several are usable), or an iOS Simulator name or UDID.")
+DEVICE = Opt("--device", "device", metavar="ID", help="Android device id (otherwise use the saved default, sole device, or terminal picker), or an iOS Simulator name or UDID.")
 SOURCE = Opt("--source", "source", metavar="URL_OR_PATH", help="Support repository to clone (default: the standard source).")
 REF = Opt("--ref", "ref", metavar="REF", help="Shared support repository branch, tag, or commit.")
 DIFF = Opt("--diff", "diff", takes_value=False, help="Print the Git diff of each drifted file.")

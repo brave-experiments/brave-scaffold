@@ -241,6 +241,44 @@ def write_validated_config(path, text):
     atomic_write(path, text)
 
 
+def save_android_device(path, device):
+    """Add a default without rewriting the user's other configuration or comments."""
+    path = Path(path)
+    text = path.read_text(encoding="utf-8") if path.exists() else "schema_version = 1\n"
+    original = tomllib.loads(text)
+    _validate(path, original)
+    lines = text.splitlines(keepends=True)
+    start = None
+    for index, line in enumerate(lines):
+        if not line.lstrip().startswith("["):
+            continue
+        try:
+            if tomllib.loads(line) == {"defaults": {}}:
+                start = index
+                break
+        except tomllib.TOMLDecodeError:
+            continue
+    entry = "android_device = %s\n" % toml_string(device)
+    if start is None:
+        changed = text.rstrip("\n") + "\n\n[defaults]\n" + entry
+    else:
+        if "android_device" in original.get("defaults", {}):
+            raise _invalid(path, "defaults.android_device", "already has a default; nothing was written")
+        if not lines[start].endswith("\n"):
+            lines[start] += "\n"
+        lines.insert(start + 1, entry)
+        changed = "".join(lines)
+    try:
+        data = tomllib.loads(changed)
+        expected = {**original, "defaults": {**original.get("defaults", {}), "android_device": device}}
+        if data != expected:
+            raise ValueError("the edit would change other settings")
+        _validate(path, data)
+    except (tomllib.TOMLDecodeError, ValueError) as error:
+        raise _invalid(path, "defaults.android_device", "cannot save this configuration layout (%s)" % error)
+    atomic_write(path, changed)
+
+
 def upsert_checkout(path, core, alias=None, direnv_dir=None):
     """Add or update the single record for a Core path without disturbing other text.
 

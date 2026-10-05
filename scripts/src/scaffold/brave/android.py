@@ -7,10 +7,12 @@
 from __future__ import annotations
 
 import os
+import sys
 import zipfile
 from pathlib import Path
 
 from ..common.platforms import host_architecture, host_platform
+from ..common.config import save_android_device
 from ..common.procs import run_capture
 from ..common.results import Result, ScaffoldError, repair
 from . import adb, android_deps, steps as step_module
@@ -126,8 +128,26 @@ def write_gn_overrides(identity, effective):
 def preflight_device(ctx):
     """Select the device before anything is stopped or built."""
     adapter = adb.require_adb(ctx.environ)
-    device, source = adb.select_device(adapter, ctx.environ, ctx.parsed.get("device"),
-                                       ctx.config.default_android_device, ctx.log)
+    devices = adb.list_devices(adapter, ctx.environ, ctx.log)
+    try:
+        device, source = adb.choose_device(devices, ctx.parsed.get("device"), ctx.config.default_android_device)
+    except ScaffoldError as error:
+        interactive = not ctx.json_mode and not ctx.parsed.get("plan") and sys.stdin.isatty() and sys.stderr.isatty()
+        if error.code != "DEVICE_AMBIGUOUS" or not interactive:
+            raise
+        device = adb.pick_device(adapter, devices, ctx.environ, ctx.log)
+        source = "interactive"
+        print("Remember this device in %s? [y/N]: " % ctx.config.path,
+              end="", file=sys.stderr, flush=True)
+        if sys.stdin.readline().strip().lower() in ("y", "yes"):
+            try:
+                save_android_device(ctx.config.path, device["id"])
+            except (OSError, ScaffoldError) as save_error:
+                print("Could not save the default: %s. Using this device for this command." % save_error,
+                      file=sys.stderr)
+            else:
+                ctx.config.default_android_device = device["id"]
+                print("Saved default device: %s." % device["id"], file=sys.stderr)
     return adapter, device, source
 
 

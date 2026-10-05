@@ -224,9 +224,13 @@ bdev build-run android --device <id>
 ```
 
 Device selection: `--device`, otherwise `defaults.android_device` from your
-configuration, otherwise the only usable device. With several usable devices the
-command stops with `DEVICE_AMBIGUOUS` and lists ids and states; it never picks the
-first or the most recent. A device that is `offline` or `unauthorized`, or not
+configuration, otherwise the only usable device. With several usable devices,
+an interactive terminal shows a numbered picker with names, ids, and physical
+device or emulator labels. You can save the choice in `defaults.android_device`
+in the active scaffold configuration; declining uses it for this command only.
+The picker runs before building. JSON output, noninteractive commands, and
+`--plan` never prompt: they report `DEVICE_AMBIGUOUS` with a copyable `--device`
+option for each usable device. A device that is `offline` or `unauthorized`, or not
 connected, gives `DEVICE_UNAVAILABLE` with recovery steps. `build-run` chooses the
 device before building.
 

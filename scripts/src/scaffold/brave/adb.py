@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import sys
 import time
 from pathlib import Path
 
@@ -96,6 +97,37 @@ def _require_usable(device):
 
 def select_device(adb, environ, requested, configured, log=None):
     return choose_device(list_devices(adb, environ, log), requested, configured)
+
+
+def device_label(adb, device, environ, log=None):
+    model = _adb(adb, device["id"], ["shell", "getprop", "ro.product.model"], environ, log, timeout=10)
+    name = model.stdout.strip().replace("\n", " ") if model.returncode == 0 else ""
+    kind = "emulator" if device["id"].startswith("emulator-") else "physical device"
+    if kind == "emulator":
+        avd = _adb(adb, device["id"], ["emu", "avd", "name"], environ, log, timeout=10)
+        if avd.returncode == 0:
+            names = [line for line in avd.stdout.splitlines() if line and line != "OK"]
+            if names:
+                name = names[0]
+    return "%s (%s) - %s" % (name or "Android device", kind, device["id"])
+
+
+def pick_device(adb, devices, environ, log=None, stdin=None, stderr=None):
+    """Prompt on terminal streams; cancellation never selects a default."""
+    stdin = stdin or sys.stdin
+    stderr = stderr or sys.stderr
+    usable = [device for device in devices if device["state"] == "device"]
+    print("Choose an Android device:", file=stderr)
+    for number, device in enumerate(usable, 1):
+        print("  %d. %s" % (number, device_label(adb, device, environ, log)), file=stderr)
+    while True:
+        print("Device number (Enter to cancel): ", end="", file=stderr, flush=True)
+        answer = stdin.readline().strip()
+        if not answer:
+            raise ScaffoldError("INVALID_INPUT", "Device selection cancelled; nothing was built or deployed.")
+        if answer.isdecimal() and 1 <= int(answer) <= len(usable):
+            return usable[int(answer) - 1]
+        print("Enter a number from 1 to %d." % len(usable), file=stderr)
 
 
 def _adb(adb, device, args, environ, log, timeout=120):
