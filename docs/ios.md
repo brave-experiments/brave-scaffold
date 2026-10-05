@@ -4,6 +4,11 @@ Existing-checkout workflows for the Brave iOS app on an iOS Simulator, on an arm
 Mac. Only the Debug configuration for a simulator is supported; physical devices,
 Release, and other configurations are not. Nothing here changes how Core builds iOS.
 
+Source sync, Debug simulator builds, and simulator installation and launch have been
+validated on a real checkout on an arm64 Mac, including opening the Simulator window.
+Output deletion with `bdev clean ios --execute` has not yet been validated on a real
+checkout. `bdev capabilities` reports these operations separately.
+
 Core does not build iOS with its package build command. Its documented flow is to
 bootstrap the project once, then build the `Debug` scheme of
 `ios/brave-ios/App/Client.xcodeproj` in Xcode; the scheme's pre-action runs Core's own

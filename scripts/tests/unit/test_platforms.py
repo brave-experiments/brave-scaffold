@@ -54,9 +54,12 @@ class CapabilityTests(unittest.TestCase):
         self.assertEqual(set(row), {"host", "target", "operation", "configuration", "architecture", "status", "note"})
         self.assertTrue(any(r["status"] == "unsupported" and r["target"] == "ios" for r in platforms.capability_table()))
 
-    def test_ios_simulator_debug_is_unverified_until_validated_on_a_real_checkout(self):
+    def test_ios_sync_build_and_run_are_validated_but_cleanup_is_unverified(self):
         rows = {(r["operation"], r["configuration"]): r for r in platforms.capability_table() if r["target"] == "ios"}
-        self.assertEqual(rows[("sync", "debug")]["status"], "unverified")
+        for operation in ("sync", "build", "run"):
+            self.assertEqual(rows[(operation, "debug")]["status"], "supported")
+            self.assertNotIn("Not yet validated", rows[(operation, "debug")]["note"])
+        self.assertEqual(rows[("clean", "debug")]["status"], "unverified")
         self.assertEqual(rows[("any", "release")]["status"], "unsupported")
 
 
