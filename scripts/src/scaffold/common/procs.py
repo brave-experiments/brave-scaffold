@@ -296,8 +296,8 @@ def run_streaming(argv, cwd, env, log, json_mode=False, stdin=None, preserve_std
     """Run a command whose output belongs to the user; return its exit code.
 
     In JSON mode the child's stdout goes to stderr so the result document is the
-    only thing on stdout. `verbose_output` marks detail lines to keep in the log
-    and display only at verbose level, excluding them from a quiet failure tail.
+    only thing on stdout. `verbose_output` selects console lines from each stream at non-verbose levels.
+    All original lines stay in the log; omitted lines stay out of quiet failure tails.
     """
     log.record(argv, cwd, primary=True, display_argv=display_argv)
     if interactive:
@@ -391,8 +391,12 @@ class _StreamOutput:
             text = text.replace(secret, "***")
         text = redact_url_credentials(text)
         self.log.save(text)
-        if self.verbose_output and self.verbose_output(text) and self.log.verbosity != "verbose":
-            return
+        lines = (self.verbose_output(stream, text)
+                 if self.verbose_output and self.log.verbosity != "verbose" else [text])
+        for line in lines:
+            self.display(stream, line)
+
+    def display(self, stream, text):
         tail = (self.tail + text).encode("utf-8")[-16384:].decode("utf-8", "ignore")
         self.tail = "".join(tail.splitlines(keepends=True)[-40:])
         if self.log.verbosity != "quiet" and not (self.preserve_stdout and stream is self.stdout):

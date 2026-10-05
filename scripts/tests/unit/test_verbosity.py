@@ -136,6 +136,25 @@ class VerbosityTests(unittest.TestCase):
             self.assertEqual(json.loads(out.getvalue())['status'], 'ok')
             self.assertIn('child-text', err.getvalue())
 
+    def test_bytecode_blocks_keep_other_actions_streams_and_unterminated_warnings(self):
+        from scaffold.brave.packages import BytecodeOutput
+        console = io.StringIO()
+        log = procs.CommandLog(verbosity="normal", stream=console)
+        output = procs._StreamOutput(log, [], {"API_TOKEN": "private-token"}, "stdout", True,
+                                     verbose_output=BytecodeOutput())
+        output.receive("stdout", b"[1/4] F ACTION //chrome:empty__bytecode_rewrite(//toolchain)\nstdout:\n")
+        output.receive("stderr", b"independent diagnostic\n")
+        output.receive("stdout", b"[2/4] F ACTION //chrome:other(//toolchain)\nstdout:\nother output\n")
+        output.receive("stdout", b"[3/4] F ACTION //chrome:warning__bytecode_rewrite(//toolchain)\nstdout:\n")
+        output.receive("stdout", b"redirecting constructor from upstream/Class to brave/Class\n")
+        output.receive("stdout", b"WARNING: private-")
+        output.receive("stdout", b"token")
+        output.finish()
+        self.assertEqual(console.getvalue(), "independent diagnostic\n"
+                         "[2/4] F ACTION //chrome:other(//toolchain)\nstdout:\nother output\n"
+                         "[3/4] F ACTION //chrome:warning__bytecode_rewrite(//toolchain)\nstdout:\n"
+                         "WARNING: ***")
+
     def test_split_secrets_and_long_lines_never_save_partial_values(self):
         with tempfile.TemporaryDirectory() as directory:
             log = procs.CommandLog(verbosity='quiet', stream=io.StringIO())

@@ -84,6 +84,11 @@ class BuildTests(BuildTestCase):
             '    print("redirecting con", end="", flush=True)\n'
             '    print("structor from upstream/Class to brave/Class")\n'
             '    print("make field public in brave/Class")\n'
+            '    print("[10/20] 1s F ACTION //chrome:empty_java__bytecode_rewrite(//toolchain)")\n'
+            '    print("stdout:")\n'
+            '    print("[11/20] 1s F ACTION //chrome:warning_java__bytecode_rewrite(//toolchain)")\n'
+            '    print("stdout:")\n'
+            '    print("WARNING: rewrite warning")\n'
             '    print("[12/20] build progress")\n'
             '    print("WARNING: bytecode diagnostic", file=sys.stderr)\n' + BUILD_HOOK)
         for verbosity in ("normal", "verbose", "quiet"):
@@ -94,8 +99,13 @@ class BuildTests(BuildTestCase):
                 self.assertEqual("make field public in brave/Class" in result.stderr, verbosity == "verbose")
                 self.assertEqual("[12/20] build progress" in result.stderr, verbosity != "quiet")
                 self.assertEqual("WARNING: bytecode diagnostic" in result.stderr, verbosity != "quiet")
+                self.assertEqual("empty_java__bytecode_rewrite" in result.stderr, verbosity == "verbose")
+                self.assertEqual("warning_java__bytecode_rewrite" in result.stderr, verbosity != "quiet")
+                self.assertEqual("WARNING: rewrite warning" in result.stderr, verbosity != "quiet")
                 saved = Path(next(line.removeprefix("Log: ") for line in result.stderr.splitlines()
                                   if line.startswith("Log: "))).read_text()
+                self.assertIn("empty_java__bytecode_rewrite", saved)
+                self.assertIn("stdout:", saved)
                 self.assertIn(detail, saved)
                 self.assertIn("make field public in brave/Class", saved)
 

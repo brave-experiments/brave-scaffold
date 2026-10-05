@@ -36,6 +36,33 @@ def bytecode_detail(text):
     return bool(BYTECODE_DETAIL.match(text.rstrip("\r\n")))
 
 
+BYTECODE_ACTION = re.compile(r"^\[\d+/\d+\].*\bACTION .*__bytecode_rewrite\(")
+BUILD_PROGRESS = re.compile(r"^\[\d+/\d+\]")
+
+
+class BytecodeOutput:
+    """Hold action context until it has output worth showing; keep streams separate."""
+
+    def __init__(self):
+        self.pending = {}
+
+    def __call__(self, stream, text):
+        line = text.rstrip("\r\n")
+        if BUILD_PROGRESS.match(line):
+            self.pending.pop(stream, None)
+            if BYTECODE_ACTION.match(line):
+                self.pending[stream] = [text]
+                return []
+        pending = self.pending.get(stream)
+        if pending is not None and line in ("stdout:", "stderr:"):
+            # Bound retained context even if a child repeats stream labels.
+            self.pending[stream] = pending[:1] + [text]
+            return []
+        if bytecode_detail(text) or (pending is not None and not line.strip()):
+            return []
+        return self.pending.pop(stream, []) + [text]
+
+
 @contextlib.contextmanager
 def local_shims(toolchain):
     """A private directory with a `pnpm` command bound to the checkout's payload."""
@@ -70,7 +97,7 @@ def run(ctx, execution, arguments, extra_env=None):
                 env[name] = value
         return argv, run_streaming(argv, str(execution.identity.core), env, ctx.log, json_mode=ctx.json_mode,
                                    preserve_stdout=ctx.command == "bpm",
-                                   verbose_output=bytecode_detail if ctx.command != "bpm" and
+                                   verbose_output=BytecodeOutput() if ctx.command != "bpm" and
                                    compiles_java(arguments) else None,
                                    display_argv=[execution.toolchain.manager, *argv[2:]])
 

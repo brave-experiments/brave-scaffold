@@ -20,8 +20,9 @@ look, and what the codes mean. Only delivered commands appear here.
   name on the console; the log keeps their exact Node and payload paths. Internal
   probes go to the saved log.
   Routine Android Java bytecode rewrite messages, in app builds and Android tests, appear
-  only with `--verbose`; the
-  diagnostic log keeps them at every verbosity level.
+  only with `--verbose`. Empty bytecode action headings and stream labels are also
+  hidden; actions with other output keep their context. The diagnostic log keeps
+  all output at every verbosity level.
   `--verbose` also prints probes; `--quiet` hides progress and child output, but keeps
   scaffold warnings, errors, and results. A failed child shows its last 40 lines
   (at most 16 KiB) in quiet mode. Quiet does not try to classify child warning text.
