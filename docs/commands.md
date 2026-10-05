@@ -383,6 +383,14 @@ reject `--all-devices`. It cannot be combined with `--device`.
 If you forward `--json-results-file`, its filename receives a distinct suffix
 for each device so results are not overwritten. Plans never prompt or run tests.
 
+### Test summary markers
+
+The final discovery/file test summary marks successful suite commands with ✅ and
+failed or blocked suites with ❌. An overall result states whether all suite commands
+succeeded, some failed, or an error stopped the run. When counts are unavailable,
+command success is shown without claiming verified test counts. Tests excluded by
+the selected platform remain listed separately under “Not run.”
+
 ## cd
 
 `bdev cd main` and `bdev cd alt-1` enter the selected checkout’s `src/brave`

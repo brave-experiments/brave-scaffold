@@ -57,8 +57,8 @@ def render_summary(discovery, phase_results):
     for phase, outcome in zip(discovery.phases, phase_results):
         counts = outcome.get("results")
         passed = outcome["status"] == "passed"
-        marker = "✅" if passed and counts and counts["ran"] > 0 and counts["failed"] == 0 else "  "
-        detail = "%s; counts unavailable" % outcome["status"]
+        marker = "✅" if passed else "❌"
+        detail = "%s; test counts unavailable" % ("command succeeded" if passed else "failed")
         if counts:
             detail = "%d run, %d passed, %d failed, %d skipped" % (
                 counts["ran"], counts["passed"], counts["failed"], counts["skipped"])
@@ -67,11 +67,18 @@ def render_summary(discovery, phase_results):
         lines.append("  %s %-7s %-*s  %s" % (marker, phase.target, width, phase.suite, detail))
         lines.append("     --filter=%s" % phase.filter)
     for phase in discovery.phases[len(phase_results):]:
-        lines.append("     %-7s %-*s  not run" % (phase.target, width, phase.suite))
+        lines.append("  ❌ %-7s %-*s  not run (stopped by an error)" % (phase.target, width, phase.suite))
     if len(phase_results) == len(discovery.phases) and all(
             p["status"] == "passed" and p.get("results") and p["results"]["ran"] > 0
             and p["results"]["failed"] == 0 for p in phase_results):
         lines.append("✅ All run tests passed.")
+    elif len(phase_results) < len(discovery.phases):
+        lines.append("❌ Test run incomplete: an error stopped the remaining suites.")
+    elif any(p["status"] != "passed" for p in phase_results):
+        failed = sum(p["status"] != "passed" for p in phase_results)
+        lines.append("❌ %d of %d suite commands failed." % (failed, len(discovery.phases)))
+    else:
+        lines.append("✅ All suite commands succeeded; test counts are not fully verified.")
     lines += render_not_run(discovery)
     return "\n".join(lines)
 

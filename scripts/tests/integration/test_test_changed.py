@@ -112,8 +112,23 @@ class TestChangedTests(AndroidTestsTestCase):
         self.add_tests("junit")
         result = self.summary_run(FAKE_RESULTS="none")
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("passed; counts unavailable", result.stdout)
-        self.assertNotIn("✅", result.stdout)
+        self.assertIn("command succeeded; test counts unavailable", result.stdout)
+        self.assertIn("✅ All suite commands succeeded; test counts are not fully verified.", result.stdout)
+        self.assertNotIn("All run tests passed", result.stdout)
+
+    def test_mac_summary_marks_success_without_claiming_verified_counts(self):
+        self.add_tests("unit", "browser")
+        result = self.sandbox.bdev("--config", self.config, "--checkout", "main", "test", "mac",
+                                   "--base", "base-ref", env=self.env())
+        self.assertEqual(result.returncode, 0, result.stderr)
+        summary = result.stdout.split("Test summary:", 1)[1]
+        for suite in ("brave_unit_tests", "brave_browser_tests"):
+            row = next(line for line in summary.splitlines() if suite in line)
+            self.assertIn("✅", row)
+            self.assertIn("command succeeded; test counts unavailable", row)
+        self.assertIn("✅ All suite commands succeeded", summary)
+        self.assertNotIn("All run tests passed", summary)
+        self.assertNotIn("❌", summary)
 
     def test_failed_test_counts_appear_in_the_final_summary(self):
         self.on_test_branch()
@@ -123,6 +138,7 @@ class TestChangedTests(AndroidTestsTestCase):
         summary = document["error"]["message"].split("Test summary:", 1)[1]
         self.assertIn("2 run, 1 passed, 1 failed, 0 skipped; phase failed", summary)
         self.assertNotIn("✅", summary)
+        self.assertIn("❌ 1 of 1 suite commands failed.", summary)
         self.assertIn("browser/extensions/android/n_unittest.cc", summary)
 
     def test_a_failing_phase_does_not_stop_the_others_and_fails_the_command(self):
@@ -134,7 +150,8 @@ class TestChangedTests(AndroidTestsTestCase):
         self.assertEqual([(p["suite"], p["status"]) for p in phases],
                          [("brave_unit_tests", "failed"), ("brave_browser_tests", "failed")])
         self.assertEqual(phases[1]["child_exit_code"], 2)
-        self.assertIn("failed; counts unavailable", document["error"]["message"])
+        self.assertIn("failed; test counts unavailable", document["error"]["message"])
+        self.assertIn("❌ 2 of 2 suite commands failed.", document["error"]["message"])
 
     def test_android_problems_stop_everything_before_any_build(self):
         self.setup_support(ref="v155")
@@ -224,6 +241,7 @@ class TestChangedTests(AndroidTestsTestCase):
         self.assertIn("brave_junit_tests", summary)
         self.assertIn("brave_java_unit_tests", summary)
         self.assertEqual(summary.count("not run"), 2)
+        self.assertIn("❌ Test run incomplete", summary)
         self.assertNotIn("✅", summary)
         self.assertEqual(self.runner_calls(), [])
 
