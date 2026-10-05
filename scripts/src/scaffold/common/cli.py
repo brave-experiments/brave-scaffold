@@ -21,6 +21,7 @@ class Opt:
     choices: tuple = ()
     help: str = ""
     metavar: str = "VALUE"
+    optional_value: bool = False
 
 
 COMMON_OPTIONS = (
@@ -32,6 +33,8 @@ COMMON_OPTIONS = (
         metavar="NAME_OR_PATH"),
     Opt("--config", "config", help="Configuration file (default: the installation's brave-scaffold.toml).",
         metavar="FILE"),
+    Opt("--notify", "notify", choices=("always", "major", "never"), optional_value=True, metavar="POLICY",
+        help="Desktop notification on completion: bare means always; or always, major, never."),
     Opt("--json", "json", takes_value=False, help="Print one JSON result document on stdout."),
     Opt("--format", "format", choices=("json", "text", "bash"),
         help="Output format; 'json' is an alias of --json.", metavar="FORMAT"),
@@ -130,7 +133,9 @@ def parse_tokens(spec, tokens):
                     index += 1
                     continue
                 raise _unknown_option(spec, name, options)
-            if option.takes_value:
+            if option.optional_value and not equals:
+                value = "always"
+            elif option.takes_value:
                 if equals:
                     value = inline
                 else:
@@ -213,7 +218,8 @@ def render_help(spec, prefix="bdev"):
         lines.append("  <%s>%s  %s" % (positional.name, " (required)" if positional.required else "", positional.help))
     lines.append("Options:")
     for option in (*spec.options, *spec.common):
-        argument = "%s %s" % (option.name, option.metavar) if option.takes_value else option.name
+        argument = ("%s[=%s]" % (option.name, option.metavar) if option.optional_value else
+                    "%s %s" % (option.name, option.metavar)) if option.takes_value else option.name
         choices = " [%s]" % "|".join(option.choices) if option.choices else ""
         lines.append("  %-28s %s%s" % (argument, option.help, choices))
     lines.append("")
@@ -255,7 +261,9 @@ def parse_leading(spec, tokens):
         option = options.get(name)
         if option is None:
             break
-        if option.takes_value:
+        if option.optional_value and not equals:
+            value = "always"
+        elif option.takes_value:
             if equals:
                 value = inline
             else:
@@ -293,7 +301,7 @@ def help_requested(spec, tokens):
             name = token.partition("=")[0] if token.startswith("--") else token
             if name not in known:
                 return False
-            index += 2 if known[name].takes_value and "=" not in token else 1
+            index += 2 if known[name].takes_value and not known[name].optional_value and "=" not in token else 1
         else:
             index += 1
     return False
@@ -312,5 +320,5 @@ def detect_json_leading(spec, tokens):
             return True
         if name not in known:
             return False
-        index += 2 if known[name].takes_value and "=" not in token else 1
+        index += 2 if known[name].takes_value and not known[name].optional_value and "=" not in token else 1
     return False

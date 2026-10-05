@@ -16,7 +16,7 @@ from ..common.procs import install_signal_handlers
 from .app import run_command
 from .registry import GROUPS, REGISTRY
 
-VALUE_FLAGS = {option.name for option in COMMON_OPTIONS if option.takes_value}
+VALUE_FLAGS = {option.name for option in COMMON_OPTIONS if option.takes_value and not option.optional_value}
 
 
 def _pop_word(tokens):
@@ -48,7 +48,8 @@ def top_help():
         seen.add(spec.name)
         lines.append("  %-16s %s" % (spec.name, spec.summary))
     lines += ["", "Options (before or after the command, up to '--'):"]
-    lines += ["  %-28s %s" % ((o.name + " " + o.metavar) if o.takes_value else o.name, o.help) for o in COMMON_OPTIONS]
+    lines += ["  %-28s %s" % ((o.name + ("[=%s]" if o.optional_value else " %s") % o.metavar) if o.takes_value else o.name,
+                           o.help) for o in COMMON_OPTIONS]
     lines += ["", "Run 'bdev <command> --help' for a command's arguments, defaults, and side effects.",
               "Use one operator per checkout at a time; the scaffold does not lock checkouts."]
     return "\n".join(lines) + "\n"
@@ -96,7 +97,7 @@ def _wants_help(tokens):
     return False
 
 
-def main(argv, stdout=None, stderr=None):
+def main(argv, stdout=None, stderr=None, notifier=None):
     stdout = stdout or sys.stdout
     stderr = stderr or sys.stderr
     install_signal_handlers()
@@ -118,7 +119,8 @@ def main(argv, stdout=None, stderr=None):
         def raise_error(_context):
             raise error
         command = " ".join(argv[:1]) if argv and not argv[0].startswith("-") else "bdev"
-        return run_command(command, failure, raise_error, needs_config=False, stdout=stdout, stderr=stderr)
+        return run_command(command, failure, raise_error, needs_config=False, stdout=stdout, stderr=stderr,
+                           notify=False)
     return run_command(spec.name, parsed, spec.handler,
                        needs_config=spec.name not in ("capabilities",), stdout=stdout, stderr=stderr,
-                       may_create_config=spec.creates_config)
+                       may_create_config=spec.creates_config, notifier=notifier)

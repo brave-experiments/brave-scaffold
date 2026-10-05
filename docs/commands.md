@@ -54,6 +54,9 @@ look, and what the codes mean. Only delivered commands appear here.
   `bdev shell` keeps direct terminal access, including prompts and output, at every
   verbosity level; its interactive output is not captured. The child receives the
   original arguments and environment.
+- Completion notifications are described under
+  [Completion notifications](#completion-notifications); `--notify[=POLICY]` is accepted by
+  every command, including `bpm` and `vpython3` before their first program argument.
 - Builds show the target, configuration, architecture, output directory, and local
   or RBE mode before compilation. Phase timings separate environment loading,
   readiness, source preparation, the package build, output verification, and source
@@ -352,6 +355,37 @@ changing anything. Android phases follow the rules in [Android tests](android.md
 
 `bdev cd main` and `bdev cd alt-1` enter the selected checkout’s `src/brave`
 directory when `scripts/bdev-shell.sh` is sourced in Bash or Zsh and `scripts/`
-is on `PATH`. Other commands pass through to the launcher. Without the shell
+is on `PATH`. The function also accepts `--notify` and `--notify=POLICY` with the
+checkout name. Other commands pass through to the launcher. Without the shell
 function, `bdev cd <checkout>` prints the resolved directory. An unknown checkout
 returns an error and leaves the current directory unchanged.
+
+## Completion notifications
+
+`bdev` can post one macOS desktop notification when a command finishes. It uses the
+system `osascript` command: no service runs, nothing is installed, and Brave Core is
+not involved. Choose the policy with `[notifications] policy` in `brave-scaffold.toml`
+(default `major`) or per invocation with `--notify` (meaning `always`) or
+`--notify=always|major|never`. The command-line value wins over the file.
+
+| Policy | Notifies for |
+| --- | --- |
+| `major` | `sync`, `build`, `build-run`, `sync-build`, `sync-build-run`, `test`, `test-local`, `run`, `deploy`, `setup`, `env init`, `tools setup`, `android setup`, `patches update`, and `clean --execute` |
+| `always` | Everything in `major`, plus any other command that actually ran, such as `cd`, `context`, `doctor`, `drift`, `checkout`, `env check`, `capabilities`, `shell`, `vpython3`, and `bpm` |
+| `never` | Nothing |
+
+Commands are classified by operation, not duration, so a quick build still notifies
+under `major`. Help, pure `env export`, `--plan` previews, a `clean` without
+`--execute`, and rejected command lines never notify under any policy.
+
+A combined command sends one notification with the final outcome: a successful build
+followed by a failed launch reports the failure. Success, failure, and handled
+cancellation (Ctrl-C) are each reported. The text holds the command, checkout name,
+elapsed time, exit code, error code, and the diagnostic log path. It never includes child
+output, error messages, environment values, or browser arguments.
+
+Notification Center shows the log path as text; it is not clickable. If delivery
+fails (for example, notifications are blocked for the terminal application), the
+exit status and stdout are unchanged and stderr gets one line saying so. macOS
+attributes these notifications to the application that runs `osascript`, so allow
+notifications for your terminal in System Settings. Other hosts send nothing.

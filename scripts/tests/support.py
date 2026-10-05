@@ -21,6 +21,7 @@ from pathlib import Path
 
 SCRIPTS = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SCRIPTS / "src"))
+os.environ["BDEV_NOTIFY_BACKEND"] = "none"
 
 PYTHON = sys.executable
 FAKE_NODE = """#!%(python)s

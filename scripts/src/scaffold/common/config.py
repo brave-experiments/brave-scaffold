@@ -20,8 +20,9 @@ SCHEMA_VERSION = 1
 CONFIG_NAME = "brave-scaffold.toml"
 ALIAS_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]*")
 PLATFORM_NAMES = ("mac", "macos", "android")
-TOP_FIELDS = {"schema_version", "logging", "defaults", "checkouts", "android_support_path"}
+TOP_FIELDS = {"schema_version", "logging", "notifications", "defaults", "checkouts", "android_support_path"}
 LOGGING_FIELDS = {"verbosity"}
+NOTIFICATION_FIELDS = {"policy"}
 DEFAULT_FIELDS = {"platform", "android_device"}
 CHECKOUT_FIELDS = {"alias", "core", "direnv_dir"}
 EXAMPLE = """[[checkouts]]
@@ -48,6 +49,7 @@ class Config:
     path: Path
     exists: bool
     verbosity: str = "normal"
+    notification_policy: str | None = None
     default_platform: str | None = None
     default_android_device: str | None = None
     checkouts: list = field(default_factory=list)
@@ -111,6 +113,14 @@ def _validate(path, data):
         config.verbosity = data["logging"].get("verbosity", "normal")
         if config.verbosity not in ("quiet", "normal", "verbose"):
             raise _invalid(path, "logging.verbosity", "must be quiet, normal, or verbose")
+    if "notifications" in data:
+        _expect_table(path, data["notifications"], "notifications", NOTIFICATION_FIELDS)
+        if "policy" in data["notifications"]:
+            policy = data["notifications"]["policy"]
+            if not isinstance(policy, str) or policy not in ("always", "major", "never"):
+                raise _invalid(path, "notifications.policy", "must be always, major, or never",
+                               '[notifications]\npolicy = "major"')
+            config.notification_policy = policy
     if "defaults" in data:
         _expect_table(path, data["defaults"], "defaults", DEFAULT_FIELDS)
         platform = data["defaults"].get("platform")

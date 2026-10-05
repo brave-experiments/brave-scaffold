@@ -38,6 +38,8 @@ real checkout.
 Normal output shows phases, primary commands, and live build output. Use `--quiet`
 for less console output or `--verbose` to include internal probes. Commands save a diagnostic log
 and print its path; pure environment exports remain silent. See [output controls](docs/commands.md#common-behavior).
+Optional macOS completion notifications are configured with `[notifications]` or
+`--notify` ([details](docs/commands.md#completion-notifications)).
 
 The initial platform scope is macOS arm64 hosts with existing Brave macOS and
 Android checkouts, plus iOS Simulator Debug builds. Fresh checkout creation and

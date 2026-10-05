@@ -15,6 +15,7 @@ from dataclasses import dataclass
 
 from ..common import config as config_module
 from ..common import identity as identity_module
+from ..common import notify as notify_module
 from ..common.procs import CommandLog, format_duration
 from ..common.results import (Cancelled, EXIT_INTERNAL, Result, ScaffoldError, emit, error_result)
 
@@ -60,8 +61,13 @@ class Context:
 
 
 def run_command(command, parsed, handler, argv_environ=None, needs_config=True, cwd=None, stdout=None, stderr=None,
-                may_create_config=False):
-    """Run a handler and always emit exactly one result; return the exit code."""
+                may_create_config=False, notify=True, notifier=None):
+    """Run a handler and always emit exactly one result; return the exit code.
+
+    One completion notification is sent per call after the result is emitted, so combined commands
+    (whose phases run inside one handler) notify once with the final outcome. `notify=False` marks
+    calls that performed no operation, such as a rejected command line.
+    """
     json_mode = parsed.json_mode
     started = time.monotonic()
     log = CommandLog(stream=stderr, verbosity=parsed.get("verbosity", "normal"))
@@ -111,4 +117,32 @@ def run_command(command, parsed, handler, argv_environ=None, needs_config=True, 
     emit(result, json_mode, stdout=stdout, stderr=stderr)
     if log.path:
         log.message("⏱️  Elapsed: %s\nLog: %s" % (format_duration(elapsed), log.path))
+    if notify and (context.config is not None or not needs_config):
+        _notify(context, command, result, elapsed, notifier)
     return result.exit_code
+
+
+def _notify(context, command, result, elapsed, notifier):
+    try:
+        config = context.config
+        if config is None:
+            try:
+                explicit = context.parsed.get("config")
+                if explicit and not os.path.isabs(os.path.expanduser(explicit)):
+                    explicit = os.path.join(context.cwd, explicit)
+                config = config_module.load_config(explicit)
+            except ScaffoldError:
+                config = None
+        policy = notify_module.effective_policy(context.parsed, config)
+        if not notify_module.should_notify(policy, command, context.parsed):
+            return
+        if notifier is None:
+            notifier = notify_module.default_notifier(context.environ)
+        if notifier is None:
+            return
+        title, body = notify_module.compose(command, result.redacted(), elapsed, context.log.path)
+        failure = notify_module.deliver(notifier, title, body)
+        if failure:
+            context.log.message("Notification not delivered: %s" % failure)
+    except Exception:  # noqa: BLE001 - notification problems never change the command's outcome
+        pass

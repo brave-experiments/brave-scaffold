@@ -54,6 +54,24 @@ class SelectionTests(SandboxTest):
             self.assertEqual(result.stdout.splitlines(), [str(main), str(main)])
             self.assertEqual(result.stderr, "cd " + str(main) + "\n")
 
+    def test_cd_shell_function_accepts_notification_options(self):
+        main = self.sandbox.make_checkout("main")
+        self.sandbox.write_config([("main", main, None)])
+        env = self.sandbox.env()
+        env["BDEV_TEST_CONFIG"] = str(self.sandbox.config)
+        wrapper = self.sandbox.root / "bin"
+        wrapper.mkdir(exist_ok=True)
+        write_executable(wrapper / "bdev", '#!/bin/sh\nexec ' + shlex.quote(str(SCRIPTS / "bdev")) + ' --config "$BDEV_TEST_CONFIG" "$@"\n')
+        env["PATH"] = str(wrapper) + os.pathsep + env["PATH"]
+        for shell in ("bash", "zsh"):
+            for arguments in ("main --notify=never", "--notify main", "--notify=major main --notify=major"):
+                with self.subTest(shell=shell, arguments=arguments):
+                    script = 'source "$1"; bdev cd %s || exit; pwd -P' % arguments
+                    result = subprocess.run([shell, "-f", "-c", script, shell, str(SCRIPTS / "bdev-shell.sh")],
+                                            cwd=self.sandbox.root, env=env, capture_output=True, text=True)
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertEqual(result.stdout.splitlines(), [str(main)])
+
     def test_explicit_selector_beats_cwd_and_needs_no_alias(self):
         main = self.sandbox.make_checkout("main")
         other = self.sandbox.make_checkout("other")

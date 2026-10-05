@@ -10,6 +10,11 @@ schema_version = 1
 # Console detail: quiet, normal, or verbose. Diagnostic logs are always saved.
 verbosity = "normal"
 
+[notifications]
+# Desktop completion notification: always, major (sync, build, test, run, deploy, setup, patches,
+# executed cleanup), or never. --notify[=POLICY] overrides it for one command.
+policy = "major"
+
 # Optional platform override. Omit to use the current host platform.
 # [defaults]
 # platform = "mac"
