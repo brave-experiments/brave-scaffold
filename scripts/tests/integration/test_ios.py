@@ -329,7 +329,28 @@ class IosRunTests(IosTestCase):
             ["simctl", "install", "BBBB-PHONE", str(self.app())],
             ["simctl", "launch", "--terminate-running-process", "BBBB-PHONE", "com.brave.ios.browser.dev"]])
         self.assertEqual(document["data"]["run"]["launched_pid"], 4321)
+        (opened,) = [record for record in self.sandbox.records() if record["tool"] == "open"]
+        self.assertEqual(opened["argv"], ["-a", "Simulator", "--args", "-CurrentDeviceUDID", "BBBB-PHONE"])
+        tools = [record["tool"] for record in self.sandbox.records()]
+        self.assertEqual(tools[:5], ["xcrun", "xcrun", "open", "xcrun", "xcrun"])
+        probes = [record for record in self.sandbox.records() if record["tool"] == "ps"]
+        self.assertGreaterEqual(len(probes), 2)
+        self.assertTrue(all(record["argv"] == ["-p", "4321", "-o", "stat="] for record in probes))
         self.assertEqual(self.xcode_calls(), [], "run never builds")
+
+    def test_window_failure_is_reported_separately_and_stops_before_installation(self):
+        self.built()
+        result, document = self.document("run", "ios", env=self.env(FAKE_OPEN_EXIT="1"))
+        self.assertEqual((result.returncode, document["error"]["code"]), (5, "LAUNCH_FAILED"))
+        self.assertEqual(document["error"]["details"]["phase"], "open-simulator")
+        self.assertEqual([call[1] for call in self.simctl_calls()], ["boot", "bootstatus"])
+
+    def test_a_process_that_exits_after_the_first_probe_is_not_reported_as_launched(self):
+        self.built()
+        result, document = self.document("run", "ios", env=self.env(FAKE_IOS_CRASH="1"))
+        self.assertEqual((result.returncode, document["error"]["code"]), (5, "LAUNCH_FAILED"))
+        self.assertEqual(document["error"]["details"]["phase"], "verify-app-running")
+        self.assertEqual(len([record for record in self.sandbox.records() if record["tool"] == "ps"]), 2)
 
     def test_run_needs_an_existing_build(self):
         result, document = self.document("run", "ios")
@@ -357,6 +378,8 @@ class IosRunTests(IosTestCase):
         result, document = self.document("build-run", "ios", "--device", "iPhone 16 Pro")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("platform=iOS Simulator,id=CCCC-PHONE", self.xcode_calls()[0]["argv"])
+        (opened,) = [record for record in self.sandbox.records() if record["tool"] == "open"]
+        self.assertEqual(opened["argv"][-1], "CCCC-PHONE")
         self.assertTrue(all(call[2 if call[1] != "launch" else 3] == "CCCC-PHONE" for call in self.simctl_calls()
                             if call[1] in ("boot", "bootstatus", "install", "launch")))
         self.assertEqual([call[1] for call in self.simctl_calls()], ["boot", "bootstatus", "install", "launch"])
@@ -389,6 +412,12 @@ class IosRunTests(IosTestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("BBBB-PHONE", result.stdout)
         self.assertEqual(self.simctl_calls(), [])
+        steps = document["data"]["plan"]["steps"]
+        names = [step["name"] for step in steps]
+        self.assertLess(names.index("boot-simulator"), names.index("open-simulator"))
+        self.assertLess(names.index("open-simulator"), names.index("install-app"))
+        self.assertLess(names.index("launch-app"), names.index("verify-app-running"))
+        self.assertEqual([record for record in self.sandbox.records() if record["tool"] in ("open", "ps")], [])
 
 
 if __name__ == "__main__":

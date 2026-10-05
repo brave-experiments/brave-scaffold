@@ -76,6 +76,23 @@ exec(open(os.environ["FAKE_XCODEBUILD_HOOK"]).read()) if os.environ.get("FAKE_XC
 def install_fake_xcode(sandbox):
     write_executable(sandbox.bin / "xcrun", FAKE_XCRUN)
     write_executable(sandbox.bin / "xcodebuild", FAKE_XCODEBUILD)
+    write_executable(sandbox.bin / "open", '''#!%(python)s
+import json, os, sys
+with open(os.environ["FAKE_RECORD"], "a") as stream:
+    stream.write(json.dumps({"tool": "open", "argv": sys.argv[1:]}) + "\\n")
+sys.exit(int(os.environ.get("FAKE_OPEN_EXIT", "0")))
+''')
+    write_executable(sandbox.bin / "ps", '''#!%(python)s
+import json, os, sys
+path = os.environ["FAKE_RECORD"]
+with open(path) as stream:
+    previous = sum(json.loads(line)["tool"] == "ps" for line in stream)
+with open(path, "a") as stream:
+    stream.write(json.dumps({"tool": "ps", "argv": sys.argv[1:]}) + "\\n")
+if os.environ.get("FAKE_IOS_CRASH") and previous:
+    sys.exit(1)
+print("S")
+''')
 
 
 def make_ios_project(core, deployment_target="17.0", bootstrapped=True):

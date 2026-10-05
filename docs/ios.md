@@ -128,11 +128,14 @@ bdev sync-build ios                        # sync, then build
 ```
 
 `run` never builds. It boots the chosen simulator and waits for it (`simctl boot`,
-`simctl bootstatus -b`), installs the app over the existing one so app data is kept
+`simctl bootstatus -b`), opens that device's Simulator window, installs the app over the existing one so app data is kept
 (`simctl install`), and launches it, replacing a running copy
 (`simctl launch --terminate-running-process`). The launch must report a process id. Each
-step that fails is `LAUNCH_FAILED` and names its phase. The Simulator window is not opened;
-use `open -a Simulator` to see the device.
+step that fails is `LAUNCH_FAILED` and names its phase. Failure to open the window
+stops before installation and reports `open-simulator`. After launch, the command
+checks that the process stays running for one second; an early exit reports
+`verify-app-running`. This catches immediate exits, but does not prove the app's UI
+loaded or that it will stay running afterward.
 
 `--artifact <path to Client.app>` runs a specific build. If more than one recorded build matches,
 `run` stops with `ARTIFACT_AMBIGUOUS`. `bdev clean ios` removes the GN output and derived-data

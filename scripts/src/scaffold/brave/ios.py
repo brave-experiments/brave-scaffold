@@ -10,6 +10,7 @@ import json
 import os
 import plistlib
 import re
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -363,6 +364,7 @@ def verify_artifact(identity, build):
 
 BOOT_WAIT_SECONDS = 300
 ALREADY_BOOTED = 149
+LAUNCH_OBSERVATION_SECONDS = 1.0
 
 
 def _simctl(environ, log, args, timeout=120):
@@ -370,7 +372,7 @@ def _simctl(environ, log, args, timeout=120):
 
 
 def restart_app(udid, bundle, environ, log=None, progress=None, started=None, failed=None):
-    """Boot the simulator, install over the existing app (data is kept), and launch it, replacing a running copy."""
+    """Boot and show the simulator, install the app, then launch it and check for an immediate exit."""
     progress = progress or (lambda name, **outcome: None)
     started = started or (lambda name: None)
     failed = failed or (lambda name, **outcome: None)
@@ -390,6 +392,12 @@ def restart_app(udid, bundle, environ, log=None, progress=None, started=None, fa
     if ready.returncode != 0 or ready.timed_out:
         stop("boot-simulator", ready, "Simulator %s did not finish booting" % udid)
     progress("boot-simulator", exit=booted.returncode)
+    started("open-simulator")
+    opened = run_capture(["open", "-a", "Simulator", "--args", "-CurrentDeviceUDID", udid],
+                         os.getcwd(), environ, log, timeout=60)
+    if opened.returncode != 0:
+        stop("open-simulator", opened, "Opening the Simulator window for %s failed" % udid)
+    progress("open-simulator", exit=0)
     started("install-app")
     installed = _simctl(environ, log, ["install", udid, bundle["path"]], timeout=600)
     if installed.returncode != 0:
@@ -406,5 +414,17 @@ def restart_app(udid, bundle, environ, log=None, progress=None, started=None, fa
             bundle["bundle_identifier"], udid), details={"simulator": udid, "phase": "launch-app",
                                                          "stdout": launched.stdout.strip()[-300:]})
     progress("launch-app", exit=0, pid=found.group(1))
+    started("verify-app-running")
+    deadline = time.monotonic() + LAUNCH_OBSERVATION_SECONDS
+    while True:
+        running = run_capture(["ps", "-p", found.group(1), "-o", "stat="], os.getcwd(), environ, log,
+                              timeout=10)
+        if running.returncode != 0 or not running.stdout.strip() or running.stdout.strip().startswith("Z"):
+            stop("verify-app-running", running, "Could not confirm Brave stayed running on simulator %s" % udid)
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        time.sleep(min(0.2, remaining))
+    progress("verify-app-running", exit=0, pid=found.group(1))
     return {"simulator_udid": udid, "bundle_identifier": bundle["bundle_identifier"],
             "launched_pid": int(found.group(1))}

@@ -199,8 +199,10 @@ def run_steps(app, simulator, needs, bundle):
     udid = simulator["udid"] if simulator else "<simulator>"
     bundle_id = bundle["bundle_identifier"] if bundle else "<bundle identifier from the built app>"
     return [step_module.boot_simulator_step(udid, needs),
-            step_module.install_app_step(udid, str(app), ["boot-simulator"]),
-            step_module.launch_app_step(udid, bundle_id, ["install-app"])]
+            step_module.open_simulator_step(udid, ["boot-simulator"]),
+            step_module.install_app_step(udid, str(app), ["open-simulator"]),
+            step_module.launch_app_step(udid, bundle_id, ["install-app"]),
+            step_module.verify_ios_running_step(["launch-app"])]
 
 
 # --- run ------------------------------------------------------------------------------

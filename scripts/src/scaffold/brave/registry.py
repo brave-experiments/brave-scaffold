@@ -104,7 +104,8 @@ def build_registry():
                     cmd_build.cmd_build_run, aliases=("br",), positionals=(TARGET,),
                     options=(CONFIGURATION, OFFLINE, FORCE_GN, PLAN, DEVICE, SKIP_SUPPORT_REFRESH), forward=True,
                     side_effects=BUILD_SIDE_EFFECTS + " Then stops any running instance of the same application and "
-                                                     "launches the new build.",
+                                                     "launches the new build. iOS also opens the selected "
+                                                     "Simulator window and checks the launched process.",
                     examples=("bdev br",)),
         CommandSpec("sync", "Run Core's source sync command.", cmd_build.cmd_sync,
                     positionals=(Positional("targets", help="Comma-separated targets: mac, android, ios."),),
@@ -158,7 +159,9 @@ def build_registry():
                     side_effects="macOS: quits any running instance of the same application (from any checkout), "
                                  "then launches the selected one. Android: installs the APK over the existing app on "
                                  "one device, stops that package there, and launches it. Profiles and app data are kept.",
-                    notes="Older or independently built outputs may run; source state is not inspected.",
+                    notes="Older or independently built outputs may run. iOS checks source freshness, opens "
+                          "the selected Simulator window, and checks the app stays running for one second. "
+                          "Other targets do not inspect source state.",
                     examples=("bdev run", "bdev run --artifact ./out/Custom/'Brave Browser Development.app'")),
         CommandSpec("deploy", "Install the Android build on a device and launch it (same as 'run android').",
                     cmd_build.cmd_deploy, positionals=(Positional("target", True, help="android"),),

@@ -297,6 +297,21 @@ def install_app_step(udid, app, needs=()):
                 cleanup=NO_CLEANUP)
 
 
+def open_simulator_step(udid, needs=()):
+    return Step("open-simulator", "Open the selected device in the Simulator window.", "planned",
+                argv=["open", "-a", "Simulator", "--args", "-CurrentDeviceUDID", udid],
+                writes=["Simulator window for %s" % udid], needs=list(needs),
+                on_failure="Reported as LAUNCH_FAILED for open-simulator; nothing is installed or launched.",
+                cleanup=NO_CLEANUP)
+
+
+def verify_ios_running_step(needs=()):
+    return Step("verify-app-running", "Check the launched process stays running for one second.", "planned",
+                reads=["the launched process state"], argv=["ps", "-p", "<launched pid>", "-o", "stat="],
+                needs=list(needs), on_failure="Reported as LAUNCH_FAILED for verify-app-running.",
+                cleanup=NO_CLEANUP)
+
+
 def launch_app_step(udid, bundle_id, needs=()):
     return Step("launch-app", "Launch the app, replacing a running instance, and confirm a process id.", "planned",
                 writes=["simulator %s: a new %s process" % (udid, bundle_id)],
