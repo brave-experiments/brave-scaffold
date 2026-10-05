@@ -11,6 +11,7 @@ from pathlib import Path
 
 from tests.support import SandboxTest, tree_snapshot
 from scaffold.brave import clean, records
+from tests.schema_validation import Validator
 
 NAMES = ["Debug_arm64", "Debug_x64", "Release_arm64", "DebugOrigin_arm64", "Debug", "android_Debug_arm64",
          "android_tests_Debug_arm64", "android_Release_arm64", "ios_Debug_arm64_simulator", "ios_Debug_x64_simulator",
@@ -50,6 +51,43 @@ class CleanTests(SandboxTest):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.names(document), ["android_Debug_arm64", "android_tests_Debug_arm64"])
         self.assertEqual(self.remaining(), sorted(set(NAMES) - {"android_Debug_arm64", "android_tests_Debug_arm64"}))
+
+    def test_output_explains_default_and_explicit_platform_scope(self):
+        cases = (((), "host", ["mac"], "host default only"),
+                 (("android", "--configuration", "debug", "--arch", "arm64"), "explicit", ["android"],
+                  "explicit selection"),
+                 (("macos",), "explicit", ["mac"], "explicit selection"),
+                 (("all",), "explicit", ["mac", "android", "ios"], "explicit selection"))
+        for args, source, targets, label in cases:
+            with self.subTest(args=args):
+                result = self.sandbox.bdev("clean", "--checkout", "main", "--config", self.config, *args)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                scope = "Platforms: %s (%s)" % (", ".join(targets), label)
+                self.assertIn(scope, result.stdout)
+                self.assertLess(result.stdout.index(scope), result.stdout.index("planned"))
+                configurations, arch = ("debug", "arm64") if source == "explicit" and targets == ["android"] \
+                    else ("debug, release", "all")
+                self.assertIn("Configurations: %s; architecture: %s" % (configurations, arch), result.stdout)
+                self.assertEqual("To preview every platform" in result.stdout, source == "host")
+                _, document = self.clean(*args)
+                self.assertEqual(document["data"]["targets"], targets)
+                self.assertEqual(document["data"]["target_source"], source)
+                self.assertEqual(Validator().problems(document), [])
+
+    def test_configured_default_scope_is_visible_even_when_no_output_matches(self):
+        self.sandbox.write_config([("main", self.core, None)], extra='\n[defaults]\nplatform = "android"\n')
+        for name in NAMES:
+            if name.startswith("android_"):
+                shutil.rmtree(self.out / name)
+        result = self.sandbox.bdev("clean", "--config", self.config, "--checkout", "main")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Platforms: android (configured default only)", result.stdout)
+        self.assertIn("Other platforms are not checked", result.stdout)
+        self.assertIn("bdev clean all", result.stdout)
+        self.assertIn("No matching build output directories", result.stdout)
+        _, document = self.clean()
+        self.assertEqual(document["data"]["target_source"], "configured")
+        self.assertEqual(document["data"]["targets"], ["android"])
 
     def test_arch_narrows_the_match(self):
         self.clean("mac", "--arch", "arm64", "--execute")

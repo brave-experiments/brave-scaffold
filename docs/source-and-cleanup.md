@@ -135,6 +135,10 @@ bdev clean all --execute                     # explicitly mac, android, and ios
 - The target is `mac`, `android`, `ios`, or `all`. Omitting it selects the default
   target (explicit target, then `defaults.platform`, then the host). Omission
   never means all.
+  The output names the selected platforms and whether they came from an explicit
+  argument, the configured default, or the host default. With an omitted target,
+  it also shows how to preview every platform. JSON reports this in `targets` and
+  `target_source` (`explicit`, `configured`, or `host`).
 - `--configuration debug|release|all` (default `all`) and `--arch <arch>` narrow
   the match.
 - Only directories directly under the selected checkout's own `src/out` are
@@ -147,6 +151,9 @@ Preview writes nothing:
 
 ```text
 Preview (nothing is deleted) in /work/browser/_bad_scm/workspace/src/out
+Platforms: mac (host default only)
+Configurations: debug, release; architecture: all
+Other platforms are not checked. To preview every platform, run 'bdev clean all'.
   planned      12.3 GiB  /work/browser/_bad_scm/workspace/src/out/Debug_arm64
   planned       9.8 GiB  /work/browser/_bad_scm/workspace/src/out/Release_arm64
 Run again with --execute to delete the directories marked 'planned'.

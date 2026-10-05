@@ -303,8 +303,9 @@ def run_clean(ctx):
                             details={"targets": [*SUPPORTED_TARGETS, "all"]})
     if token == "all":
         targets = list(SUPPORTED_TARGETS)
+        target_source = "explicit"
     else:
-        target, _ = effective_target(token, ctx.config)
+        target, target_source = effective_target(token, ctx.config)
         targets = [target]
     config_choice = ctx.parsed.get("configuration", "all")
     configs = list(CONFIG_NAMES) if config_choice == "all" else [config_choice]
@@ -322,8 +323,9 @@ def run_clean(ctx):
                 op.detail(**{outcome: [e.name for e in entries if e.outcome == outcome]
                              for outcome in ("deleted", "skipped", "failed", "interrupted")},
                           remaining=[e.private for e in entries if e.private and e.outcome in ("failed", "interrupted")])
-            return op.complete(clean_result(ctx, identity, entries, out_dir, targets, configs, arch, execute))
-    return clean_result(ctx, identity, entries, out_dir, targets, configs, arch, execute)
+            return op.complete(clean_result(ctx, identity, entries, out_dir, targets, configs, arch, execute,
+                                            target_source))
+    return clean_result(ctx, identity, entries, out_dir, targets, configs, arch, execute, target_source)
 
 
 def recorded_remainders(identity, state_root):
@@ -334,14 +336,21 @@ def recorded_remainders(identity, state_root):
     return found
 
 
-def clean_result(ctx, identity, entries, out_dir, targets, configs, arch, execute):
+def clean_result(ctx, identity, entries, out_dir, targets, configs, arch, execute, target_source):
     total = None if ctx.parsed.get("no_size") else sum(e.size_kib or 0 for e in entries if e.size_kib is not None)
-    data = {"mode": "execute" if execute else "preview", "targets": targets, "configurations": configs,
+    data = {"mode": "execute" if execute else "preview", "targets": targets, "target_source": target_source,
+            "configurations": configs,
             "arch": arch, "out_dir": str(out_dir) if out_dir else None, "total_kib": total,
             "entries": [{"name": e.name, "path": str(e.path), "size_kib": e.size_kib, "outcome": e.outcome,
                          "detail": e.detail} for e in entries]}
     lines = ["%s in %s" % ("Deleting" if execute else "Preview (nothing is deleted)",
                            out_dir or identity.src / "out")]
+    source_label = {"host": "host default only", "configured": "configured default only",
+                    "explicit": "explicit selection"}[target_source]
+    lines.append("Platforms: %s (%s)" % (", ".join(targets), source_label))
+    lines.append("Configurations: %s; architecture: %s" % (", ".join(configs), arch or "all"))
+    if target_source != "explicit":
+        lines.append("Other platforms are not checked. To preview every platform, run 'bdev clean all'.")
     for entry in entries:
         lines.append("  %-8s %10s  %s%s" % (entry.outcome, format_kib(entry.size_kib), entry.path,
                                           "  (%s)" % entry.detail if entry.detail else ""))

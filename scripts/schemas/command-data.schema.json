@@ -431,6 +431,9 @@
                 "execute"
               ]
             },
+            "target_source": {
+              "enum": ["explicit", "configured", "host"]
+            },
             "targets": {
               "type": "array",
               "items": {
