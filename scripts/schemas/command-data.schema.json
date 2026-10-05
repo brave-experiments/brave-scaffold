@@ -366,6 +366,24 @@
             "suite": {
               "type": "string"
             },
+            "device_selection": {"type": "string"},
+            "devices": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["device", "status"],
+                "properties": {
+                  "device": {"type": "string"},
+                  "status": {"enum": ["ok", "error", "skipped"]},
+                  "reason": {"type": "string"},
+                  "code": {"type": "string"},
+                  "argv": {"type": "array", "items": {"type": "string"}},
+                  "cwd": {"type": "string"},
+                  "child_exit_code": {"type": ["integer", "null"]},
+                  "results": {"type": ["object", "null"]}
+                }
+              }
+            },
             "argv": {
               "type": "array",
               "items": {

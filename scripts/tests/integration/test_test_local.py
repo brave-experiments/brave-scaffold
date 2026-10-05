@@ -5,6 +5,8 @@
 """`bdev test-local`: modified tests become suite phases that run through the existing test paths."""
 
 import subprocess
+import shutil
+import unittest
 from pathlib import Path
 
 from tests.integration.test_android_tests import BRANCH, DEVICES_TWO, ONE_DEVICE, AndroidTestsTestCase
@@ -13,6 +15,15 @@ JAVA = "package org.example.app;\n\npublic class %s {}\n"
 
 
 class TestLocalTests(AndroidTestsTestCase):
+    @unittest.skipUnless(shutil.which('node'), 'needs Node for the device adapter fixture')
+    def test_all_devices_runs_device_suite_once_and_keeps_host_suite(self):
+        self.on_test_branch()
+        self.add_tests('java', 'junit')
+        result, document = self.local('--all-devices', devices=DEVICES_TWO, FAKE_ADAPTER_NODE=shutil.which('node'))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual([phase['status'] for phase in document['data']['phases']], ['passed', 'passed'])
+        self.assertEqual(len(document['data']['phases'][1]['devices']), 2)
+
     def setUp(self):
         super().setUp()
         self.git("branch", "base-ref")

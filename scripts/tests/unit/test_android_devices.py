@@ -78,7 +78,7 @@ class DevicePickerTests(unittest.TestCase):
             self.assertNotIn('Remember', text)
             self.assertEqual(self.path.read_text(), self.original)
 
-    def test_single_device_test_picker_does_not_offer_all(self):
+    def test_single_device_selection_does_not_offer_all(self):
         outcome, text = self.preflight('a\n2\nn\n')
         self.assertEqual(outcome[1], DEVICES[1])
         self.assertNotIn('a. All', text)

@@ -105,7 +105,7 @@ without selecting a browser checkout. See [support repositories](support-reposit
 | `bdev capabilities` | Supported, limited, unverified, unsupported combinations | None; needs no checkout |
 | `bdev doctor [scope]` | Named readiness checks (`mac`, `android`, `ios`, `rbe`, `shell`, `signing`) | None |
 | `bdev build [target]` | Prepare, compile, and verify the output ([macOS](macos.md), [iOS](ios.md)); iOS runs `xcodebuild` | Writes build output; may apply patches |
-| `bdev test [target] <suite>` | Compile if needed and run one suite ([macOS](macos.md), [Android](android.md#tests)); `--device` for Android device suites | Writes build output; runs tests; Android also applies the support test overlay to Core's `build/commands` |
+| `bdev test [target] <suite>` | Compile if needed and run one suite ([macOS](macos.md), [Android](android.md#tests)); `--device` or `--all-devices` for Android device suites | Writes build output; runs tests; Android also applies the support test overlay to Core's `build/commands` |
 | `bdev test-local` | Run the tests the branch or working tree modifies, one suite after another ([details](#test-local)) | Effects of each `bdev test` phase it runs |
 | `bdev run [target]` | Restart the browser with an existing output; never builds | Quits and relaunches the application |
 | `bdev build-run` (`br`), `sync-build` (`sb`), `sync-build-run` (`sbr`) | Combined workflows; extras go to the build phase | Effects of each phase |

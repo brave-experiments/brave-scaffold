@@ -21,13 +21,18 @@ TEST_OUTCOME_CODES = ("CHILD_FAILED", "TEST_FAILED", "NO_TESTS_RAN", "ARTIFACT_M
 def phase_context(ctx, phase, device):
     values = {**ctx.parsed.values, "suite": phase.suite, "target": phase.target, "filter": phase.filter,
               "base": None, "scope": None, "device": device if phase.suite == "brave_java_unit_tests" else None}
+    values["all_devices"] = False
+    values["device_group"] = device if isinstance(device, android.DeviceGroup) and phase.suite == "brave_java_unit_tests" else None
+    if isinstance(device, android.DeviceGroup):
+        values["device"] = None
     return dataclasses.replace(ctx, parsed=Parsed(values=values, delimiter=ctx.parsed.delimiter))
 
 
 def failure_record(phase, error):
     return {"target": phase.target, "suite": phase.suite, "filter": phase.filter, "status": "failed",
             "error": {"code": error.code, "message": error.message}, "child_exit_code": error.child_exit_code,
-            "operation_id": error.operation_id, "results": error.details.get("results")}
+            "operation_id": error.operation_id, "results": error.details.get("results"),
+            "devices": error.details.get("devices")}
 
 
 SCOPE_WORDS = {"both": "committed and working-tree changes", "committed": "committed changes",
@@ -83,6 +88,8 @@ def render_discovery(discovery):
 
 def cmd_test_local(ctx):
     parsed = ctx.parsed
+    if parsed.get("all_devices") and parsed.get("device"):
+        raise ScaffoldError("SELECTOR_CONFLICT", "Use either --device or --all-devices, not both.")
     identity = ctx.identity()
     discovery = branch_tests.discover(identity.core, parsed.get("base") or branch_tests.DEFAULT_BASE,
                                       parsed.get("scope") or "both", ctx.log)
@@ -107,12 +114,19 @@ def cmd_test_local(ctx):
         android_tests.require_support_branch(identity, ctx.log)
     if any(p.suite == "brave_java_unit_tests" for p in discovery.phases):
         execution = execution_module.load(ctx, identity)
-        device = android.preflight_device(execution.context(ctx))[1]["id"]
+        choice = android.preflight_deployment(execution.context(ctx), "arm64")
+        device = choice if isinstance(choice, android.DeviceGroup) else choice[1]["id"]
     phase_results, failures = [], []
     for number, phase in enumerate(discovery.phases, 1):
         ctx.log.phase("Phase %d/%d: %s %s" % (number, len(discovery.phases), phase.target, phase.suite))
         try:
             done = cmd_build.cmd_test(phase_context(ctx, phase, device))
+            if done.error:
+                error = ScaffoldError(done.error["code"], done.error["message"],
+                                      details={**done.error.get("details", {}), "results": (done.data or {}).get("results")},
+                                      child_exit_code=done.child_exit_code)
+                error.operation_id = done.operation_id
+                raise error
         except ScaffoldError as error:
             if error.code not in TEST_OUTCOME_CODES:
                 error.details.setdefault("test_phases", phase_results)
@@ -124,7 +138,8 @@ def cmd_test_local(ctx):
             ctx.log.phase("Phase failed: %s: %s" % (error.code, error.message))
             continue
         phase_results.append({"target": phase.target, "suite": phase.suite, "filter": phase.filter, "status": "passed",
-                              "operation_id": done.operation_id, "results": (done.data or {}).get("results")})
+                              "operation_id": done.operation_id, "results": (done.data or {}).get("results"),
+                              "devices": (done.data or {}).get("devices")})
         result.warnings += done.warnings
     result.data["phases"] = phase_results
     if failures:

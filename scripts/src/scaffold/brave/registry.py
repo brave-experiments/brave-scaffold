@@ -26,7 +26,7 @@ ARTIFACT = Opt("--artifact", "artifact", metavar="PATH", help="Application to ru
 FILTER = Opt("--filter", "filter", metavar="PATTERN", help="Only run tests matching the pattern within the suite.")
 DEVICE = Opt("--device", "device", metavar="ID", help="Android device id (otherwise use the saved default, sole device, or terminal picker), or an iOS Simulator name or UDID.")
 ALL_DEVICES = Opt("--all-devices", "all_devices", takes_value=False,
-                  help="Android run, deploy, build-run, or sync-build-run: install and launch on every compatible, usable device; overrides the saved default.")
+                  help="Run Android apps or device-backed tests on every compatible, usable device; overrides the saved default.")
 SOURCE = Opt("--source", "source", metavar="URL_OR_PATH", help="Support repository to clone (default: the standard source).")
 REF = Opt("--ref", "ref", metavar="REF", help="Shared support repository branch, tag, or commit.")
 DIFF = Opt("--diff", "diff", takes_value=False, help="Print the Git diff of each drifted file.")
@@ -129,24 +129,24 @@ def build_registry():
                     cmd_build.cmd_test,
                     positionals=(TARGET, Positional("suite", True, help="Test suite, for example brave_unit_tests; on "
                                                     "Android brave_junit_tests or brave_java_unit_tests.")),
-                    options=(CONFIGURATION, OFFLINE, FILTER, PLAN, DEVICE), forward=True, max_positionals=2,
+                    options=(CONFIGURATION, OFFLINE, FILTER, PLAN, DEVICE, ALL_DEVICES), forward=True, max_positionals=2,
                     post_parse=cmd_build.post_parse_test,
                     side_effects=BUILD_SIDE_EFFECTS.replace("Never cleans, installs, or launches anything.",
                                                             "Runs the tests, which may launch test browsers.")
                     + " Android: also requires the support working copy on the android-testing-prototype branch "
                       "(never switched), applies the support repository's test overlay to Core's build/commands "
                       "and leaves it applied, builds in out/android_tests_<configuration>_arm64, and "
-                      "brave_java_unit_tests runs on the selected device.",
+                      "brave_java_unit_tests runs on the selected devices.",
                     notes="The suite must come before any forwarded arguments. --filter only narrows the suite. "
                           "On Android, brave_junit_tests runs on this Mac and takes no --device; "
-                          "brave_java_unit_tests needs a device (--device is a scaffold option, not forwarded). "
+                          "brave_java_unit_tests accepts --device or --all-devices (scaffold options, not forwarded). "
                           "Host-side filters need a fully qualified class or a wildcard such as '*ExampleTest*'.",
                     examples=("bdev test brave_unit_tests", "bdev test mac brave_browser_tests --filter 'Example.*'",
                               "bdev test android brave_junit_tests --filter='*BraveCommandLineInitUtilTest*'",
                               "bdev test android brave_java_unit_tests --filter='BraveAppearancePreferencesTest.*' "
                               "--device=emulator-5554")),
         CommandSpec("test-local", "Run the tests this branch or working tree modifies, one suite after another.",
-                    cmd_test_local.cmd_test_local, positionals=(TARGET,), options=(BASE, SCOPE, CONFIGURATION, OFFLINE, DEVICE, PLAN),
+                    cmd_test_local.cmd_test_local, positionals=(TARGET,), options=(BASE, SCOPE, CONFIGURATION, OFFLINE, DEVICE, ALL_DEVICES, PLAN),
                     side_effects=BUILD_SIDE_EFFECTS.replace("Never cleans, installs, or launches anything.",
                                                             "Runs the tests, which may launch test browsers.")
                     + " Reads Git state only to choose tests. Android phases need the android-testing-prototype "

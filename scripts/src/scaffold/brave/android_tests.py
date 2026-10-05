@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 from pathlib import Path
 
@@ -41,6 +42,10 @@ def suite_kind(suite):
 
 
 def check_options(parsed, kind):
+    if parsed.get("all_devices") and parsed.get("device"):
+        raise ScaffoldError("SELECTOR_CONFLICT", "Use either --device or --all-devices, not both.")
+    if kind == HOST and parsed.get("all_devices"):
+        raise ScaffoldError("INVALID_INPUT", "--all-devices applies to device-backed Android tests only.")
     if kind == HOST and parsed.get("device"):
         raise ScaffoldError("INVALID_INPUT", "--device does not apply to %s: it runs on this Mac and uses no device."
                             % parsed.get("suite"), details={"example": "bdev test android %s" % parsed.get("suite")})
@@ -59,6 +64,24 @@ def device_arguments(adb, device):
 
 def forwarded_results_file(forwarded):
     return any(token.partition("=")[0] == "--json-results-file" for token in forwarded)
+
+
+def device_results_path(effective, device, base=None):
+    suffix = hashlib.sha256(device.encode()).hexdigest()[:16]
+    path = Path(base) if base else effective.preparation_dir / RESULTS_NAME
+    if not path.is_absolute():
+        path = effective.preparation_dir / path
+    return path.with_name("%s_%s%s" % (path.stem, suffix, path.suffix))
+
+
+def results_option(forwarded):
+    path = None
+    for index, token in enumerate(forwarded):
+        if token == "--json-results-file" and index + 1 < len(forwarded):
+            path = forwarded[index + 1]
+        elif token.startswith("--json-results-file="):
+            path = token.partition("=")[2]
+    return path
 
 
 # --- support branch -----------------------------------------------------------------------------

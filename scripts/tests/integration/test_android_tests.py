@@ -6,10 +6,18 @@
 
 import json
 import subprocess
+import shutil
+import os
+import pty
+import select
+import threading
+import fcntl
+import termios
 import unittest
 from pathlib import Path
 
 from tests.android_fixtures import GIT, OVERLAY_FILES
+from tests.android_test_device_fixtures import SCRIPT, UTIL
 from tests.integration.test_android import ANDROID_HOOK, DEVICES_TWO, AndroidTestCase
 from tests.integration.test_build import SKIP
 
@@ -31,6 +39,12 @@ if not os.path.exists(os.path.join(core, "build", "commands", "lib", "androidTes
 if not os.environ.get("FAKE_NO_RUNNER"):
     with open(os.path.join(out, "bin", "run_" + suite), "w") as stream:
         stream.write("#!/bin/sh\\n")
+if os.environ.get("SCAFFOLD_ANDROID_TEST_DEVICES"):
+    import subprocess, pathlib
+    config = json.loads(pathlib.Path(os.environ["SCAFFOLD_ANDROID_TEST_DEVICES"]).read_text())
+    options = os.environ["NODE_OPTIONS"].split("--import=", 1)[1]
+    raise SystemExit(subprocess.run([os.environ["FAKE_ADAPTER_NODE"], "--import=" + options, config["script"]],
+                                   env={**os.environ, "FAKE_TEST_OUTPUT": out}).returncode)
 mode = os.environ.get("FAKE_RESULTS", "pass")
 targets = [a.split("=", 1)[1] for a in argv if a.startswith("--json-results-file=")]
 tests = {"pass": {"a.B#one": [{"status": "SUCCESS"}], "a.B#two": [{"status": "SUCCESS"}, {"status": "SUCCESS"}],
@@ -55,6 +69,12 @@ class AndroidTestsTestCase(AndroidTestCase):
         super().setUp()
         self.hook = self.sandbox.hook("import json\n" + TEST_HOOK + ANDROID_HOOK)
         self.overlay_file = self.src / "brave" / "build" / "commands" / "lib" / "androidTestMacHost.ts"
+        for relative, text in (("build/commands/scripts/test.ts", SCRIPT), ("build/commands/lib/util.js", UTIL)):
+            path = self.core / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(text)
+        package = self.core / 'package.json'
+        package.write_text(json.dumps({**json.loads(package.read_text()), 'type': 'module'}))
 
     def last_argv(self):
         return self.runner_calls()[-1]["argv"][1:]
@@ -144,6 +164,126 @@ class HostSuiteTests(AndroidTestsTestCase):
 
 
 class DeviceSuiteTests(AndroidTestsTestCase):
+    @unittest.skipUnless(shutil.which('node'), 'needs Node for the device adapter fixture')
+    def test_all_devices_skips_incompatible_devices_and_preserves_custom_results_base(self):
+        self.on_test_branch()
+        properties = {'emulator-5554': {'ro.product.cpu.abilist': 'x86_64'}}
+        base = self.sandbox.root / 'chosen.json'
+        result, document = self.run_tests('brave_java_unit_tests', '--all-devices', '--json-results-file=' + str(base),
+                                          devices=DEVICES_TWO, FAKE_ADAPTER_NODE=shutil.which('node'),
+                                          FAKE_ADB_PROPERTIES=json.dumps(properties))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual([run['status'] for run in document['data']['devices']], ['skipped', 'ok'])
+        path = Path(document['data']['devices'][1]['results']['path'])
+        self.assertEqual(path.parent, base.parent)
+        self.assertTrue(path.name.startswith('chosen_'))
+        self.assertTrue(path.is_file())
+    @unittest.skipUnless(shutil.which('node'), 'needs Node for the device adapter fixture')
+    def test_terminal_picker_all_runs_tests_on_both_devices(self):
+        self.on_test_branch()
+        master, slave = pty.openpty()
+        def own_terminal():
+            os.setsid()
+            fcntl.ioctl(slave, termios.TIOCSCTTY, 0)
+        process = None
+        finished = threading.Event()
+        terminal = []
+        def drain_terminal():
+            while not finished.is_set():
+                if select.select([master], [], [], 0.1)[0]:
+                    terminal.append(os.read(master, 65536))
+        reader = threading.Thread(target=drain_terminal)
+        try:
+            process = subprocess.Popen([str(self.sandbox.scripts / 'bdev'), '--config', str(self.config),
+                                        '--checkout', 'main', 'test', 'android', 'brave_java_unit_tests'],
+                                       cwd=self.sandbox.root,
+                                       env=self.env(FAKE_ADB_DEVICES=DEVICES_TWO, FAKE_ADAPTER_NODE=shutil.which('node')),
+                                       stdin=slave, stderr=slave, stdout=slave, text=True, preexec_fn=own_terminal)
+            reader.start()
+            os.write(master, b'a\n')
+            process.wait(timeout=30)
+            finished.set()
+            reader.join(timeout=1)
+            stdout = b''.join(terminal).decode()
+            self.assertEqual(process.returncode, 0, stdout)
+            self.assertIn('emulator-5554: passed', stdout)
+            self.assertIn('R58M1234: passed', stdout)
+        finally:
+            if process is not None and process.poll() is None:
+                process.kill()
+                process.communicate()
+            finished.set()
+            if reader.is_alive():
+                reader.join(timeout=1)
+            os.close(master)
+            os.close(slave)
+
+    @unittest.skipUnless(shutil.which('node'), 'needs Node for the device adapter fixture')
+    def test_all_devices_zero_exit_failure_and_missing_results_are_reported(self):
+        self.on_test_branch()
+        result, document = self.run_tests('brave_java_unit_tests', '--all-devices', devices=DEVICES_TWO,
+                                          FAKE_ADAPTER_NODE=shutil.which('node'), FAKE_MULTI_FAIL_DEVICE='emulator-5554',
+                                          FAKE_MULTI_ZERO_EXIT='1')
+        self.assertEqual((result.returncode, document['data']['devices'][0]['code']), (5, 'TEST_FAILED'))
+        result, document = self.run_tests('brave_java_unit_tests', '--all-devices', devices=DEVICES_TWO,
+                                          FAKE_ADAPTER_NODE=shutil.which('node'), FAKE_MULTI_NO_RESULTS='emulator-5554')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(document['warnings'][0]['code'], 'TEST_RESULTS_UNVERIFIED')
+        self.assertIsNone(document['data']['results'])
+
+    def test_all_devices_plan_lists_devices_without_running(self):
+        self.on_test_branch()
+        result, document = self.run_tests('brave_java_unit_tests', '--all-devices', '--plan', devices=DEVICES_TWO)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        step = next(step for step in document['data']['plan']['steps'] if step['name'] == 'test-devices')
+        self.assertIn('R58M1234', step['detail'])
+        self.assertIn('emulator-5554', step['detail'])
+        self.assertEqual(self.runner_calls(), [])
+
+    @unittest.skipUnless(shutil.which('node'), 'needs Node for the device adapter fixture')
+    def test_all_devices_builds_once_and_keeps_each_result(self):
+        self.on_test_branch()
+        result, document = self.run_tests('brave_java_unit_tests', '--all-devices', devices=DEVICES_TWO,
+                                          FAKE_ADAPTER_NODE=shutil.which('node'))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(len(self.runner_calls()), 1)
+        records = self.sandbox.records()
+        self.assertEqual(len([record for record in records if record['tool'] == 'test-build']), 1)
+        runs = [record for record in records if record['tool'] == 'test-runner']
+        self.assertEqual([run['device'] for run in runs], ['emulator-5554', 'R58M1234'])
+        self.assertTrue(all(run['setup'] == 'preserved' for run in runs))
+        self.assertTrue(all('--gtest_filter=Example.*' in run['argv'] for run in runs))
+        outcomes = document['data']['devices']
+        self.assertEqual([outcome['status'] for outcome in outcomes], ['ok', 'ok'])
+        self.assertNotEqual(outcomes[0]['results']['path'], outcomes[1]['results']['path'])
+        from tests.schema_validation import Validator
+        self.assertEqual(Validator().problems(document), [])
+
+    @unittest.skipUnless(shutil.which('node'), 'needs Node for the device adapter fixture')
+    def test_all_devices_continues_after_failure_and_reports_nonzero(self):
+        self.on_test_branch()
+        result, document = self.run_tests('brave_java_unit_tests', '--all-devices', devices=DEVICES_TWO,
+                                          FAKE_ADAPTER_NODE=shutil.which('node'), FAKE_MULTI_FAIL_DEVICE='emulator-5554')
+        self.assertEqual((result.returncode, document['error']['code']), (5, 'TEST_FAILED'), result.stderr)
+        self.assertEqual([run['status'] for run in document['data']['devices']], ['error', 'ok'])
+        self.assertEqual(document['child_exit_code'], 9)
+
+    @unittest.skipUnless(shutil.which('node'), 'needs Node for the device adapter fixture')
+    def test_all_devices_build_failure_does_not_run_any_device(self):
+        self.on_test_branch()
+        result, document = self.run_tests('brave_java_unit_tests', '--all-devices', devices=DEVICES_TWO,
+                                          FAKE_ADAPTER_NODE=shutil.which('node'), FAKE_MULTI_BUILD_FAIL='1')
+        self.assertEqual((result.returncode, document['error']['code']), (5, 'CHILD_FAILED'), result.stderr)
+        self.assertFalse([record for record in self.sandbox.records() if record['tool'] == 'test-runner'])
+
+    def test_all_devices_rejects_host_suites_and_conflicting_selectors(self):
+        self.on_test_branch()
+        for args, code in ((('brave_junit_tests', '--all-devices'), 'INVALID_INPUT'),
+                           (('brave_java_unit_tests', '--all-devices', '--device=emulator-5554'), 'SELECTOR_CONFLICT')):
+            result, document = self.run_tests(*args)
+            self.assertEqual((result.returncode, document['error']['code']), (2, code))
+        self.assertEqual(self.runner_calls(), [])
+
     def test_instrumented_tests_run_on_the_selected_device_with_translated_options(self):
         self.on_test_branch()
         result, document = self.run_tests("brave_java_unit_tests", "--filter=BraveAppearancePreferencesTest.*",

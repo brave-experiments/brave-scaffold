@@ -183,6 +183,16 @@ Other suites fail with `UNSUPPORTED_CAPABILITY`.
 `brave_junit_tests` use a fully qualified class (`org.example.SomeTest.*`) or a
 wildcard (`*SomeTest*`); a bare `SomeTest.*` can match no tests.
 
+Device-backed tests also accept `--all-devices`, and the terminal picker offers
+`a` for All. The suite builds once, then runs on each usable device with a
+compatible ABI. A failed run does not stop the remaining devices. Each device
+gets its own results file and entry in `data.devices`; any failed run makes the
+command return a nonzero exit. `test-local --all-devices` uses the same selection
+for device suites and still runs host suites on this Mac. Host-only `test`
+commands reject `--all-devices`. It cannot be combined with `--device`.
+If you forward `--json-results-file`, its filename receives a distinct suffix
+for each device so results are not overwritten. Plans never prompt or run tests.
+
 **Required support branch.** The checkout's support working copy must be on the
 `android-testing-prototype` branch. This is checked before anything is prepared or
 built. Another branch or a detached HEAD fails with `DEPENDENCY_INCOMPATIBLE`. The

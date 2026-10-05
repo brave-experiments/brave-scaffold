@@ -6,8 +6,10 @@
 
 from __future__ import annotations
 
+import json
 import os
 import re
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -534,6 +536,8 @@ def cmd_test(ctx):
     identity, effective = select_build(ctx, parsed.get("target"), parsed.forwarded, tests=True)
     if effective.target == "android":
         return cmd_android_test(ctx, identity, effective)
+    if parsed.get("all_devices"):
+        raise ScaffoldError("INVALID_INPUT", "--all-devices applies to device-backed Android tests only.")
     if parsed.get("device"):
         raise ScaffoldError("INVALID_INPUT", "--device applies to Android only.")
     script_args = [parsed.get("suite")]
@@ -594,8 +598,11 @@ def cmd_android_test(ctx, identity, effective):
     if parsed.get("plan"):
         return plan_result("test", effective, android_test_plan(ctx, identity, effective, kind, results_tail))
     execution = execution_module.load(ctx, identity)
-    device = android.preflight_device(execution.context(ctx)) if kind == android_tests.DEVICE else None
+    device = (parsed.get("device_group") or android.preflight_deployment(execution.context(ctx), effective.arch)) \
+        if kind == android_tests.DEVICE else None
     execution = prepare(ctx, identity, "android", "build", not effective.offline, execution)
+    if isinstance(device, android.DeviceGroup):
+        return run_android_test_devices(ctx, execution, effective, suite, device)
     details = {"target": "android", "suite": suite, "device": device[1]["id"] if device else None}
     with track(ctx, "test", identity, details, validated=True) as op:
         known, tail = android_test_arguments(ctx, kind, device)
@@ -614,11 +621,82 @@ def cmd_android_test(ctx, identity, effective):
         return op.complete(result)
 
 
+def run_android_test_devices(ctx, execution, effective, suite, group):
+    identity = execution.identity
+    if effective.unresolved:
+        raise ScaffoldError("ARTIFACT_UNRESOLVED", "Cannot run tests on all devices with unresolved build output.",
+                            details={"reasons": effective.unresolved})
+    base_results = android_tests.results_option(ctx.parsed.forwarded)
+    devices = [{"id": device["id"], "results": str(android_tests.device_results_path(effective, device["id"], base_results))}
+               for device in group.devices]
+    with track(ctx, "test", identity, {"target": "android", "suite": suite, "devices": devices}, validated=True) as op, \
+            tempfile.TemporaryDirectory(prefix="android-test-devices-") as directory:
+        config_path, report = Path(directory) / "config.json", Path(directory) / "report.json"
+        config_path.write_text(json.dumps({"script": str(identity.core / "build/commands/scripts/test.ts"),
+                                          "util": str(identity.core / "build/commands/lib/util.js"),
+                                          "runner": str(android_tests.runner_path(effective, suite)),
+                                          "devices": devices, "report": str(report)}))
+        hook = Path(__file__).with_name("android_test_devices.mjs").as_uri()
+        options = (execution.environ.get("NODE_OPTIONS", "") + " --import=" + hook).strip()
+        known, tail = android_test_arguments(ctx, android_tests.DEVICE, (group.adapter, group.devices[0]))
+        argv, _, _ = run_android_test(ctx, execution, effective, op, known, tail, suite, None,
+                                     {"NODE_OPTIONS": options, "SCAFFOLD_ANDROID_TEST_DEVICES": str(config_path)}, report)
+        runs = json.loads(report.read_text())["runs"] if report.exists() else []
+        if len(runs) != len(devices) or any(run["status"] != "finished" for run in runs):
+            raise ScaffoldError("TEST_RESULTS_UNVERIFIED", "The test command did not report a completed run for every selected device.",
+                                details={"devices": runs}, exit_code=5)
+        outcomes = list(group.skipped)
+        warnings = []
+        for run in runs:
+            summary = android_tests.summarize_results(Path(run["results"]))
+            failure = None
+            warning = None
+            if run["exit"] != 0:
+                failure = ScaffoldError("CHILD_FAILED", "The test runner exited with status %s." % run["exit"],
+                                        child_exit_code=run["exit"])
+            else:
+                try:
+                    summary, warning = android_tests.verify_outcome(effective, suite, Path(run["results"]), True)
+                except ScaffoldError as error:
+                    failure = error
+            outcomes.append({"device": run["device"], "status": "error" if failure else "ok",
+                             "argv": run["argv"], "cwd": run["cwd"], "results": summary,
+                             "child_exit_code": run["exit"],
+                             **({"code": failure.code, "reason": failure.message} if failure else {})})
+            op.note("test-device", **outcomes[-1])
+            if warning:
+                warnings.append({"code": "TEST_RESULTS_UNVERIFIED", "message": warning,
+                                 "details": {"device": run["device"]}})
+        failures = [run for run in outcomes if run["status"] == "error"]
+        result = Result(command="test", checks=[check.to_dict() for check in execution.checks],
+                        child_exit_code=failures[0]["child_exit_code"] if failures else 0)
+        result.data = {"suite": suite, "argv": argv, "cwd": str(identity.core), "runs_on": "device",
+                       "device_selection": "all-devices", "devices": outcomes, "output_dir": str(effective.output_dir)}
+        summaries = [run.get("results") for run in outcomes if run["status"] != "skipped"]
+        result.data["results"] = {key: sum(summary[key] for summary in summaries)
+                                  for key in ("passed", "failed", "skipped", "ran")} if all(summaries) else None
+        result.warnings = warnings
+        result.text = "\n".join("%s: %s%s" % (run["device"], "passed" if run["status"] == "ok" else run["status"],
+                                             " - " + run["reason"] if run.get("reason") else "") for run in outcomes)
+        if failures:
+            result.status, result.exit_code = "error", 5
+            result.error = {"code": "TEST_FAILED", "message": "Tests failed on %d device(s)." % len(failures),
+                            "details": {"devices": outcomes}, "repairs": []}
+        op.detail(device_results=outcomes)
+        return op.complete(result)
+
+
 def android_test_plan(ctx, identity, effective, kind, results_tail):
     device_step, device = None, None
+    group = None
     if kind == android_tests.DEVICE:
         try:
-            adb, chosen, source = android.preflight_device(ctx)
+            choice = android.preflight_deployment(ctx, effective.arch)
+            if isinstance(choice, android.DeviceGroup):
+                group = choice
+                adb, chosen, source = group.adapter, group.devices[0], "all-devices"
+            else:
+                adb, chosen, source = choice
             device = (adb, chosen)
             device_step = step_module.select_device_step({"id": chosen["id"], "source": source})
         except ScaffoldError as error:
@@ -630,10 +708,16 @@ def android_test_plan(ctx, identity, effective, kind, results_tail):
     steps[names.index("gn-overrides") + 1].needs = [android_tests.OVERLAY_STEP]
     if device_step is not None:
         steps.insert(names.index("readiness") + 1, device_step)
+    if group is not None:
+        steps.append(step_module.Step("test-devices", "Build once, then run the suite on each compatible device.",
+                                      "planned", writes=[str(android_tests.device_results_path(
+                                          effective, d["id"], android_tests.results_option(ctx.parsed.forwarded)))
+                                                         for d in group.devices],
+                                      detail=", ".join(d["id"] for d in group.devices)))
     return steps
 
 
-def run_android_test(ctx, execution, effective, op, known, tail, suite, results):
+def run_android_test(ctx, execution, effective, op, known, tail, suite, results, extra_env=None, report=None):
     identity = execution.identity
     log_test_phase(ctx, effective)
     with ctx.log.measure("Source preparation"):
@@ -657,13 +741,18 @@ def run_android_test(ctx, execution, effective, op, known, tail, suite, results)
 
     try:
         argv, state = run_output_step(ctx, execution, effective, op, arguments, "test",
-                                      android.build_environment(execution.context(ctx)), before_child)
+                                      {**android.build_environment(execution.context(ctx)), **(extra_env or {})}, before_child)
     except ScaffoldError as error:
+        if report is not None and error.code == "CHILD_FAILED" and report.exists() and \
+                json.loads(report.read_text()).get("runs"):
+            return error.details["argv"], None, None
         if error.code == "CHILD_FAILED" and results is not None:
             error.details["results"] = android_tests.summarize_results(results)
         raise
     if state is not None:
         state.end_attempt_completed(op.id)
+    if report is not None:
+        return argv, None, None
     summary, warning = android_tests.verify_outcome(effective, suite, results, results is not None)
     return argv, summary, warning
 
