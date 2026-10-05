@@ -99,3 +99,47 @@ def bootstrap(core):
     configuration = core / "ios" / "brave-ios" / "App" / "Configuration"
     configuration.mkdir(parents=True, exist_ok=True)
     (configuration / "LLDBInit").write_text("")
+
+
+# Runs inside the fake xcodebuild. It does what Core's Debug scheme and Xcode do for a build: Core's pre-action
+# produces the GN output and repoints ios_current_link, then Xcode produces Client.app.
+BUILD_HOOK = """
+import plistlib, shutil, stat
+if os.environ.get("FAKE_XCODEBUILD_EXIT"):
+    derived = args[args.index("-derivedDataPath") + 1] if "-derivedDataPath" in args else None
+    if derived and not os.environ.get("FAKE_NO_PARTIAL"):
+        os.makedirs(os.path.join(derived, "partial"), exist_ok=True)
+    sys.exit(int(os.environ["FAKE_XCODEBUILD_EXIT"]))
+if "build" not in args:
+    sys.exit(0)
+src = os.path.dirname(os.getcwd())
+gn = os.path.join(src, "out", os.environ.get("FAKE_GN_NAME", "ios_Debug_arm64_simulator"))
+os.makedirs(os.path.join(gn, "BraveCore.xcframework"), exist_ok=True)
+for name in ("BraveCore", "NalaAssets", "PartitionAllocSupport"):
+    os.makedirs(os.path.join(gn, name + ".xcframework"), exist_ok=True)
+    open(os.path.join(gn, name + ".xcframework", "Info.plist"), "w").write("<plist/>")
+open(os.path.join(gn, "args.xcconfig"), "w").write("")
+link = os.path.join(src, "out", "ios_current_link")
+if os.path.islink(link):
+    os.unlink(link)
+elif os.path.isdir(link):
+    shutil.rmtree(link)
+os.symlink(gn, link)
+derived = args[args.index("-derivedDataPath") + 1] if "-derivedDataPath" in args else os.path.join(src, "out", "unexpected")
+if not os.environ.get("FAKE_NO_APP"):
+    app = os.path.join(derived, "Build", "Products", "Debug-iphonesimulator", "Client.app")
+    os.makedirs(app, exist_ok=True)
+    info = {"CFBundleIdentifier": os.environ.get("FAKE_IOS_BUNDLE_ID", "com.brave.ios.browser.dev"),
+            "CFBundleExecutable": "Client", "CFBundleName": "Brave",
+            "CFBundleSupportedPlatforms": [os.environ.get("FAKE_IOS_PLATFORM", "iPhoneSimulator")]}
+    with open(os.path.join(app, "Info.plist"), "wb") as stream:
+        plistlib.dump(info, stream)
+    open(os.path.join(app, "Client"), "w").write("#!/bin/sh\\n")
+    os.chmod(os.path.join(app, "Client"), 0o755)
+"""
+
+
+def install_build_hook(sandbox):
+    path = sandbox.root / "xcodebuild_hook.py"
+    path.write_text(BUILD_HOOK)
+    return str(path)

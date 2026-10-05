@@ -73,3 +73,11 @@ def run(ctx, execution, arguments, extra_env=None):
                                    verbose_output=bytecode_detail if ctx.command != "bpm" and
                                    compiles_java(arguments) else None,
                                    display_argv=[execution.toolchain.manager, *argv[2:]])
+
+
+def run_argv(ctx, execution, argv, cwd):
+    """Run a non-package command (such as xcodebuild) with the checkout's environment and local tools first on
+    PATH; returns its exit code."""
+    with local_shims(execution.toolchain) as shims:
+        env = tools_module.child_environment(execution.environ, execution.toolchain, shims)
+        return run_streaming(argv, str(cwd), env, ctx.log, json_mode=ctx.json_mode)

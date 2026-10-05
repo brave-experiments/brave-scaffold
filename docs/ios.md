@@ -4,6 +4,12 @@ Existing-checkout workflows for the Brave iOS app on an iOS Simulator, on an arm
 Mac. Only the Debug configuration for a simulator is supported; physical devices,
 Release, and other configurations are not. Nothing here changes how Core builds iOS.
 
+Core does not build iOS with its package build command. Its documented flow is to
+bootstrap the project once, then build the `Debug` scheme of
+`ios/brave-ios/App/Client.xcodeproj` in Xcode; the scheme's pre-action runs Core's own
+build for BraveCore. The scaffold follows that flow with `xcodebuild` and never routes
+iOS through `bpm run build`.
+
 Prerequisites: a registered checkout with an approved environment
 ([getting started](getting-started.md)), Xcode with an iOS Simulator runtime, and
 `bdev doctor ios --checkout <name>` passing. Use one operator per checkout.
@@ -37,3 +43,94 @@ suggests is Core's own command: `bdev bpm run ios_bootstrap`.
 | `ios-project` | `Client.xcodeproj` is readable and declares an `IPHONEOS_DEPLOYMENT_TARGET` |
 | `ios-bootstrap` | the files listed above exist |
 | `ios-simulator` | an available simulator runtime is at least the project's deployment target |
+
+## Build
+
+```sh
+bdev build ios                             # Debug build for a simulator
+bdev build ios --device "iPhone 16"        # build for a named simulator or a UDID
+bdev build ios --plan                      # show the steps; runs nothing
+bdev build ios -jobs 4 CODE_SIGNING_ALLOWED=NO   # forwarded to xcodebuild
+```
+
+`bdev build ios` checks readiness, applies Core patches only when they are out of date
+and no local edits are at risk ([source and cleanup](source-and-cleanup.md)), picks a
+simulator, runs `xcodebuild`, and verifies the result. It never cleans, boots a
+simulator, installs, or launches anything.
+
+The command is:
+
+```text
+xcodebuild -project <core>/ios/brave-ios/App/Client.xcodeproj -scheme Debug -configuration Debug \
+  -sdk iphonesimulator -destination 'platform=iOS Simulator,id=<udid>' \
+  -derivedDataPath <src>/out/ios_Debug_xcode_derived_data <your arguments> build
+```
+
+It runs in the Core directory with the checkout's approved environment and local tools.
+Core's pre-action builds the GN output `src/out/ios_Debug_arm64_simulator` and repoints
+`src/out/ios_current_link` at it; Xcode writes the app under the derived-data directory
+(`Build/Products/Debug-iphonesimulator/Client.app`).
+
+**Simulator choice.** `--device` takes a simulator name or UDID (exact match). Without it
+the scaffold uses a booted iPhone, else the iPhone on the newest runtime (by name). Only
+simulators whose runtime is at least the project's `IPHONEOS_DEPLOYMENT_TARGET` are
+considered. Physical devices are refused.
+
+**Forwarded arguments.** Unknown options and extra arguments go to `xcodebuild` unchanged,
+after the generated ones and before the action. Forwarded values decide what is built, so
+they are also read:
+
+- `-derivedDataPath <dir>` replaces the default; a relative path is relative to the Core
+  directory, and the app is looked for under it.
+- `-destination` replaces the simulator destination. It cannot be combined with `--device`
+  (`SELECTOR_CONFLICT`), and `build-run` refuses it because the simulator to run on would
+  be unidentified.
+- `-project`, `-workspace`, `-scheme`, `-target`, `-alltargets`, `-configuration`, `-sdk`, and
+  `-arch` would change what is built, so they stop the command before any change
+  (`SELECTOR_CONFLICT`). `--configuration release` is `UNSUPPORTED_CAPABILITY`.
+- Information and non-building modes (`-showBuildSettings`, `-list`, `-showsdks`, and the like)
+  and actions other than `build`/`clean` leave the artifact unresolved: the build succeeds with an
+  `ARTIFACT_UNRESOLVED` warning and no artifact. In `build-run` that is an error and nothing is
+  installed or launched. Modes that may write (`-resolvePackageDependencies`, `-exportArchive`, ...)
+  mark the outputs as needing revalidation; information modes leave records unchanged.
+
+`--offline`, `--force-gn`, and `--skip-support-refresh` do not apply to iOS. Xcode's pre-action
+starts Core's build with only `PATH`, so the scaffold cannot pass build options or environment
+settings to it; whether that build uses remote execution comes from Core's own configuration.
+
+### Build results
+
+| Outcome | Result |
+| --- | --- |
+| `xcodebuild` exits nonzero | `CHILD_FAILED`, exit 5; both outputs are marked as needing revalidation |
+| Exit 0, `Client.app` is a Brave simulator app and `ios_current_link` points at the GN output | `ok`, the app in `artifacts` |
+| Exit 0 but the app is missing, not a Brave simulator build, or the link points elsewhere | `ARTIFACT_MISSING` or `ARTIFACT_MISMATCH`, exit 5 |
+| Exit 0 from a mode that builds no app | `ok` with `ARTIFACT_UNRESOLVED` (`build`), or that error with nothing launched (`build-run`) |
+
+A failed or interrupted build can partly overwrite earlier output. The scaffold marks the GN
+output and the derived-data directory as needing revalidation before `xcodebuild` starts, keeps
+their earlier records as history, and does not clean or roll back. An earlier app may still be
+run with `bdev run ios`.
+
+## Run
+
+```sh
+bdev run ios                               # install and launch the existing build
+bdev run ios --device "iPhone 16 Pro"
+bdev build-run ios                         # build, then run exactly that app
+bdev sync-build ios                        # sync, then build
+```
+
+`run` never builds. It boots the chosen simulator and waits for it (`simctl boot`,
+`simctl bootstatus -b`), installs the app over the existing one so app data is kept
+(`simctl install`), and launches it, replacing a running copy
+(`simctl launch --terminate-running-process`). The launch must report a process id. Each
+step that fails is `LAUNCH_FAILED` and names its phase. The Simulator window is not opened;
+use `open -a Simulator` to see the device.
+
+`--artifact <path to Client.app>` runs a specific build. If more than one recorded build matches,
+`run` stops with `ARTIFACT_AMBIGUOUS`. `bdev clean ios` removes the GN output and derived-data
+directory; after a clean, `out/ios_current_link` dangles until Core's next build repoints it, and
+`bdev doctor ios` then reports missing bootstrap files (repair: `bdev bpm run ios_bootstrap`).
+
+Not available for iOS: `bdev test`, `bdev test-local`, and physical devices.

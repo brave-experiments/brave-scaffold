@@ -62,7 +62,7 @@ VALIDATED = {("mac", operation, "debug", "arm64") for operation in ("sync", "bui
 AVAILABLE_OPERATIONS = {("mac", operation) for operation in
                         ("sync", "build", "test", "run", "clean", "drift", "patches-update")} | {
     ("android", operation) for operation in ("sync", "build", "test", "deploy", "run", "clean")} | {
-    ("ios", "sync")}
+    ("ios", operation) for operation in ("sync", "build", "run", "clean")}
 
 
 def capability_table():

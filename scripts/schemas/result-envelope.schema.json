@@ -199,7 +199,8 @@
         "target": {
           "enum": [
             "mac",
-            "android"
+            "android",
+            "ios"
           ]
         },
         "configuration": {

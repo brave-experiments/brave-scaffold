@@ -246,3 +246,59 @@ def launch_step(bundle_path, exact, needs=()):
         "exactly the artifact this build produced" if exact else "the selected application"), "planned",
         argv=["open", bundle_path], needs=list(needs), on_failure="Reported as LAUNCH_FAILED.", cleanup=NO_CLEANUP,
         detail=None)
+
+
+# --- iOS Simulator ---------------------------------------------------------------------
+
+
+def select_simulator_step(simulator=None, error=None, needs=()):
+    summary = "Choose one iOS Simulator before anything is built or installed."
+    if error is not None:
+        return Step("select-simulator", summary, "unresolved", reads=["xcrun simctl list"], needs=list(needs),
+                    detail=error.message, on_failure="Nothing is built or installed.")
+    return Step("select-simulator", summary, "resolved", reads=["xcrun simctl list"], needs=list(needs),
+                on_failure="Nothing is built or installed.",
+                detail="%s (%s, iOS %s)" % (simulator["name"], simulator["udid"], simulator["version"]))
+
+
+def xcodebuild_step(identity, build, argv, needs):
+    """Xcode builds the Debug scheme; its pre-action builds Core's GN output and updates ios_current_link."""
+    writes = [str(build.gn_output), str(build.derived_data), str(identity.src / "out" / "ios_current_link")]
+    return Step("xcodebuild", "Build the Debug scheme for the iOS Simulator with xcodebuild; Core's scheme "
+                "pre-action builds BraveCore with Core's own build command.", "planned",
+                reads=[str(build.project), str(identity.core)], writes=writes, argv=argv, cwd=str(identity.core),
+                needs=list(needs),
+                on_failure="The GN output and the Xcode products are marked as needing revalidation; their earlier "
+                           "build records are kept as history and the outputs cannot be restored.",
+                cleanup=NO_CLEANUP + " Cleaning output is a separate, explicit command.",
+                detail="The pre-action starts Core's build with only PATH from the environment, so scaffold "
+                       "build options such as --offline do not reach it.")
+
+
+def verify_ios_step(build, needs):
+    return Step("verify-output", "Check that the build produced the Brave app for the simulator and that Core's "
+                "ios_current_link points at the GN output.", "unresolved" if build.unresolved else "planned",
+                reads=[str(build.app_path)], needs=list(needs),
+                on_failure="No artifact is recorded; combined commands stop before touching a simulator.",
+                detail="; ".join(build.unresolved) if build.unresolved else "app: %s" % build.app_path)
+
+
+def boot_simulator_step(udid, needs=()):
+    return Step("boot-simulator", "Boot the simulator if it is not running and wait until it is ready.", "planned",
+                writes=["simulator %s: boot state" % udid], argv=["xcrun", "simctl", "boot", udid], needs=list(needs),
+                on_failure="The restart stops before installing.", cleanup=NO_CLEANUP)
+
+
+def install_app_step(udid, app, needs=()):
+    return Step("install-app", "Install the app over the existing one on that simulator; app data is kept.",
+                "planned", writes=["simulator %s: the installed app" % udid],
+                argv=["xcrun", "simctl", "install", udid, app], needs=list(needs),
+                on_failure="The restart stops; the previously installed app is left as the install left it.",
+                cleanup=NO_CLEANUP)
+
+
+def launch_app_step(udid, bundle_id, needs=()):
+    return Step("launch-app", "Launch the app, replacing a running instance, and confirm a process id.", "planned",
+                writes=["simulator %s: a new %s process" % (udid, bundle_id)],
+                argv=["xcrun", "simctl", "launch", "--terminate-running-process", udid, bundle_id],
+                needs=list(needs), on_failure="Reported as LAUNCH_FAILED.", cleanup=NO_CLEANUP)

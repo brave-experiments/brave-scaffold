@@ -43,15 +43,16 @@ def select_build(ctx, target_token, forwarded, tests=False):
     effective = buildopts.resolve_effective(
         identity.src, forwarded, target, configuration or "Debug", explicit, configuration,
         bool(ctx.parsed.get("offline")), tests=tests)
-    require_available_target(effective.target)
+    require_available_target(effective.target, "test" if tests else "build")
     return identity, effective
 
 
 def require_available_target(target, operation="build"):
     if target == "android":
         android.require_available()
-    elif target == "ios" and operation == "sync":
-        return
+    elif target == "ios":
+        if operation == "test":
+            raise ScaffoldError("UNSUPPORTED_CAPABILITY", "Tests are not available for iOS.")
     elif target != "mac":
         raise ScaffoldError("UNSUPPORTED_CAPABILITY", "The target %r is not available." % target)
 
@@ -65,11 +66,16 @@ def readiness_checks(ctx, target, phase="build", remote_required=False):
     """
     from . import doctor
     checks = []
-    groups = ("host-mac", "mac-build") if target == "mac" or phase == "sync" else ("android-build",)
+    if target == "mac" or phase == "sync":
+        groups = ("host-mac", "mac-build")
+    elif target == "ios":
+        groups = ("host-mac", "ios-machine", "ios-build")
+    else:
+        groups = ("android-build",)
     for group in groups:
         function = doctor.GROUP_FUNCTIONS[group]
-        scope = "mac" if group != "android-build" else "android"
-        if group in ("mac-build", "android-build"):
+        scope = {"android-build": "android", "ios-machine": "ios", "ios-build": "ios"}.get(group, "mac")
+        if group in ("mac-build", "android-build", "ios-build"):
             checks.extend(function(ctx, scope, remote_required=remote_required and phase == "build"))
         else:
             checks.extend(function(ctx, scope))
@@ -437,6 +443,9 @@ def plan_restart_after_build(ctx, effective, is_android, device_choice):
 def do_build(ctx, command, sync_first=False, run_after=False):
     parsed = ctx.parsed
     target_token = parsed.positionals[0] if parsed.positionals else None
+    if effective_target(target_token, ctx.config)[0] == "ios":
+        from . import cmd_ios
+        return cmd_ios.do_build(ctx, command, sync_first, run_after)
     identity, effective = select_build(ctx, target_token, parsed.forwarded)
     if parsed.get("skip_support_refresh") and effective.target != "android":
         raise ScaffoldError("INVALID_INPUT", "--skip-support-refresh applies to Android only.")
@@ -445,7 +454,7 @@ def do_build(ctx, command, sync_first=False, run_after=False):
         return plan_result(command, effective, build_plan_steps(ctx, identity, effective, "build", (), sync_plan,
                                                                 run_after))
     if parsed.get("device") and effective.target != "android":
-        raise ScaffoldError("INVALID_INPUT", "--device applies to Android only.")
+        raise ScaffoldError("INVALID_INPUT", "--device applies to Android and iOS only.")
     execution = execution_module.load(ctx, identity)
     device = android.preflight_device(execution.context(ctx)) if run_after and effective.target == "android" \
         else None
@@ -747,9 +756,12 @@ def cmd_run(ctx):
     parsed = ctx.parsed
     identity = ctx.identity()
     target, _ = effective_target(parsed.positionals[0] if parsed.positionals else None, ctx.config)
-    require_available_target(target)
-    if parsed.get("device") and target != "android":
-        raise ScaffoldError("INVALID_INPUT", "--device applies to Android only.")
+    require_available_target(target, "run")
+    if parsed.get("device") and target not in ("android", "ios"):
+        raise ScaffoldError("INVALID_INPUT", "--device applies to Android and iOS only.")
+    if target == "ios":
+        from . import cmd_ios
+        return cmd_ios.cmd_run(ctx, identity)
     execution = None if parsed.get("plan") else execution_module.load(ctx, identity)
     if target == "android":
         return android.run_android(execution.context(ctx) if execution else ctx, identity, execution is not None)

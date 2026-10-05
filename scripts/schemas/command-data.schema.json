@@ -171,6 +171,32 @@
         },
         "pid": {
           "type": "string"
+        },
+        "simulator": {
+          "type": "object",
+          "required": [
+            "udid",
+            "name",
+            "version",
+            "state"
+          ],
+          "properties": {
+            "udid": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "version": {
+              "type": "string"
+            },
+            "state": {
+              "type": "string"
+            }
+          }
+        },
+        "bundle_identifier": {
+          "type": "string"
         }
       }
     },
@@ -236,7 +262,8 @@
             "target": {
               "enum": [
                 "mac",
-                "android"
+                "android",
+                "ios"
               ]
             },
             "configuration": {

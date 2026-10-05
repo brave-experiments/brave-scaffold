@@ -24,7 +24,7 @@ SKIP_SUPPORT_REFRESH = Opt("--skip-support-refresh", "skip_support_refresh", tak
                            help="Stop an Android build if support patches or resources need refreshing.")
 ARTIFACT = Opt("--artifact", "artifact", metavar="PATH", help="Application to run instead of the default output.")
 FILTER = Opt("--filter", "filter", metavar="PATTERN", help="Only run tests matching the pattern within the suite.")
-DEVICE = Opt("--device", "device", metavar="ID", help="Android device id (required when several are usable).")
+DEVICE = Opt("--device", "device", metavar="ID", help="Android device id (required when several are usable), or an iOS Simulator name or UDID.")
 SOURCE = Opt("--source", "source", metavar="URL_OR_PATH", help="Support repository to clone (default: the standard source).")
 REF = Opt("--ref", "ref", metavar="REF", help="Shared support repository branch, tag, or commit.")
 DIFF = Opt("--diff", "diff", takes_value=False, help="Print the Git diff of each drifted file.")
@@ -94,9 +94,11 @@ def build_registry():
                     examples=("bdev vpython3 -- tools/example.py --flag", "bdev vpython3 --cwd out -- ../script.py")),
         clean.SPEC,
         CommandSpec("build", "Prepare and compile Brave for a target, then verify its output.", cmd_build.cmd_build,
-                    positionals=(TARGET,), options=(CONFIGURATION, OFFLINE, FORCE_GN, PLAN, SKIP_SUPPORT_REFRESH), forward=True,
-                    side_effects=BUILD_SIDE_EFFECTS,
-                    notes="Unknown options and extra arguments go to 'bpm run build' after the generated ones.",
+                    positionals=(TARGET,), options=(CONFIGURATION, OFFLINE, FORCE_GN, PLAN, DEVICE, SKIP_SUPPORT_REFRESH),
+                    forward=True, side_effects=BUILD_SIDE_EFFECTS + " iOS: runs xcodebuild, whose Debug scheme "
+                    "builds Core's output under src/out and repoints out/ios_current_link.",
+                    notes="Unknown options and extra arguments go to 'bpm run build' after the generated ones; "
+                          "for iOS they go to xcodebuild. --device chooses the iOS Simulator to build for.",
                     examples=("bdev build", "bdev build mac --offline", "bdev build --plan")),
         CommandSpec("build-run", "Build, then restart the browser with exactly the output that build produced.",
                     cmd_build.cmd_build_run, aliases=("br",), positionals=(TARGET,),
@@ -112,7 +114,7 @@ def build_registry():
                     examples=("bdev sync", "bdev sync mac,android --plan")),
         CommandSpec("sync-build", "Sync, then build; stops at the first failed phase.", cmd_build.cmd_sync_build,
                     aliases=("sb",), positionals=(TARGET,),
-                    options=(CONFIGURATION, OFFLINE, FORCE_GN, PLAN, SKIP_SUPPORT_REFRESH),
+                    options=(CONFIGURATION, OFFLINE, FORCE_GN, PLAN, DEVICE, SKIP_SUPPORT_REFRESH),
                     forward=True, side_effects="Sync effects, then build effects.", examples=("bdev sb",),
                     notes="Extra arguments go to the build phase only."),
         CommandSpec("sync-build-run", "Sync, build, then restart the browser with the built output.",

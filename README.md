@@ -30,6 +30,8 @@ checkout writes; those are the requested work, not scaffold installation changes
 shared support repositories ([guide](docs/support-repositories.md)).
 
 Android builds an arm64 APK and installs and restarts it on a device.
+iOS builds the Debug app for an iOS Simulator with `xcodebuild` and Core's Xcode
+project, then installs and launches it ([guide](docs/ios.md)).
 `bdev capabilities` lists what is supported and what has been verified on a
 real checkout.
 
@@ -38,8 +40,8 @@ for less console output or `--verbose` to include internal probes. Commands save
 and print its path; pure environment exports remain silent. See [output controls](docs/commands.md#common-behavior).
 
 The initial platform scope is macOS arm64 hosts with existing Brave macOS and
-Android checkouts. Fresh checkout creation, iOS, and guarded push are not part of
-it.
+Android checkouts, plus iOS Simulator Debug builds. Fresh checkout creation and
+guarded push are not part of it.
 
 ## Quick start
 
@@ -60,6 +62,7 @@ Nothing requires a `PATH` change, a shell hook, or an edit inside Brave Core.
 | Install and run a first command | [Getting started](docs/getting-started.md) |
 | Build, test, and run on macOS | [macOS](docs/macos.md) |
 | Build and install on Android | [Android](docs/android.md) |
+| Build and run on an iOS Simulator | [iOS](docs/ios.md) |
 | Sync sources, patches, and cleanup | [Source and cleanup](docs/source-and-cleanup.md) |
 | Configure checkouts and environments | [Configuration and environments](docs/configuration-and-environments.md) |
 | Look up commands, options, results, exit codes | [Commands](docs/commands.md) |
