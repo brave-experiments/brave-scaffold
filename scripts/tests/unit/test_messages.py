@@ -13,12 +13,33 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import tests.support
-from scaffold.brave import android_deps, doctor, rbe_checks
+from scaffold.brave import adb, android_deps, doctor, rbe_checks
 from scaffold.common.checks import WARNING, make_check
-from scaffold.common.results import Result, emit, render_error_text
+from scaffold.common.results import Result, ScaffoldError, emit, error_result, render_error_text
 
 
 class MessageTests(unittest.TestCase):
+    def test_ambiguous_devices_show_all_choices_without_another_listing_command(self):
+        devices = [{'id': 'emulator-5554', 'state': 'device'},
+                   {'id': '56171FDCH005EN', 'state': 'device'},
+                   {'id': 'offline-phone', 'state': 'offline'}]
+        devices.extend({'id': 'phone-%d' % index, 'state': 'device'} for index in range(15))
+        with self.assertRaises(ScaffoldError) as caught:
+            adb.choose_device(devices)
+        error = error_result('run', caught.exception).error
+        text = render_error_text(error)
+        for device in devices:
+            self.assertIn('  devices: %s (%s)' % (device['id'], device['state']), text)
+            option = '\n    --device %s' % device['id']
+            if device['state'] == 'device':
+                self.assertIn(option, text)
+            else:
+                self.assertNotIn(option, text)
+        self.assertNotIn('adb devices', text)
+        self.assertNotIn('example:', text)
+        self.assertEqual(error['details']['device_options'][:2],
+                         [['--device', 'emulator-5554'], ['--device', '56171FDCH005EN']])
+
     def test_unknown_resource_origin_is_not_called_a_user_edit(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

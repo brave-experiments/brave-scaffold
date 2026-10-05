@@ -75,9 +75,9 @@ def choose_device(devices, requested=None, configured=None):
         return usable[0], "only-device"
     if len(usable) > 1:
         raise ScaffoldError(
-            "DEVICE_AMBIGUOUS", "More than one device is available; choose one with --device.",
-            details={"devices": _listing(devices), "example": "--device %s" % usable[0]["id"]},
-            repairs=[repair(["adb", "devices"], note="Lists devices; then pass --device <id>.")])
+            "DEVICE_AMBIGUOUS", "More than one device is available. Add one of these options to your command.",
+            details={"devices": _listing(devices), "example": "--device %s" % usable[0]["id"],
+                     "device_options": [["--device", item["id"]] for item in usable]})
     raise ScaffoldError(
         "DEVICE_UNAVAILABLE", "No usable Android device is connected.",
         details={"devices": _listing(devices), "recovery": sorted({RECOVERY[i["state"]] for i in devices

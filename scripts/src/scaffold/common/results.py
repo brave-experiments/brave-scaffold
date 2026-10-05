@@ -153,7 +153,14 @@ def error_result(command, error, context=None):
 def render_error_text(error):
     lines = ["❌ Error [%s]: %s" % (error["code"], error["message"])]
     details = error.get("details") or {}
-    lines.extend(detail_lines(details))
+    if error["code"] == "DEVICE_AMBIGUOUS" and details.get("device_options"):
+        lines.extend("  devices: %s" % device for device in details.get("devices", []))
+        lines.append("")
+        lines.extend("    %s" % _shell_join(option) for option in details["device_options"])
+        lines.extend(detail_lines({key: value for key, value in details.items()
+                                   if key not in {"devices", "example", "device_options"}}))
+    else:
+        lines.extend(detail_lines(details))
     for step in error.get("repairs") or []:
         suffix = "  (requires you to act)" if step.get("requires_user_action") else ""
         note = "  # %s" % step["note"] if step.get("note") else ""
