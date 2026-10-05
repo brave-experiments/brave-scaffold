@@ -112,22 +112,30 @@ def device_label(adb, device, environ, log=None):
     return "%s (%s) - %s" % (name or "Android device", kind, device["id"])
 
 
-def pick_device(adb, devices, environ, log=None, stdin=None, stderr=None):
-    """Prompt on terminal streams; cancellation never selects a default."""
+def pick_device(adb, devices, environ, log=None, stdin=None, stderr=None, allow_all=False):
+    """Choose a device, or return None for an explicitly offered All option."""
     stdin = stdin or sys.stdin
     stderr = stderr or sys.stderr
     usable = [device for device in devices if device["state"] == "device"]
     print("Choose an Android device:", file=stderr)
     for number, device in enumerate(usable, 1):
         print("  %d. %s" % (number, device_label(adb, device, environ, log)), file=stderr)
+    if allow_all:
+        print("  a. All compatible devices", file=stderr)
     while True:
-        print("Device number (Enter to cancel): ", end="", file=stderr, flush=True)
-        answer = stdin.readline().strip()
-        if not answer:
+        prompt = "Choose [1-%d%s] (Enter for 1): " % (len(usable), ", a" if allow_all else "")
+        print(prompt, end="", file=stderr, flush=True)
+        answer = stdin.readline()
+        if answer == "":
             raise ScaffoldError("INVALID_INPUT", "Device selection cancelled; nothing was built or deployed.")
+        answer = answer.strip()
+        if not answer:
+            return usable[0]
+        if allow_all and answer.lower() == "a":
+            return None
         if answer.isdecimal() and 1 <= int(answer) <= len(usable):
             return usable[int(answer) - 1]
-        print("Enter a number from 1 to %d." % len(usable), file=stderr)
+        print("Enter a number from 1 to %d%s." % (len(usable), " or a for All" if allow_all else ""), file=stderr)
 
 
 def device_capabilities(adb, device, environ, log=None):

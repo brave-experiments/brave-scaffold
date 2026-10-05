@@ -395,6 +395,28 @@ class DeviceTests(AndroidTestCase):
         self.assertFalse([c for c in self.adb_calls() if "install" in c])
 
     def test_terminal_picker_names_devices_and_remembers_the_choice(self):
+        stdout, terminal = self.terminal_run(b'2\ny\n')
+        self.assertIn('on R58M1234', stdout)
+        self.assertIn('Pixel_API_35 (emulator) - emulator-5554', terminal)
+        self.assertIn('Pixel (physical device) - R58M1234', terminal)
+        from scaffold.common.config import load_config
+        self.assertEqual(load_config(self.config).default_android_device, 'R58M1234')
+
+    def test_terminal_picker_enter_uses_first_and_all_deploys_to_both(self):
+        original = Path(self.config).read_bytes()
+        stdout, terminal = self.terminal_run(b'\nn\n')
+        self.assertIn('on emulator-5554', stdout)
+        self.assertIn('Enter for 1', terminal)
+        self.assertEqual([call[1] for call in self.adb_calls() if 'install' in call], ['emulator-5554'])
+        self.sandbox.record.unlink()
+        stdout, terminal = self.terminal_run(b'a\n')
+        self.assertIn('a. All compatible devices', terminal)
+        self.assertNotIn('Remember', terminal)
+        self.assertEqual([call[1] for call in self.adb_calls() if 'install' in call], ['emulator-5554', 'R58M1234'])
+        self.assertIn('R58M1234: installed and restarted', stdout)
+        self.assertEqual(Path(self.config).read_bytes(), original)
+
+    def terminal_run(self, answers):
         master, slave = pty.openpty()
         process = None
         try:
@@ -402,16 +424,12 @@ class DeviceTests(AndroidTestCase):
                                         '--checkout', 'main', 'run', 'android'], cwd=self.sandbox.root,
                                        env=self.env(FAKE_ADB_DEVICES=DEVICES_TWO),
                                        stdin=slave, stderr=slave, stdout=subprocess.PIPE, text=True)
-            os.write(master, b'2\ny\n')
+            os.write(master, answers)
             stdout, _ = process.communicate(timeout=30)
             self.assertEqual(process.returncode, 0, stdout)
-            self.assertIn('on R58M1234', stdout)
             os.set_blocking(master, False)
             terminal = os.read(master, 65536).decode()
-            self.assertIn('Pixel_API_35 (emulator) - emulator-5554', terminal)
-            self.assertIn('Pixel (physical device) - R58M1234', terminal)
-            from scaffold.common.config import load_config
-            self.assertEqual(load_config(self.config).default_android_device, 'R58M1234')
+            return stdout, terminal
         finally:
             if process is not None and process.poll() is None:
                 process.kill()

@@ -127,7 +127,7 @@ def write_gn_overrides(identity, effective):
 # --- devices and run --------------------------------------------------------------------------
 
 
-def preflight_device(ctx):
+def preflight_device(ctx, allow_all=False):
     """Select the device before anything is stopped or built."""
     adapter = adb.require_adb(ctx.environ)
     devices = adb.list_devices(adapter, ctx.environ, ctx.log)
@@ -137,7 +137,9 @@ def preflight_device(ctx):
         interactive = not ctx.json_mode and not ctx.parsed.get("plan") and sys.stdin.isatty() and sys.stderr.isatty()
         if error.code != "DEVICE_AMBIGUOUS" or not interactive:
             raise
-        device = adb.pick_device(adapter, devices, ctx.environ, ctx.log)
+        device = adb.pick_device(adapter, devices, ctx.environ, ctx.log, allow_all=allow_all)
+        if device is None:
+            return DeviceGroup(adapter, devices, [])
         source = "interactive"
         print("Remember this device in %s? [y/N]: " % ctx.config.path,
               end="", file=sys.stderr, flush=True)
@@ -165,15 +167,20 @@ BUILD_ABIS = {"arm64": "arm64-v8a", "arm": "armeabi-v7a", "x64": "x86_64", "x86"
 
 def preflight_deployment(ctx, arch=None):
     if not ctx.parsed.get("all_devices"):
-        return preflight_device(ctx)
-    if ctx.parsed.get("device"):
-        raise ScaffoldError("SELECTOR_CONFLICT", "Use either --device or --all-devices, not both.")
-    adapter = adb.require_adb(ctx.environ)
+        choice = preflight_device(ctx, allow_all=True)
+        if not isinstance(choice, DeviceGroup):
+            return choice
+        adapter, available = choice.adapter, choice.devices
+    else:
+        if ctx.parsed.get("device"):
+            raise ScaffoldError("SELECTOR_CONFLICT", "Use either --device or --all-devices, not both.")
+        adapter = adb.require_adb(ctx.environ)
+        available = adb.list_devices(adapter, ctx.environ, ctx.log)
     devices, skipped = [], []
     abi = BUILD_ABIS.get(arch) if arch else None
     if arch and abi is None:
         raise ScaffoldError("ARTIFACT_UNRESOLVED", "Cannot check device compatibility for architecture %s." % arch)
-    for device in adb.list_devices(adapter, ctx.environ, ctx.log):
+    for device in available:
         reason = None
         if device["state"] != "device":
             reason = device["state"]

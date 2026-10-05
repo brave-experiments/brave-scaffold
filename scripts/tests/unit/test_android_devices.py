@@ -30,7 +30,7 @@ class DevicePickerTests(unittest.TestCase):
         self.ctx = SimpleNamespace(environ={}, log=None, json_mode=False,
                                    parsed=SimpleNamespace(get=self.values.get), config=load_config(self.path))
 
-    def preflight(self, answers, terminal=True):
+    def preflight(self, answers, terminal=True, deployment=False):
         stdin, stderr = io.StringIO(answers), io.StringIO()
         stdin.isatty = lambda: terminal
         stderr.isatty = lambda: terminal
@@ -38,7 +38,7 @@ class DevicePickerTests(unittest.TestCase):
                 patch.object(adb, 'require_adb', return_value='adb'), \
                 patch.object(adb, 'list_devices', return_value=DEVICES), \
                 patch.object(adb, 'device_label', side_effect=lambda *args: args[1]['id']):
-            outcome = android.preflight_device(self.ctx)
+            outcome = android.preflight_deployment(self.ctx, 'arm64') if deployment else android.preflight_device(self.ctx)
         return outcome, stderr.getvalue()
 
     def test_picker_retries_and_saves_only_after_yes(self):
@@ -57,12 +57,31 @@ class DevicePickerTests(unittest.TestCase):
             self.assertEqual(outcome[1]['id'], 'emulator-5554')
             self.assertEqual(self.path.read_text(), self.original)
 
-    def test_empty_choice_and_eof_cancel(self):
-        for answer in ('\n', ''):
-            with self.assertRaises(ScaffoldError) as caught:
-                self.preflight(answer)
-            self.assertEqual(caught.exception.code, 'INVALID_INPUT')
+    def test_enter_selects_first_and_eof_cancels(self):
+        outcome, text = self.preflight('\n')
+        self.assertEqual(outcome[1], DEVICES[0])
+        self.assertIn('Enter for 1', text)
+        with self.assertRaises(ScaffoldError) as caught:
+            self.preflight('')
+        self.assertEqual(caught.exception.code, 'INVALID_INPUT')
         self.assertEqual(self.path.read_text(), self.original)
+
+    def test_all_choice_uses_compatibility_checks_and_does_not_save(self):
+        for answer in ('a\n', 'A\n'):
+            with patch.object(adb, 'device_capabilities', side_effect=lambda adapter, device, *args:
+                              {**device, 'abis': ['arm64-v8a'] if device['id'] == 'phone' else ['x86_64'], 'sdk': 35}):
+                outcome, text = self.preflight(answer, deployment=True)
+            self.assertIsInstance(outcome, android.DeviceGroup)
+            self.assertEqual([device['id'] for device in outcome.devices], ['phone'])
+            self.assertEqual(outcome.skipped[0]['device'], 'emulator-5554')
+            self.assertIn('a. All compatible devices', text)
+            self.assertNotIn('Remember', text)
+            self.assertEqual(self.path.read_text(), self.original)
+
+    def test_single_device_test_picker_does_not_offer_all(self):
+        outcome, text = self.preflight('a\n2\nn\n')
+        self.assertEqual(outcome[1], DEVICES[1])
+        self.assertNotIn('a. All', text)
 
     def test_json_plan_and_nonterminal_never_prompt(self):
         for json_mode, plan, terminal in ((True, False, True), (False, True, True), (False, False, False)):

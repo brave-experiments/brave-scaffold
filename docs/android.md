@@ -229,7 +229,11 @@ Device selection: `--device`, otherwise `defaults.android_device` from your
 configuration, otherwise the only usable device. With several usable devices,
 an interactive terminal shows a numbered picker with names, ids, and physical
 device or emulator labels. You can save the choice in `defaults.android_device`
-in the active scaffold configuration; declining uses it for this command only.
+after selecting a device by number; Enter selects the first listed device.
+For install/run commands, `a` selects All compatible devices, with the same
+checks and results as `--all-devices`. All is used for this command only.
+The default is saved in the active scaffold configuration; declining uses the
+selected device for this command only.
 The picker runs before building. JSON output, noninteractive commands, and
 `--plan` never prompt: they report `DEVICE_AMBIGUOUS` with a copyable `--device`
 option for each usable device. A device that is `offline` or `unauthorized`, or not
