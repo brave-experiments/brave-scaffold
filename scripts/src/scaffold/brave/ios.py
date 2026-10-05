@@ -181,6 +181,9 @@ INFORMATION_MODES = ("-showBuildSettings", "-showBuildSettingsForIndex", "-list"
 # Modes that may write but do not build the app.
 WRITING_MODES = ("-resolvePackageDependencies", "-exportArchive", "-exportLocalizations", "-importLocalizations",
                  "-downloadPlatform", "-downloadAllPlatforms", "-runFirstLaunch")
+# These settings cannot relocate or select the app. Other assignments may change the products, including
+# through project-defined settings, so a fixed default path is not evidence of what that invocation built.
+OUTPUT_NEUTRAL_SETTINGS = frozenset(("CODE_SIGNING_ALLOWED", "CODE_SIGNING_REQUIRED", "CODE_SIGN_IDENTITY"))
 
 
 @dataclass
@@ -233,7 +236,7 @@ def resolve_build(parsed, identity, run_after=False):
             raise ScaffoldError("INVALID_INPUT", "%s does not apply to iOS: Xcode starts Core's build with its own "
                                 "environment. Unknown options go to xcodebuild." % name)
     tokens = list(parsed.forwarded)
-    conflicts, actions, information, writing = [], [], [], []
+    conflicts, actions, information, writing, output_overrides = [], [], [], [], []
     derived = None
     destination = False
     index = 0
@@ -252,10 +255,14 @@ def resolve_build(parsed, identity, run_after=False):
                 information.append(token)
             elif token in WRITING_MODES:
                 writing.append(token)
+            elif token == "-xcconfig":
+                output_overrides.append(token)
             if token in VALUE_OPTIONS:
                 index += 1
         elif token in BUILD_ACTIONS or token in OTHER_ACTIONS:
             actions.append(token)
+        elif "=" in token and token.split("=", 1)[0] not in OUTPUT_NEUTRAL_SETTINGS:
+            output_overrides.append(token.split("=", 1)[0])
         index += 1
     if conflicts:
         raise ScaffoldError(
@@ -282,6 +289,8 @@ def resolve_build(parsed, identity, run_after=False):
         build.unresolved.append("%s does not build the app" % ", ".join(information + writing))
     elif actions and "build" not in actions:
         build.unresolved.append("the action %s does not build the app" % " and ".join(actions))
+    if output_overrides:
+        build.unresolved.append("the app output cannot be identified with %s" % ", ".join(output_overrides))
     return build
 
 
@@ -294,7 +303,8 @@ def xcodebuild_argv(build, simulator=None):
     if not build.derived_forwarded:
         argv += ["-derivedDataPath", str(build.derived_data)]
     argv += build.forwarded
-    if not build.actions and not build.unresolved:
+    if not build.actions and not any(token in INFORMATION_MODES or token in WRITING_MODES
+                                     for token in build.forwarded):
         argv.append("build")
     return argv
 

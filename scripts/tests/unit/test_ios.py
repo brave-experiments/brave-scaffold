@@ -9,10 +9,13 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import Mock, patch
 
 import tests.support  # noqa: F401
-from scaffold.brave import ios
-from scaffold.common.results import ScaffoldError
+from scaffold.brave import cmd_ios, ios
+from scaffold.brave.records import OutputState
+from scaffold.common.cli import Parsed
+from scaffold.common.results import Result, ScaffoldError
 from tests.ios_fixtures import bootstrap, make_ios_project, simulator_json
 
 
@@ -75,6 +78,48 @@ class ProjectTests(unittest.TestCase):
 
     def test_output_directory_follows_core_naming(self):
         self.assertEqual(ios.output_directory_name("Debug"), "ios_Debug_arm64_simulator")
+
+
+class BuildSelectionTests(unittest.TestCase):
+    def test_output_assignments_and_configuration_files_leave_the_artifact_unresolved(self):
+        identity = SimpleNamespace(core=Path("/checkout/src/brave"), src=Path("/checkout/src"))
+        cases = (["CONFIGURATION_BUILD_DIR=/other"], ["SYMROOT=/other"], ["PRODUCT_NAME=Other"],
+                 ["CUSTOM_PRODUCTS=/other"], ["ARCHS[sdk=iphonesimulator*]=x86_64"],
+                 ["-xcconfig", "/other/settings.xcconfig"])
+        for forwarded in cases:
+            with self.subTest(forwarded=forwarded):
+                build = ios.resolve_build(Parsed(forwarded=forwarded), identity)
+                self.assertTrue(build.unresolved)
+                self.assertTrue(build.changes_output)
+                argv = ios.xcodebuild_argv(build)
+                self.assertEqual(argv[-len(forwarded)-1:], [*forwarded, "build"])
+
+
+class RunFreshnessTests(unittest.TestCase):
+    def test_a_current_selected_output_does_not_inherit_another_outputs_uncertainty(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            identity = SimpleNamespace(core=root / "src" / "brave", src=root / "src")
+            fingerprint = {"core_head": "unchanged"}
+            selected = None
+            for name in ("default", "custom"):
+                output = root / name
+                artifact = {"path": str(ios.app_in(output)), "target": "ios", "output_dir": str(output)}
+                state = OutputState(identity, output, root)
+                state.record_success("build-" + name, artifact, fingerprint)
+                if name == "default":
+                    state.begin_attempt("failed-rebuild")
+                    state.end_attempt("failed-rebuild", "failed")
+                else:
+                    selected = artifact
+            ctx = SimpleNamespace(state_root=root, log=Mock())
+            result = Result(command="run")
+            patch_plan = SimpleNamespace(report=SimpleNamespace(patched_paths={}))
+            with patch.object(cmd_ios.patches, "plan_patch_preparation", return_value=patch_plan), \
+                    patch.object(cmd_ios.freshness, "compute", return_value=fingerprint):
+                cmd_ios.warn_run_freshness(ctx, identity, selected, result)
+            self.assertEqual(result.warnings, [])
+            ctx.log.phase.assert_not_called()
 
 
 if __name__ == "__main__":

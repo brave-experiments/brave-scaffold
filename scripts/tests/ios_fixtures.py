@@ -128,6 +128,9 @@ os.symlink(gn, link)
 derived = args[args.index("-derivedDataPath") + 1] if "-derivedDataPath" in args else os.path.join(src, "out", "unexpected")
 if not os.environ.get("FAKE_NO_APP"):
     app = os.path.join(derived, "Build", "Products", "Debug-iphonesimulator", "Client.app")
+    for arg in args:
+        if arg.startswith("CONFIGURATION_BUILD_DIR="):
+            app = os.path.join(arg.split("=", 1)[1], "Client.app")
     os.makedirs(app, exist_ok=True)
     info = {"CFBundleIdentifier": os.environ.get("FAKE_IOS_BUNDLE_ID", "com.brave.ios.browser.dev"),
             "CFBundleExecutable": "Client", "CFBundleName": "Brave",

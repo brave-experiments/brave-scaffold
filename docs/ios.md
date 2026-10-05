@@ -85,6 +85,10 @@ they are also read:
 - `-destination` replaces the simulator destination. It cannot be combined with `--device`
   (`SELECTOR_CONFLICT`), and `build-run` refuses it because the simulator to run on would
   be unidentified.
+- Build-setting assignments and `-xcconfig` can change the app's name, platform, or output
+  directory. They are forwarded, but leave the artifact unresolved, so `build-run` stops
+  without installing an older app. `CODE_SIGNING_ALLOWED`, `CODE_SIGNING_REQUIRED`, and
+  `CODE_SIGN_IDENTITY` do not change output selection and can be forwarded with verification.
 - `-project`, `-workspace`, `-scheme`, `-target`, `-alltargets`, `-configuration`, `-sdk`, and
   `-arch` would change what is built, so they stop the command before any change
   (`SELECTOR_CONFLICT`). `--configuration release` is `UNSUPPORTED_CAPABILITY`.
@@ -105,12 +109,14 @@ settings to it; whether that build uses remote execution comes from Core's own c
 | `xcodebuild` exits nonzero | `CHILD_FAILED`, exit 5; both outputs are marked as needing revalidation |
 | Exit 0, `Client.app` is a Brave simulator app and `ios_current_link` points at the GN output | `ok`, the app in `artifacts` |
 | Exit 0 but the app is missing, not a Brave simulator build, or the link points elsewhere | `ARTIFACT_MISSING` or `ARTIFACT_MISMATCH`, exit 5 |
-| Exit 0 from a mode that builds no app | `ok` with `ARTIFACT_UNRESOLVED` (`build`), or that error with nothing launched (`build-run`) |
+| Exit 0 from a mode that builds no app, or settings that leave its output unidentified | `ok` with `ARTIFACT_UNRESOLVED` (`build`), or that error with nothing launched (`build-run`) |
 
 A failed or interrupted build can partly overwrite earlier output. The scaffold marks the GN
 output and the derived-data directory as needing revalidation before `xcodebuild` starts, keeps
 their earlier records as history, and does not clean or roll back. An earlier app may still be
 run with `bdev run ios`.
+`run` warns before installing when an attempt may have partly overwritten the selected
+output, tracked sources changed since its build, or its build freshness cannot be checked.
 
 ## Run
 

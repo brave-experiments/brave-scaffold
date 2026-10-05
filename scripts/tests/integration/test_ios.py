@@ -207,6 +207,29 @@ class IosBuildTests(IosTestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn("platform=iOS Simulator,id=CCCC-PHONE", self.xcode_calls()[0]["argv"])
 
+    def test_output_setting_never_verifies_or_launches_the_older_default_app(self):
+        self.assertEqual(self.document("build", "ios")[0].returncode, 0)
+        old_executable = (self.app() / "Client").read_bytes()
+        before = [state["success"] for state in self.output_states()]
+        other = self.sandbox.root / "other-products"
+        setting = "CONFIGURATION_BUILD_DIR=" + str(other)
+        for command in ("build", "build-run"):
+            with self.subTest(command=command):
+                self.sandbox.record.unlink(missing_ok=True)
+                result, document = self.document(command, "ios", setting)
+                self.assertTrue((other / "Client.app").is_dir(), "Xcode receives the output override")
+                self.assertIn(setting, self.xcode_calls()[0]["argv"])
+                self.assertEqual((self.app() / "Client").read_bytes(), old_executable)
+                self.assertEqual(self.simctl_calls(), [], "the older app must never be installed")
+                self.assertEqual(document["artifacts"], [])
+                if command == "build":
+                    self.assertEqual(result.returncode, 0)
+                    self.assertEqual(document["data"]["build"]["artifact_status"], "unresolved")
+                else:
+                    self.assertEqual((result.returncode, document["error"]["code"]),
+                                     (5, "ARTIFACT_UNRESOLVED"))
+                self.assertEqual([state["success"] for state in self.output_states()], before)
+
     def test_an_unavailable_simulator_fails_before_the_build(self):
         result, document = self.document("build", "ios", "--device", "iPhone 8")
         self.assertEqual((result.returncode, document["error"]["code"]), (3, "DEVICE_UNAVAILABLE"))
@@ -223,6 +246,17 @@ class IosBuildTests(IosTestCase):
             self.assertIsNotNone(state["success"], "the earlier success stays as history")
         result, document = self.document("run", "ios")
         self.assertEqual(result.returncode, 0, "an older app may still run after inspection")
+        warning = next(w for w in document["warnings"] if w["code"] == "ARTIFACT_FRESHNESS_UNKNOWN")
+        self.assertIn("partly overwritten", warning["message"])
+
+    def test_explicit_run_checks_the_selected_output_after_a_failed_rebuild(self):
+        other = self.sandbox.root / "other-derived"
+        self.assertEqual(self.document("build", "ios", "-derivedDataPath", str(other))[0].returncode, 0)
+        self.document("build", "ios", "-derivedDataPath", str(other), env=self.env(FAKE_XCODEBUILD_EXIT="65"))
+        result, document = self.document("run", "ios", "--artifact", str(self.app(other)))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        warning = next(w for w in document["warnings"] if w["code"] == "ARTIFACT_FRESHNESS_UNKNOWN")
+        self.assertIn("partly overwritten", warning["message"])
 
     def test_an_app_that_core_did_not_produce_is_not_accepted(self):
         for extra, code in ((dict(FAKE_NO_APP="1"), "ARTIFACT_MISSING"),
@@ -301,6 +335,23 @@ class IosRunTests(IosTestCase):
         result, document = self.document("run", "ios")
         self.assertEqual((result.returncode, document["error"]["code"]), (5, "ARTIFACT_MISSING"))
         self.assertEqual(self.simctl_calls(), [])
+
+    def test_run_warns_when_sources_changed_since_the_build(self):
+        self.built()
+        (self.core / "package.json").write_text((self.core / "package.json").read_text() + "\n")
+        result, document = self.document("run", "ios")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        warning = next(w for w in document["warnings"] if w["code"] == "ARTIFACT_STALE")
+        self.assertIn("core_worktree", warning["message"])
+
+    def test_run_warns_when_the_app_has_no_build_record(self):
+        self.built()
+        for path in (self.sandbox.config.parent / ".bdev" / "outputs").glob("*/*.json"):
+            path.unlink()
+        result, document = self.document("run", "ios")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        warning = next(w for w in document["warnings"] if w["code"] == "ARTIFACT_FRESHNESS_UNKNOWN")
+        self.assertIn("No successful build", warning["message"])
 
     def test_build_run_uses_the_simulator_it_built_for(self):
         result, document = self.document("build-run", "ios", "--device", "iPhone 16 Pro")

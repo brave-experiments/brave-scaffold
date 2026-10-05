@@ -268,6 +268,36 @@ def select_artifact(ctx, identity):
     return candidates[0]
 
 
+def warn_run_freshness(ctx, identity, bundle, result):
+    """Assess the selected app's record without treating an earlier success as proof of intact output."""
+    saved = None
+    for candidate in output_states(identity, ctx.state_root):
+        artifact = (candidate.get("success") or {}).get("artifact") or {}
+        if (artifact.get("target") == "ios" and artifact.get("path") and artifact.get("output_dir")
+                and os.path.realpath(artifact["path"]) == os.path.realpath(bundle["path"])
+                and candidate["output_dir"] == os.path.realpath(artifact["output_dir"])):
+            saved = candidate
+            break
+    if saved is None:
+        status = "unknown"
+        evidence = ["No successful build of this output was recorded by the scaffold."]
+    else:
+        state = OutputState(identity, saved["output_dir"], ctx.state_root)
+        recorded = saved["success"]
+        try:
+            patch_plan = patches.plan_patch_preparation(identity, ctx.log, ctx.state_root)
+            current = freshness.compute(identity, patch_plan.report.patched_paths, [], ctx.log)
+        except ScaffoldError:
+            current = {key: None for key in recorded["fingerprint"]}
+        assessment = freshness.assess(recorded["fingerprint"], current, state)
+        status, evidence = assessment["status"], assessment["evidence"]
+    if status != "current":
+        code = "ARTIFACT_STALE" if status == "stale" else "ARTIFACT_FRESHNESS_UNKNOWN"
+        message = "Build freshness is %s for %s. %s" % (status, bundle["path"], " ".join(evidence))
+        result.add_warning(code, message)
+        ctx.log.phase("Warning [%s]: %s" % (code, message))
+
+
 def cmd_run(ctx, identity):
     parsed = ctx.parsed
     if parsed.get("configuration") not in (None, "debug"):
@@ -288,7 +318,9 @@ def cmd_run(ctx, identity):
         return result
     execution = execution_module.load(ctx, identity)
     simulator = choose_simulator(execution.environ, ctx.log, identity, parsed.get("device"))
+    result = Result(command=ctx.command)
+    warn_run_freshness(ctx, identity, bundle, result)
     with track(ctx, ctx.command, identity, {"target": "ios", "artifact": bundle["path"]}, validated=True) as op:
         op.start("select-simulator", **step_module.select_simulator_step(simulator).record())
         op.succeed("select-simulator", simulator=simulator["udid"])
-        return op.complete(run_phase(ctx, execution, bundle, simulator, Result(command=ctx.command), op))
+        return op.complete(run_phase(ctx, execution, bundle, simulator, result, op))
