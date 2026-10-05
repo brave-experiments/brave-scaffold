@@ -21,7 +21,7 @@ from ..common.checks import (BLOCKER, MARKER_LEGEND, MARKERS, NOT_CHECKED, PASS,
 from ..common.platforms import host_architecture, host_platform
 from ..common.procs import run_capture
 from ..common.results import Result, ScaffoldError, error_result, repair
-from . import android_checks, execution as execution_module, signing_checks
+from . import android_checks, execution as execution_module, ios_checks, signing_checks
 from . import rbe_checks as rbe_checks_module
 
 # Each scope lists the check groups it evaluates.
@@ -31,6 +31,7 @@ SCOPES = {
     "shell": ("machine", "shell"),
     "signing": ("machine", "signing"),
     "android": ("machine", "host-mac", "android-machine", "checkout", "android-build", "android-support"),
+    "ios": ("machine", "host-mac", "ios-machine", "checkout", "ios-build"),
 }
 
 
@@ -165,7 +166,8 @@ def shell_checks(ctx, scope):
 GROUP_FUNCTIONS = {"machine": machine_checks, "host-mac": host_mac_checks, "shell": shell_checks,
                    "mac-build": rbe_checks_module.mac_build_checks, "rbe": rbe_checks_module.rbe_checks,
                    "signing": signing_checks.signing_checks, "android-machine": android_checks.machine_checks,
-                   "android-build": android_checks.build_checks, "android-support": android_checks.support_checks}
+                   "android-build": android_checks.build_checks, "android-support": android_checks.support_checks,
+                   "ios-machine": ios_checks.machine_checks, "ios-build": ios_checks.build_checks}
 
 
 # These describe the machine, the shell, or Git, not the checkout, so the caller's environment is the right one.
@@ -220,7 +222,7 @@ def render_text(scopes, checks, *, hidden=(), heading="🩺 Brave setup doctor",
             continue
         if missing and check.status == NOT_CHECKED and (
                 check.name in ("checkout-selection", "checkout-layout", "environment", "local-tools", "services-key")
-                or check.name.startswith("android-")
+                or check.name.startswith(("android-", "ios-"))
                 or check.name.startswith("rbe-") and check.name != "rbe-reachability"):
             continue
         if check.name.startswith("rbe-"):
@@ -230,7 +232,7 @@ def render_text(scopes, checks, *, hidden=(), heading="🩺 Brave setup doctor",
         elif check.name in ("scaffold-runtime", "git", "direnv"):
             section = "Runtime"
         else:
-            section = {"mac": "macOS", "android": "Android", "shell": "Shell", "signing": "Signing"}.get(
+            section = {"mac": "macOS", "android": "Android", "ios": "iOS", "shell": "Shell", "signing": "Signing"}.get(
                 check.scopes[0], check.scopes[0])
         sections.setdefault(section, []).append(check)
     for section, items in sections.items():
@@ -278,7 +280,7 @@ def run_doctor(ctx):
     scopes_map = SCOPES
     requested = ctx.parsed.positionals[0].lower() if ctx.parsed.positionals else None
     if requested is not None and requested not in scopes_map:
-        deferred = requested in ("ios", "android-studio", "emulator", "agent", "agents", "skills")
+        deferred = requested in ("android-studio", "emulator", "agent", "agents", "skills")
         raise ScaffoldError(
             "UNSUPPORTED_CAPABILITY" if deferred else "INVALID_INPUT",
             "Doctor scope %r is %s." % (requested, "not available in this release" if deferred else "unknown"),

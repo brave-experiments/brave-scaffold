@@ -134,7 +134,7 @@ class DoctorTests(SandboxTest):
         result, document = self.doctor("nonsense")
         self.assertEqual((result.returncode, document["error"]["code"]), (2, "INVALID_INPUT"))
         self.assertIn("mac", document["error"]["details"]["scopes"])
-        result, document = self.doctor("ios")
+        result, document = self.doctor("android-studio")
         self.assertEqual((result.returncode, document["error"]["code"]), (2, "UNSUPPORTED_CAPABILITY"))
 
     def test_doctor_writes_only_external_diagnostics_and_never_repairs(self):

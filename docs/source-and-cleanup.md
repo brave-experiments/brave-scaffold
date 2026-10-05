@@ -15,6 +15,7 @@ is supported; permission and I/O errors are reported.
 bdev sync                       # macOS
 bdev sync android --plan        # show the command; runs nothing
 bdev sync mac,android --force   # extra arguments go to the sync script
+bdev sync ios                   # adds ios to target_os; Core's hooks bootstrap the project
 ```
 
 `bdev sync [<targets>]` runs Core's `sync` script with the checkout-local tools.
@@ -49,6 +50,10 @@ revisions before and after sync.
 Sync writes inside the checkout are the requested browser operation; scaffold
 setup remains external and optional. Core's supported standalone workflow stays
 available without scaffold.
+
+iOS additions: `bdev sync ios` requires Core's hooks, so `--nohooks` is refused. After the
+sync it checks the files Core's `bootstrap_ios` hook creates ([iOS](ios.md#sync-and-bootstrap)) and
+stops with `PREPARATION_CONFLICT` and a repair suggestion when they are missing.
 
 Android additions: `bdev sync android` requires nothing beyond the existing
 `.gclient`; the mobile union is described above. The Android support working copy
@@ -124,18 +129,19 @@ operator may use a checkout at a time and the scaffold does not lock it.
 bdev clean                                   # preview for the default target
 bdev clean android --configuration debug     # preview one target and configuration
 bdev clean mac --arch arm64 --execute        # delete the previewed directories
-bdev clean all --execute                     # explicitly mac and android
+bdev clean all --execute                     # explicitly mac, android, and ios
 ```
 
-- The target is `mac`, `android`, or `all`. Omitting it selects the default
+- The target is `mac`, `android`, `ios`, or `all`. Omitting it selects the default
   target (explicit target, then `defaults.platform`, then the host). Omission
   never means all.
 - `--configuration debug|release|all` (default `all`) and `--arch <arch>` narrow
-  the match. iOS is not available.
+  the match.
 - Only directories directly under the selected checkout's own `src/out` are
   considered: macOS `Debug_arm64`, `Release_arm64`, the `Origin` variants, and the
   unsuffixed base; Android `android_Debug_arm64`, `android_tests_Debug_arm64`, and
-  the analogous names. Other directories and other checkouts are never scanned.
+  the analogous names; iOS `ios_Debug_arm64_simulator` (and the other `ios_<Configuration>` names Core's
+  Xcode pre-action creates) and `ios_Debug_xcode_derived_data`, which holds the Xcode products. Other directories and other checkouts are never scanned.
 
 Preview writes nothing:
 

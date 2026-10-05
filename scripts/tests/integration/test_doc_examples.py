@@ -23,6 +23,8 @@ NOT_RUN = {
     "bpm [--checkout <name-or-path>] [--config <file>] [--json] <package arguments...>": "syntax reference",
     "bdev vpython3 [--checkout <name-or-path>] [--cwd <directory>] [--] <arguments...>": "syntax reference",
     "bdev android setup": "clones the default support repository from the network",
+    "bdev sync ios": "needs Core's iOS bootstrap hook; covered by tests/integration/test_ios.py",
+    "bdev sync ios,android": "needs Core's iOS bootstrap hook; covered by tests/integration/test_ios.py",
     "bdev android setup --ref <tag-or-sha>": "clones the default support repository from the network",
     "bdev test android brave_junit_tests --filter='*BraveCommandLineInitUtilTest*'":
         "needs the Android test support fixtures; run by tests.integration.test_android_tests",

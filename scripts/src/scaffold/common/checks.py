@@ -23,6 +23,8 @@ DISPLAY_LABELS = {
     "checkout-selection": "Selected checkout", "checkout-layout": "Checkout layout",
     "local-tools": "Checkout tools", "services-key": "Brave services key",
     "shell-hook": "Shell setup", "bdev-on-path": "bdev on PATH",
+    "ios-xcodebuild": "Xcode", "ios-simulator-sdk": "iOS Simulator SDK", "ios-gclient-target": "iOS target_os",
+    "ios-project": "iOS project", "ios-bootstrap": "iOS bootstrap files", "ios-simulator": "iOS Simulator",
     "android-gclient-target": "Android target_os",
     "android-support-working-copy": "Android support repository",
     "android-support-lfs": "Android support downloads",

@@ -30,13 +30,12 @@ class TargetSelectionTests(unittest.TestCase):
             with self.assertRaises(ScaffoldError) as caught:
                 platforms.effective_target(None, config())
             self.assertEqual(caught.exception.code, "UNSUPPORTED_CAPABILITY")
-            self.assertEqual(caught.exception.details["supported_targets"], ["mac", "android"])
+            self.assertEqual(caught.exception.details["supported_targets"], ["mac", "android", "ios"])
             self.assertEqual(platforms.effective_target("android", config())[0], "android")
 
-    def test_ios_and_unknown_tokens_are_reported_differently(self):
-        with self.assertRaises(ScaffoldError) as ios:
-            platforms.effective_target("ios", config())
-        self.assertEqual(ios.exception.code, "UNSUPPORTED_CAPABILITY")
+    def test_ios_is_a_target_and_unknown_tokens_are_input_errors(self):
+        self.assertEqual(platforms.effective_target("iOS", config()), ("ios", "explicit"))
+        self.assertEqual(platforms.effective_target(None, config("ios")), ("ios", "configured"))
         with self.assertRaises(ScaffoldError) as unknown:
             platforms.effective_target("Debug", config())
         self.assertEqual(unknown.exception.code, "INVALID_INPUT")
@@ -54,6 +53,11 @@ class CapabilityTests(unittest.TestCase):
         row = platforms.capability_table()[0]
         self.assertEqual(set(row), {"host", "target", "operation", "configuration", "architecture", "status", "note"})
         self.assertTrue(any(r["status"] == "unsupported" and r["target"] == "ios" for r in platforms.capability_table()))
+
+    def test_ios_simulator_debug_is_unverified_until_validated_on_a_real_checkout(self):
+        rows = {(r["operation"], r["configuration"]): r for r in platforms.capability_table() if r["target"] == "ios"}
+        self.assertEqual(rows[("sync", "debug")]["status"], "unverified")
+        self.assertEqual(rows[("any", "release")]["status"], "unsupported")
 
 
 if __name__ == "__main__":

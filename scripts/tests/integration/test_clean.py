@@ -13,7 +13,8 @@ from tests.support import SandboxTest, tree_snapshot
 from scaffold.brave import clean, records
 
 NAMES = ["Debug_arm64", "Debug_x64", "Release_arm64", "DebugOrigin_arm64", "Debug", "android_Debug_arm64",
-         "android_tests_Debug_arm64", "android_Release_arm64", "Default", "Debugger"]
+         "android_tests_Debug_arm64", "android_Release_arm64", "ios_Debug_arm64_simulator", "ios_Debug_x64_simulator",
+         "ios_Debug_xcode_derived_data", "ios_Release_arm64_simulator", "Default", "Debugger"]
 
 
 class CleanTests(SandboxTest):
@@ -63,10 +64,18 @@ class CleanTests(SandboxTest):
         self.assertEqual(self.remaining(), ["Debugger", "Default"])
 
     def test_unknown_and_unavailable_targets_are_rejected_without_deleting(self):
-        for token, code in (("nonsense", "INVALID_INPUT"), ("ios", "UNSUPPORTED_CAPABILITY")):
-            result, document = self.clean(token, "--execute")
-            self.assertEqual(document["error"]["code"], code)
+        result, document = self.clean("nonsense", "--execute")
+        self.assertEqual(document["error"]["code"], "INVALID_INPUT")
         self.assertEqual(self.remaining(), sorted(NAMES))
+
+    def test_ios_matches_simulator_outputs_and_derived_data_for_the_configuration(self):
+        result, document = self.clean("ios", "--configuration", "debug")
+        self.assertEqual(self.names(document), ["ios_Debug_arm64_simulator", "ios_Debug_x64_simulator",
+                                                "ios_Debug_xcode_derived_data"])
+        result, document = self.clean("ios", "--configuration", "debug", "--arch", "arm64", "--execute")
+        self.assertEqual(self.names(document), ["ios_Debug_arm64_simulator"])
+        self.assertNotIn("ios_Debug_arm64_simulator", self.remaining())
+        self.assertIn("ios_Debug_x64_simulator", self.remaining())
 
     def test_symlinked_entries_are_skipped_and_their_targets_survive(self):
         victim = self.sandbox.root / "victim"

@@ -100,7 +100,7 @@ without selecting a browser checkout. See [support repositories](support-reposit
 | `bdev shell` | Child shell in Core with the environment loaded | Whatever you do in the shell |
 | `bdev context` | Resolved checkout, selection source, environment, tools | None |
 | `bdev capabilities` | Supported, limited, unverified, unsupported combinations | None; needs no checkout |
-| `bdev doctor [scope]` | Named readiness checks (`mac`, `android`, `rbe`, `shell`, `signing`) | None |
+| `bdev doctor [scope]` | Named readiness checks (`mac`, `android`, `ios`, `rbe`, `shell`, `signing`) | None |
 | `bdev build [target]` | Prepare, compile, and verify the output ([macOS](macos.md)) | Writes build output; may apply patches |
 | `bdev test [target] <suite>` | Compile if needed and run one suite ([macOS](macos.md), [Android](android.md#tests)); `--device` for Android device suites | Writes build output; runs tests; Android also applies the support test overlay to Core's `build/commands` |
 | `bdev test-local` | Run the tests the branch or working tree modifies, one suite after another ([details](#test-local)) | Effects of each `bdev test` phase it runs |
@@ -286,7 +286,7 @@ something, so a plan can be compared with what was dispatched.
 
 ## Doctor
 
-`bdev doctor [mac|android|rbe|shell|signing]` runs named checks, each `pass`, `blocker`, `warning`,
+`bdev doctor [mac|android|ios|rbe|shell|signing]` runs named checks, each `pass`, `blocker`, `warning`,
 `unsupported`, or `not_checked` (in text output marked ✅, ❌, ⚠️, 🚫, and ❔, with a legend line;
 JSON keeps the status words), marked required or optional. Without a scope it
 runs every delivered scope. A blocker in a required check gives

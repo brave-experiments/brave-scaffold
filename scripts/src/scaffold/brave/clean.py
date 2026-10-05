@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import os
+import re
 import secrets
 import stat
 from dataclasses import dataclass
@@ -18,7 +19,7 @@ from ..common.results import EXIT_PARTIAL, Cancelled, Result, ScaffoldError
 from .records import all_operations, cleanup_remainders, track
 
 CONFIG_NAMES = {"debug": "Debug", "release": "Release"}
-SUPPORTED_TARGETS = ("mac", "android")
+SUPPORTED_TARGETS = ("mac", "android", "ios")
 PRIVATE_PREFIX = ".scaffold-deleting-"
 
 
@@ -44,6 +45,9 @@ def _with_arch(name, base, arch):
 def matches(name, target, config, arch):
     """Whether a directory name under src/out is an output of this target and configuration."""
     label = CONFIG_NAMES[config]
+    if target == "ios":
+        found = re.fullmatch(r"ios_%s(?:_(arm64|x64))?(?:_simulator)?(?:_xcode_derived_data)?" % label, name)
+        return bool(found) and (not arch or found.group(1) == arch)
     if target == "mac":
         return any(_with_arch(name, label + sku, arch) for sku in ("", "Origin"))
     bases = ("android_" + label, "android_tests_" + label, "android_%sOrigin" % label,
@@ -354,7 +358,7 @@ def clean_result(ctx, identity, entries, out_dir, targets, configs, arch, execut
 
 SPEC = CommandSpec(
     "clean", "List the checkout's generated build outputs, or delete them with --execute.", run_clean,
-    positionals=(Positional("target", help="mac, android, or all; omitted means the default target only."),),
+    positionals=(Positional("target", help="mac, android, ios, or all; omitted means the default target only."),),
     options=(Opt("--configuration", "configuration", choices=("debug", "release", "all"),
                  help="Configuration to match (default: all).", metavar="CONFIG"),
              Opt("--arch", "arch", help="Only this architecture suffix, such as arm64.", metavar="ARCH"),

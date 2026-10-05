@@ -13,7 +13,7 @@ from .results import ScaffoldError, repair
 
 TARGET_ALIASES = {"mac": "mac", "macos": "mac", "android": "android", "ios": "ios"}
 RECOGNIZED_TARGETS = tuple(TARGET_ALIASES)
-INITIAL_TARGETS = ("mac", "android")
+INITIAL_TARGETS = ("mac", "android", "ios")
 CONFIGURATIONS = ("debug", "release")
 
 SUPPORTED, LIMITED, UNVERIFIED, EXPERIMENTAL, UNSUPPORTED = (
@@ -39,7 +39,7 @@ def effective_target(explicit, config):
         target, source = normalize_target(explicit), "explicit"
         if target is None:
             raise ScaffoldError(
-                "INVALID_INPUT", "%r is not a target. Use mac or android; choose the configuration with "
+                "INVALID_INPUT", "%r is not a target. Use mac, android, or ios; choose the configuration with "
                 "--configuration debug|release." % explicit, details={"targets": list(INITIAL_TARGETS)})
     elif config.default_platform:
         target, source = normalize_target(config.default_platform), "configured"
@@ -51,10 +51,6 @@ def effective_target(explicit, config):
             "This host (%s) has no supported default target; name one explicitly." % sys.platform,
             details={"supported_targets": list(INITIAL_TARGETS)},
             repairs=[repair(["bdev", "capabilities"])])
-    if target == "ios":
-        raise ScaffoldError(
-            "UNSUPPORTED_CAPABILITY", "iOS is not available in this release; use mac or android.",
-            details={"supported_targets": list(INITIAL_TARGETS)})
     return target, source
 
 
@@ -65,7 +61,8 @@ VALIDATED = {("mac", operation, "debug", "arm64") for operation in ("sync", "bui
 # (target, operation) pairs whose commands exist in this release.
 AVAILABLE_OPERATIONS = {("mac", operation) for operation in
                         ("sync", "build", "test", "run", "clean", "drift", "patches-update")} | {
-    ("android", operation) for operation in ("sync", "build", "test", "deploy", "run", "clean")}
+    ("android", operation) for operation in ("sync", "build", "test", "deploy", "run", "clean")} | {
+    ("ios", "sync")}
 
 
 def capability_table():
@@ -94,7 +91,10 @@ def capability_table():
     add("android", "build", "release", "arm64", LIMITED, "Not part of the validated workflow.")
     add("android", "test", "debug", "arm64", SUPPORTED,
         "brave_junit_tests (host) and brave_java_unit_tests (device); needs the android-testing-prototype support branch.")
-    add("ios", "build", "debug", "arm64", UNSUPPORTED, "iOS is not available.")
+    add("ios", "sync", "debug", "arm64", SUPPORTED, "Adds ios to target_os; Core's hooks bootstrap the project.")
+    for operation in ("build", "run", "clean"):
+        add("ios", operation, "debug", "arm64", SUPPORTED, "iOS Simulator only.")
+    add("ios", "any", "release", "arm64", UNSUPPORTED, "Only Debug simulator builds are available.")
     for target in ("mac", "android"):
         add(target, "any", "debug", "arm64", UNSUPPORTED,
             "Native Linux and Windows hosts are not available.", host="linux-or-windows")

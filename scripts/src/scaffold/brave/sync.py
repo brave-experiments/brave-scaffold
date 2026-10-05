@@ -10,7 +10,7 @@ import ast
 
 from ..common import tools as tools_module
 from ..common.results import ScaffoldError
-from . import freshness, packages, steps as step_module
+from . import freshness, ios, packages, steps as step_module
 
 
 def gclient_targets(identity):
@@ -37,15 +37,25 @@ def target_os_union(existing, requested):
     return unrelated + [item for item in ("android", "ios") if item in mobile]
 
 
+def mobile_targets(target):
+    """The mobile targets (android, ios) named by a target string or an iterable of them."""
+    named = [target] if isinstance(target, str) else list(target)
+    return [item for item in ("android", "ios") if item in named]
+
+
 def sync_arguments(ctx, target, forwarded, identity=None):
     arguments = ["run", "sync"]
-    if target == "android":
+    requested = mobile_targets(target)
+    if requested:
+        if "ios" in requested and "--nohooks" in forwarded:
+            raise ScaffoldError("SELECTOR_CONFLICT", "Syncing iOS needs Core's hooks, which bootstrap the iOS "
+                                "project; remove --nohooks.")
         identity = identity or ctx.identity()
         existing = gclient_targets(identity)
         if existing is None:
             raise ScaffoldError("PREPARATION_CONFLICT", "The checkout's .gclient is missing or unreadable.",
                                 details={"file": str(identity.workspace / ".gclient")})
-        arguments.append("--target_os=" + ",".join(target_os_union(existing, ["android"])))
+        arguments.append("--target_os=" + ",".join(target_os_union(existing, requested)))
     return [*arguments, *forwarded]
 
 
@@ -64,6 +74,14 @@ def do_sync_phase(ctx, execution, op, target, forwarded):
                             details={"argv": argv, "phase": "sync"}, child_exit_code=code)
     after = {"core_head": freshness.resolve_head(identity.core, ctx.log),
              "chromium_head": freshness.resolve_head(identity.src, ctx.log)}
+    if "ios" in mobile_targets(target):
+        missing = ios.missing_bootstrap_artifacts(identity)
+        if missing:
+            op.fail("sync", missing_bootstrap=[str(path) for path in missing])
+            raise ScaffoldError("PREPARATION_CONFLICT", "The sync finished but Core's iOS bootstrap files are "
+                                "missing (%d, for example %s)." % (len(missing), missing[0]),
+                                details={"missing": [str(path) for path in missing], "phase": "sync"},
+                                repairs=[ios.bootstrap_repair(identity)])
     op.succeed("sync", exit=0, revisions_before=before, revisions_after=after)
     return {"argv": argv, "revisions_before": before, "revisions_after": after}
 

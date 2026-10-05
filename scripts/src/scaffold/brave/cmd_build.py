@@ -47,9 +47,11 @@ def select_build(ctx, target_token, forwarded, tests=False):
     return identity, effective
 
 
-def require_available_target(target):
+def require_available_target(target, operation="build"):
     if target == "android":
         android.require_available()
+    elif target == "ios" and operation == "sync":
+        return
     elif target != "mac":
         raise ScaffoldError("UNSUPPORTED_CAPABILITY", "The target %r is not available." % target)
 
@@ -773,13 +775,13 @@ def cmd_sync(ctx):
         if target not in targets:
             targets.append(target)
     for target in targets:
-        require_available_target(target)
-    if any(item.startswith("--target_os") for item in parsed.forwarded) and "android" in targets:
+        require_available_target(target, "sync")
+    if any(item.startswith("--target_os") for item in parsed.forwarded) and sync_module.mobile_targets(targets):
         raise ScaffoldError("SELECTOR_CONFLICT",
                             "Mobile sync targets build --target_os from the checkout's existing targets; "
                             "remove --target_os from the forwarded arguments.")
     identity = ctx.identity()
-    mobile = "android" if "android" in targets else "mac"
+    mobile = sync_module.mobile_targets(targets) or "mac"
     if parsed.get("plan"):
         arguments = sync_module.sync_arguments(ctx, mobile, parsed.forwarded, identity)
         toolchain, steps = common_plan_steps(ctx, identity, "mac", "sync", False)

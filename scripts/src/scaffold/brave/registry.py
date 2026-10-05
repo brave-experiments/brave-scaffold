@@ -31,7 +31,7 @@ DIFF = Opt("--diff", "diff", takes_value=False, help="Print the Git diff of each
 BASE = Opt("--base", "base", metavar="REF", help="Compare the branch with this ref (default: origin/master).")
 SCOPE = Opt("--scope", "scope", choices=("both", "committed", "worktree"), metavar="SCOPE",
             help="Which changes to inspect: committed branch changes, the working tree, or both (default).")
-TARGET = Positional("target", help="mac or android (default: configured platform, else this host).")
+TARGET = Positional("target", help="mac, android, or ios (default: configured platform, else this host).")
 BUILD_SIDE_EFFECTS = ("Writes the build output under the checkout's src/out, applies Core patches when they are "
                       "out of date and no local edits are at risk, and may update the Metal toolchain setting for the "
                       "child only. Android support refresh may reset patch targets and replace or sign resources in "
@@ -53,7 +53,7 @@ def build_registry():
         CommandSpec("capabilities", "List supported, limited, unverified, and unsupported combinations.",
                     cmd_setup.capabilities, examples=("bdev capabilities --json",)),
         CommandSpec("doctor", "Check readiness for a scope without repairing anything.", doctor.run_doctor,
-                    positionals=(Positional("scope", help="mac, android, rbe, shell, or signing; omit for all scopes."),),
+                    positionals=(Positional("scope", help="mac, android, ios, rbe, shell, or signing; omit for all scopes."),),
                     examples=("bdev doctor", "bdev doctor mac --checkout main"),
                     notes="Checking a selected checkout evaluates its approved environment file. Refresh warnings do not guarantee a build can repair the files."),
         CommandSpec("setup", "Inspect prerequisites and prepare scaffold-owned configuration.", cmd_setup.setup, creates_config=True,
@@ -105,7 +105,7 @@ def build_registry():
                                                      "launches the new build.",
                     examples=("bdev br",)),
         CommandSpec("sync", "Run Core's source sync command.", cmd_build.cmd_sync,
-                    positionals=(Positional("targets", help="Comma-separated targets: mac, android."),),
+                    positionals=(Positional("targets", help="Comma-separated targets: mac, android, ios."),),
                     options=(PLAN,), forward=True,
                     side_effects="Runs Core's sync, including its resets, patches, and hooks; local changes may be overwritten. "
                                  "Mobile targets keep the checkout's existing target_os values.",
