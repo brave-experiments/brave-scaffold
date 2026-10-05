@@ -426,15 +426,12 @@ def plan_restart_after_build(ctx, effective, is_android, device_choice):
                                  on_failure="Nothing is stopped, installed, or launched.")]
     if is_android:
         try:
-            _, device, source = android.preflight_device(ctx)
-            chosen = step_module.select_device_step({"id": device["id"], "source": source})
+            choice = android.preflight_deployment(ctx, effective.arch)
         except ScaffoldError as error:
             return [step_module.select_device_step(error=error)]
         apk = str(android.apk_path(effective.output_dir, effective.arch))
         package = "<package from the built APK>"
-        return [chosen, step_module.install_apk_step(device["id"], apk),
-                step_module.stop_package_step(device["id"], package),
-                step_module.launch_package_step(device["id"], package)]
+        return android.deployment_steps(choice, apk, package)
     bundle = str(macos.app_path(effective.output_dir, effective.configuration, effective.channel))
     return [step_module.stop_instances_step(None, [], ["verify-output"]),
             step_module.launch_step(bundle, True, ["stop-running-instances"])]
@@ -443,10 +440,19 @@ def plan_restart_after_build(ctx, effective, is_android, device_choice):
 def do_build(ctx, command, sync_first=False, run_after=False):
     parsed = ctx.parsed
     target_token = parsed.positionals[0] if parsed.positionals else None
+    if parsed.get("all_devices"):
+        if not run_after:
+            raise ScaffoldError("INVALID_INPUT", "--all-devices applies to Android build-run and sync-build-run only.")
+        if parsed.get("device"):
+            raise ScaffoldError("SELECTOR_CONFLICT", "Use either --device or --all-devices, not both.")
     if effective_target(target_token, ctx.config)[0] == "ios":
+        if parsed.get("all_devices"):
+            raise ScaffoldError("INVALID_INPUT", "--all-devices applies to Android only.")
         from . import cmd_ios
         return cmd_ios.do_build(ctx, command, sync_first, run_after)
     identity, effective = select_build(ctx, target_token, parsed.forwarded)
+    if parsed.get("all_devices") and effective.target != "android":
+        raise ScaffoldError("INVALID_INPUT", "--all-devices applies to Android only.")
     if parsed.get("skip_support_refresh") and effective.target != "android":
         raise ScaffoldError("INVALID_INPUT", "--skip-support-refresh applies to Android only.")
     if parsed.get("plan"):
@@ -456,7 +462,7 @@ def do_build(ctx, command, sync_first=False, run_after=False):
     if parsed.get("device") and effective.target != "android":
         raise ScaffoldError("INVALID_INPUT", "--device applies to Android and iOS only.")
     execution = execution_module.load(ctx, identity)
-    device = android.preflight_device(execution.context(ctx)) if run_after and effective.target == "android" \
+    device = android.preflight_deployment(execution.context(ctx), effective.arch) if run_after and effective.target == "android" \
         else None
     remote = not effective.offline
     execution = prepare(ctx, identity, effective.target, "sync" if sync_first else "build", remote, execution)
@@ -756,6 +762,11 @@ def cmd_run(ctx):
     parsed = ctx.parsed
     identity = ctx.identity()
     target, _ = effective_target(parsed.positionals[0] if parsed.positionals else None, ctx.config)
+    if parsed.get("all_devices"):
+        if target != "android":
+            raise ScaffoldError("INVALID_INPUT", "--all-devices applies to Android only.")
+        if parsed.get("device"):
+            raise ScaffoldError("SELECTOR_CONFLICT", "Use either --device or --all-devices, not both.")
     require_available_target(target, "run")
     if parsed.get("device") and target not in ("android", "ios"):
         raise ScaffoldError("INVALID_INPUT", "--device applies to Android and iOS only.")

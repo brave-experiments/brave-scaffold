@@ -62,6 +62,8 @@ ANDROID_EXAMPLES = {
     "bdev build android -C Custom": (ANDROID, {0}),
     "bdev run android --device <id>": (ANDROID_BUILT, {0}), "bdev deploy android": (ANDROID_BUILT, {0}),
     "bdev build-run android --device <id>": (ANDROID, {0}),
+    "bdev build-run android --all-devices": (ANDROID, {0}),
+    "bdev run android --all-devices": (ANDROID_BUILT, {0}),
 }
 GETTING_STARTED = ["scripts/bdev setup", "scripts/bdev checkout add main /work/browser/_bad_scm/workspace/src/brave",
                    "scripts/bdev env init --checkout main", "scripts/bdev doctor mac --checkout main",

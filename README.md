@@ -29,7 +29,8 @@ checkout writes; those are the requested work, not scaffold installation changes
 `scripts/sync-support-repos` separately clones, updates, inspects, and prunes
 shared support repositories ([guide](docs/support-repositories.md)).
 
-Android builds an arm64 APK and installs and restarts it on a device.
+Android builds an arm64 APK and installs and restarts it on a selected device,
+or on every compatible connected device with `--all-devices`.
 iOS builds the Debug app for an iOS Simulator with `xcodebuild` and Core's Xcode
 project, then installs and launches it ([guide](docs/ios.md)).
 `bdev capabilities` lists what is supported and what has been verified on a

@@ -166,6 +166,26 @@
         "device": {
           "type": "string"
         },
+        "device_selection": {
+          "type": "string"
+        },
+        "devices": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["device", "status"],
+            "properties": {
+              "device": {"type": "string"},
+              "status": {"enum": ["ok", "error", "skipped"]},
+              "reason": {"type": "string"},
+              "code": {"type": "string"},
+              "child_exit_code": {"type": ["integer", "null"]},
+              "details": {"type": "object"},
+              "package": {"type": "string"},
+              "pid": {"type": "string"}
+            }
+          }
+        },
         "package": {
           "type": "string"
         },

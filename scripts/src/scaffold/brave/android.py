@@ -7,8 +7,10 @@
 from __future__ import annotations
 
 import os
+import re
 import sys
 import zipfile
+from dataclasses import dataclass
 from pathlib import Path
 
 from ..common.platforms import host_architecture, host_platform
@@ -151,6 +153,93 @@ def preflight_device(ctx):
     return adapter, device, source
 
 
+@dataclass
+class DeviceGroup:
+    adapter: str
+    devices: list
+    skipped: list
+
+
+BUILD_ABIS = {"arm64": "arm64-v8a", "arm": "armeabi-v7a", "x64": "x86_64", "x86": "x86"}
+
+
+def preflight_deployment(ctx, arch=None):
+    if not ctx.parsed.get("all_devices"):
+        return preflight_device(ctx)
+    if ctx.parsed.get("device"):
+        raise ScaffoldError("SELECTOR_CONFLICT", "Use either --device or --all-devices, not both.")
+    adapter = adb.require_adb(ctx.environ)
+    devices, skipped = [], []
+    abi = BUILD_ABIS.get(arch) if arch else None
+    if arch and abi is None:
+        raise ScaffoldError("ARTIFACT_UNRESOLVED", "Cannot check device compatibility for architecture %s." % arch)
+    for device in adb.list_devices(adapter, ctx.environ, ctx.log):
+        reason = None
+        if device["state"] != "device":
+            reason = device["state"]
+        else:
+            try:
+                device = adb.device_capabilities(adapter, device, ctx.environ, ctx.log)
+            except ScaffoldError as error:
+                reason = error.message
+            if reason is None and abi and abi not in device["abis"]:
+                reason = "requires %s; device supports %s" % (abi, ", ".join(device["abis"]))
+        if reason:
+            skipped.append({"device": device["id"], "status": "skipped", "reason": reason})
+        else:
+            devices.append(device)
+    if not devices:
+        raise ScaffoldError("DEVICE_UNAVAILABLE", "No compatible, usable Android devices are connected.",
+                            details={"devices": skipped})
+    return DeviceGroup(adapter, devices, skipped)
+
+
+def apk_requirements(ctx, identity, artifact):
+    """Read compatibility from the actual APK, including independently built outputs."""
+    tool = aapt2_path(identity)
+    probe = run_capture([str(tool), "dump", "badging", artifact["path"]], ctx.cwd, ctx.environ, ctx.log, timeout=60) \
+        if tool else None
+    sdk = re.search(r"^sdkVersion:'(\d+)'", probe.stdout, re.MULTILINE) \
+        if probe and probe.returncode == 0 and not probe.truncated else None
+    native = re.search(r"^native-code:[ \t]*(.*)$", probe.stdout, re.MULTILINE) if sdk else None
+    if sdk is None:
+        raise ScaffoldError("ARTIFACT_UNRESOLVED", "Cannot read the APK's minimum Android version; nothing was installed.")
+    try:
+        with zipfile.ZipFile(artifact["path"]) as archive:
+            abis = sorted({name.split('/')[1] for name in archive.namelist()
+                           if name.startswith('lib/') and len(name.split('/')) > 2 and name.endswith('.so')})
+    except (OSError, zipfile.BadZipFile) as error:
+        raise ScaffoldError("ARTIFACT_UNRESOLVED", "Cannot read the APK's ABIs: %s." % error)
+    if native:
+        abis = re.findall(r"'([^']+)'", native[1])
+        if not abis:
+            raise ScaffoldError("ARTIFACT_UNRESOLVED", "Cannot read the APK's ABIs; nothing was installed.")
+    return abis, int(sdk[1])
+
+
+def deployment_steps(choice, artifact, package):
+    if isinstance(choice, DeviceGroup):
+        devices, source = choice.devices, "all-devices"
+    else:
+        _, device, source = choice
+        devices = [device]
+    steps = []
+    if isinstance(choice, DeviceGroup):
+        steps.append(step_module.Step("verify-device-compatibility", "Check the APK's ABIs and minimum Android version before installing.",
+                                      "planned", reads=[artifact], detail="Incompatible devices are skipped."))
+    for device in devices:
+        install = step_module.install_apk_step(device["id"], artifact)
+        if isinstance(choice, DeviceGroup):
+            install.needs.append("verify-device-compatibility")
+        steps += [step_module.select_device_step({"id": device["id"], "source": source}), install,
+                  step_module.stop_package_step(device["id"], package),
+                  step_module.launch_package_step(device["id"], package)]
+    if isinstance(choice, DeviceGroup):
+        for item in choice.skipped:
+            steps.append(step_module.Step("skip-device", "Skip %s: %s." % (item["device"], item["reason"]), "resolved"))
+    return steps
+
+
 def apk_candidates(ctx, identity, configuration, arch):
     found = {}
     from . import buildopts
@@ -197,19 +286,11 @@ def restart_apk(ctx, identity, artifact, result, device=None, op=None):
             repairs=[repair(["bdev", "build", "android", "--checkout", str(identity.core)], requires_user_action=False,
                             note="aapt2 comes from the Android support resources, which the build prepares before "
                                  "compiling; this builds too. It is not part of 'bdev tools setup'.")])
-    adapter, device, source = device or preflight_device(ctx)
-    descriptions = {step.name: step for step in (
-        step_module.install_apk_step(device["id"], artifact["path"]),
-        step_module.stop_package_step(device["id"], artifact["package"]),
-        step_module.launch_package_step(device["id"], artifact["package"]))}
-
-    def start_phase(name):
-        if op is not None:
-            op.start(name, **descriptions[name].record())
-
-    outcome = adb.restart_package(adapter, device["id"], artifact["path"], artifact["package"], ctx.environ, ctx.log,
-                                  progress=op.succeed if op is not None else None, started=start_phase,
-                                  failed=op.fail if op is not None else None)
+    choice = device or preflight_deployment(ctx)
+    if isinstance(choice, DeviceGroup):
+        return restart_all_devices(ctx, identity, artifact, result, choice, op)
+    adapter, chosen, source = choice
+    outcome = restart_device(ctx, artifact, adapter, chosen, op)
     if op is not None:
         op.succeed("run", artifact=artifact["path"])
     result.data = {**(result.data or {}), "run": {"artifact": artifact,
@@ -217,7 +298,70 @@ def restart_apk(ctx, identity, artifact, result, device=None, op=None):
     if not result.artifacts:
         result.artifacts = [{**artifact, "verified": False}]
     result.text = ((result.text + "\n") if result.text else "") + "Installed and restarted %s on %s." % (
-        artifact["package"], device["id"])
+        artifact["package"], chosen["id"])
+    return result
+
+
+def restart_device(ctx, artifact, adapter, device, op=None):
+    """Record install, stop, and launch phases for one device."""
+    descriptions = {step.name: step for step in (
+        step_module.install_apk_step(device["id"], artifact["path"]),
+        step_module.stop_package_step(device["id"], artifact["package"]),
+        step_module.launch_package_step(device["id"], artifact["package"]))}
+
+    def start_phase(name):
+        if op is not None:
+            op.start(name, device=device["id"], **descriptions[name].record())
+
+    return adb.restart_package(adapter, device["id"], artifact["path"], artifact["package"], ctx.environ, ctx.log,
+                               progress=op.succeed if op is not None else None, started=start_phase,
+                               failed=op.fail if op is not None else None)
+
+
+def restart_all_devices(ctx, identity, artifact, result, group, op=None):
+    abis, min_sdk = apk_requirements(ctx, identity, artifact)
+    outcomes = list(group.skipped)
+    for device in group.devices:
+        reason = None
+        if abis and not set(abis).intersection(device["abis"]):
+            reason = "APK requires %s; device supports %s" % (", ".join(abis), ", ".join(device["abis"]))
+        elif device["sdk"] < min_sdk:
+            reason = "APK requires Android API %d; device has API %d" % (min_sdk, device["sdk"])
+        if reason:
+            outcomes.append({"device": device["id"], "status": "skipped", "reason": reason})
+            if op is not None:
+                op.detail(device_results=outcomes)
+            continue
+        try:
+            outcome = restart_device(ctx, artifact, group.adapter, device, op)
+        except ScaffoldError as error:
+            outcomes.append({"device": device["id"], "status": "error", "code": error.code,
+                             "reason": error.message, "child_exit_code": error.child_exit_code,
+                             "details": error.details})
+        else:
+            outcomes.append({**outcome, "status": "ok"})
+        if op is not None:
+            op.detail(device_results=outcomes)
+    failures = [item for item in outcomes if item["status"] == "error"]
+    succeeded = [item for item in outcomes if item["status"] == "ok"]
+    result.data = {**(result.data or {}), "run": {"artifact": artifact, "device_selection": "all-devices",
+                                               "devices": outcomes}}
+    if not result.artifacts:
+        result.artifacts = [{**artifact, "verified": False}]
+    summary = ["%s: %s%s" % (item["device"], "installed and restarted" if item["status"] == "ok" else item["status"],
+                              " - " + item["reason"] if item.get("reason") else "") for item in outcomes]
+    result.text = ((result.text + "\n") if result.text else "") + "\n".join(summary)
+    if failures or not succeeded:
+        error = ScaffoldError("LAUNCH_FAILED" if failures else "DEVICE_UNAVAILABLE",
+                              "Deployment failed on %d device(s)." % len(failures) if failures else
+                              "No connected device is compatible with this APK.", details={"devices": outcomes},
+                              child_exit_code=failures[0]["child_exit_code"] if failures else None)
+        result.status, result.exit_code = "error", error.exit_code
+        result.child_exit_code = error.child_exit_code
+        result.error = {"code": error.code, "message": error.message, "details": error.details, "repairs": []}
+    if op is not None:
+        op.detail(device_results=outcomes)
+        (op.fail if result.error else op.succeed)("run", artifact=artifact["path"], devices=outcomes)
     return result
 
 
@@ -228,11 +372,8 @@ def run_plan(ctx, identity, artifact):
              step_module.Step("select-artifact", "Use the selected APK; run never builds.", "resolved",
                               reads=[artifact["path"]], needs=["environment"], detail=artifact["path"])]
     try:
-        _, device, source = preflight_device(ctx)
-        steps.append(step_module.select_device_step({"id": device["id"], "source": source}))
-        steps += [step_module.install_apk_step(device["id"], artifact["path"]),
-                  step_module.stop_package_step(device["id"], package),
-                  step_module.launch_package_step(device["id"], package)]
+        choice = preflight_deployment(ctx)
+        steps += deployment_steps(choice, artifact["path"], package)
     except ScaffoldError as error:
         steps.append(step_module.select_device_step(error=error))
     result = Result(command=ctx.command, data={"plan": {"artifact": artifact, "steps": [s.to_dict() for s in steps]}})

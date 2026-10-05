@@ -130,6 +130,18 @@ def pick_device(adb, devices, environ, log=None, stdin=None, stderr=None):
         print("Enter a number from 1 to %d." % len(usable), file=stderr)
 
 
+def device_capabilities(adb, device, environ, log=None):
+    properties = {}
+    for key, prop in (("abis", "ro.product.cpu.abilist"), ("sdk", "ro.build.version.sdk")):
+        result = _adb(adb, device["id"], ["shell", "getprop", prop], environ, log, timeout=10)
+        if result.returncode != 0 or not result.stdout.strip():
+            raise ScaffoldError("DEVICE_UNAVAILABLE", "Could not read %s from %s." % (prop, device["id"]))
+        properties[key] = result.stdout.strip()
+    if not properties["sdk"].isdecimal():
+        raise ScaffoldError("DEVICE_UNAVAILABLE", "Could not read the Android version from %s." % device["id"])
+    return {**device, "abis": properties["abis"].split(","), "sdk": int(properties["sdk"])}
+
+
 def _adb(adb, device, args, environ, log, timeout=120):
     return run_capture([adb, "-s", device, *args], os.getcwd(), environ, log, timeout=timeout)
 

@@ -25,6 +25,8 @@ SKIP_SUPPORT_REFRESH = Opt("--skip-support-refresh", "skip_support_refresh", tak
 ARTIFACT = Opt("--artifact", "artifact", metavar="PATH", help="Application to run instead of the default output.")
 FILTER = Opt("--filter", "filter", metavar="PATTERN", help="Only run tests matching the pattern within the suite.")
 DEVICE = Opt("--device", "device", metavar="ID", help="Android device id (otherwise use the saved default, sole device, or terminal picker), or an iOS Simulator name or UDID.")
+ALL_DEVICES = Opt("--all-devices", "all_devices", takes_value=False,
+                  help="Android run, deploy, build-run, or sync-build-run: install and launch on every compatible, usable device; overrides the saved default.")
 SOURCE = Opt("--source", "source", metavar="URL_OR_PATH", help="Support repository to clone (default: the standard source).")
 REF = Opt("--ref", "ref", metavar="REF", help="Shared support repository branch, tag, or commit.")
 DIFF = Opt("--diff", "diff", takes_value=False, help="Print the Git diff of each drifted file.")
@@ -94,7 +96,7 @@ def build_registry():
                     examples=("bdev vpython3 -- tools/example.py --flag", "bdev vpython3 --cwd out -- ../script.py")),
         clean.SPEC,
         CommandSpec("build", "Prepare and compile Brave for a target, then verify its output.", cmd_build.cmd_build,
-                    positionals=(TARGET,), options=(CONFIGURATION, OFFLINE, FORCE_GN, PLAN, DEVICE, SKIP_SUPPORT_REFRESH),
+                    positionals=(TARGET,), options=(CONFIGURATION, OFFLINE, FORCE_GN, PLAN, DEVICE, ALL_DEVICES, SKIP_SUPPORT_REFRESH),
                     forward=True, side_effects=BUILD_SIDE_EFFECTS + " iOS: runs xcodebuild, whose Debug scheme "
                     "builds Core's output under src/out and repoints out/ios_current_link.",
                     notes="Unknown options and extra arguments go to 'bpm run build' after the generated ones; "
@@ -102,7 +104,7 @@ def build_registry():
                     examples=("bdev build", "bdev build mac --offline", "bdev build --plan")),
         CommandSpec("build-run", "Build, then restart the browser with exactly the output that build produced.",
                     cmd_build.cmd_build_run, aliases=("br",), positionals=(TARGET,),
-                    options=(CONFIGURATION, OFFLINE, FORCE_GN, PLAN, DEVICE, SKIP_SUPPORT_REFRESH), forward=True,
+                    options=(CONFIGURATION, OFFLINE, FORCE_GN, PLAN, DEVICE, ALL_DEVICES, SKIP_SUPPORT_REFRESH), forward=True,
                     side_effects=BUILD_SIDE_EFFECTS + " Then stops any running instance of the same application and "
                                                      "launches the new build. iOS also opens the selected "
                                                      "Simulator window and checks the launched process.",
@@ -115,12 +117,12 @@ def build_registry():
                     examples=("bdev sync", "bdev sync mac,android --plan")),
         CommandSpec("sync-build", "Sync, then build; stops at the first failed phase.", cmd_build.cmd_sync_build,
                     aliases=("sb",), positionals=(TARGET,),
-                    options=(CONFIGURATION, OFFLINE, FORCE_GN, PLAN, DEVICE, SKIP_SUPPORT_REFRESH),
+                    options=(CONFIGURATION, OFFLINE, FORCE_GN, PLAN, DEVICE, ALL_DEVICES, SKIP_SUPPORT_REFRESH),
                     forward=True, side_effects="Sync effects, then build effects.", examples=("bdev sb",),
                     notes="Extra arguments go to the build phase only."),
         CommandSpec("sync-build-run", "Sync, build, then restart the browser with the built output.",
                     cmd_build.cmd_sync_build_run, aliases=("sbr",), positionals=(TARGET,),
-                    options=(CONFIGURATION, OFFLINE, FORCE_GN, PLAN, DEVICE, SKIP_SUPPORT_REFRESH), forward=True,
+                    options=(CONFIGURATION, OFFLINE, FORCE_GN, PLAN, DEVICE, ALL_DEVICES, SKIP_SUPPORT_REFRESH), forward=True,
                     side_effects="Sync, build, and restart effects.", examples=("bdev sbr",),
                     notes="Extra arguments go to the build phase only."),
         CommandSpec("test", "Compile if needed and run one test suite (macOS, or Android JUnit and device tests).",
@@ -155,18 +157,18 @@ def build_registry():
                           "and skipped. The filters run are in the log. --plan lists them without running. A target (mac or android) limits the run to that platform's suites.",
                     examples=("bdev test-local", "bdev test-local android --device=emulator-5554", "bdev test-local mac --scope worktree")),
         CommandSpec("run", "Restart the browser with an existing output; never builds.", cmd_build.cmd_run,
-                    positionals=(TARGET,), options=(CONFIGURATION, ARTIFACT, PLAN, DEVICE),
+                    positionals=(TARGET,), options=(CONFIGURATION, ARTIFACT, PLAN, DEVICE, ALL_DEVICES),
                     side_effects="macOS: quits any running instance of the same application (from any checkout), "
                                  "then launches the selected one. Android: installs the APK over the existing app on "
-                                 "one device, stops that package there, and launches it. Profiles and app data are kept.",
+                                 "the selected devices, stops that package there, and launches it. Profiles and app data are kept.",
                     notes="Older or independently built outputs may run. iOS checks source freshness, opens "
                           "the selected Simulator window, and checks the app stays running for one second. "
                           "Other targets do not inspect source state.",
                     examples=("bdev run", "bdev run --artifact ./out/Custom/'Brave Browser Development.app'")),
         CommandSpec("deploy", "Install the Android build on a device and launch it (same as 'run android').",
                     cmd_build.cmd_deploy, positionals=(Positional("target", True, help="android"),),
-                    options=(CONFIGURATION, ARTIFACT, PLAN, DEVICE),
-                    side_effects="Installs the APK over the existing app on one device (data is kept), stops that "
+                    options=(CONFIGURATION, ARTIFACT, PLAN, DEVICE, ALL_DEVICES),
+                    side_effects="Installs the APK over the existing app on the selected devices (data is kept), stops that "
                                  "package there, and launches it.",
                     examples=("bdev deploy android", "bdev deploy android --device emulator-5554")),
         CommandSpec("android setup", "Prepare shared Android-on-Mac support and link this workspace.",

@@ -221,6 +221,8 @@ runner script is `ARTIFACT_MISSING`. Success reports passed and skipped counts.
 bdev run android --device <id>
 bdev deploy android                 # same as 'run android'
 bdev build-run android --device <id>
+bdev build-run android --all-devices
+bdev run android --all-devices
 ```
 
 Device selection: `--device`, otherwise `defaults.android_device` from your
@@ -233,6 +235,20 @@ The picker runs before building. JSON output, noninteractive commands, and
 option for each usable device. A device that is `offline` or `unauthorized`, or not
 connected, gives `DEVICE_UNAVAILABLE` with recovery steps. `build-run` chooses the
 device before building.
+
+`--all-devices` applies to `run`, `deploy`, `build-run`, and `sync-build-run` on
+Android. It overrides the saved default and cannot be combined with `--device`.
+Combined commands build once. Before building, the scaffold checks each usable
+device's supported ABIs against the effective build architecture. Before installing,
+it reads the actual APK's ABIs and minimum Android API version and checks them
+against each device. The minimum API version is checked after the build because
+it comes from the finished APK. Unknown APK requirements stop deployment.
+Offline, unauthorized, incompatible, or unreadable devices are skipped with a
+reason. If none can be used, the command fails. Deployment continues after a
+device fails, reports every device's result, and returns a nonzero exit if any
+deployment fails. JSON keeps these results in `data.run.devices`; operation
+records retain them too. `--plan` lists the devices and compatibility checks
+without installing, building, prompting, or saving a default.
 
 The APK is installed over the existing app (`adb install -d -r -g`), the APK's own
 package is stopped on that device only (a failed stop is `LAUNCH_FAILED`), launched, and

@@ -5,12 +5,15 @@
 """Android build, support dependencies, devices, and install/restart with fakes."""
 
 import json
+import os
+import pty
 import subprocess
 import unittest
 from pathlib import Path
 
 from tests.android_fixtures import GIT, install_fake_aapt2, install_fake_adb, make_support_repo, script_contracts
 from tests.integration.test_build import SKIP, BuildTestCase
+from tests.schema_validation import Validator
 
 ANDROID_HOOK = """
 if "sync" in argv and not os.environ.get("FAKE_SYNC_KEEPS_TARGETS"):
@@ -380,7 +383,9 @@ class DeviceTests(AndroidTestCase):
     def run_android(self, *args, devices=DEVICES_TWO, command="run", **extra):
         env = self.env(FAKE_ADB_DEVICES=devices, **extra)
         result = self.sandbox.bdev("--json", "--config", self.config, "--checkout", "main", command, *args, env=env)
-        return result, json.loads(result.stdout)
+        document = json.loads(result.stdout)
+        self.assertEqual(Validator().problems(document), [], result.stdout)
+        return result, document
 
     def test_several_usable_devices_require_a_choice(self):
         result, document = self.run_android("android")
@@ -388,6 +393,31 @@ class DeviceTests(AndroidTestCase):
         self.assertEqual(document["error"]["details"]["devices"], ["emulator-5554 (device)", "R58M1234 (device)"])
         self.assertIn("--device", document["error"]["details"]["example"])
         self.assertFalse([c for c in self.adb_calls() if "install" in c])
+
+    def test_terminal_picker_names_devices_and_remembers_the_choice(self):
+        master, slave = pty.openpty()
+        process = None
+        try:
+            process = subprocess.Popen([str(self.sandbox.scripts / 'bdev'), '--config', str(self.config),
+                                        '--checkout', 'main', 'run', 'android'], cwd=self.sandbox.root,
+                                       env=self.env(FAKE_ADB_DEVICES=DEVICES_TWO),
+                                       stdin=slave, stderr=slave, stdout=subprocess.PIPE, text=True)
+            os.write(master, b'2\ny\n')
+            stdout, _ = process.communicate(timeout=30)
+            self.assertEqual(process.returncode, 0, stdout)
+            self.assertIn('on R58M1234', stdout)
+            os.set_blocking(master, False)
+            terminal = os.read(master, 65536).decode()
+            self.assertIn('Pixel_API_35 (emulator) - emulator-5554', terminal)
+            self.assertIn('Pixel (physical device) - R58M1234', terminal)
+            from scaffold.common.config import load_config
+            self.assertEqual(load_config(self.config).default_android_device, 'R58M1234')
+        finally:
+            if process is not None and process.poll() is None:
+                process.kill()
+                process.communicate()
+            os.close(master)
+            os.close(slave)
 
     def test_choosing_a_device_installs_over_the_app_and_restarts_only_that_package(self):
         result, document = self.run_android("android", "--device", "R58M1234")
@@ -479,6 +509,108 @@ class DeviceTests(AndroidTestCase):
         result, document = self.run_android("android", "--device", "emulator-5554", command="build-run")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(document["data"]["run"]["device"], "emulator-5554")
+
+    def test_all_devices_builds_once_and_installs_on_each_device(self):
+        result, document = self.run_android('android', '--all-devices', command='build-run')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(len([call for call in self.node_calls() if 'build' in call['argv']]), 1)
+        self.assertEqual([call[1] for call in self.adb_calls() if 'install' in call],
+                         ['emulator-5554', 'R58M1234'])
+        self.assertEqual([(item['device'], item['status']) for item in document['data']['run']['devices']],
+                         [('emulator-5554', 'ok'), ('R58M1234', 'ok')])
+
+    def test_all_devices_sync_build_run_syncs_and_builds_once(self):
+        result, document = self.run_android('android', '--all-devices', command='sync-build-run')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual([call['argv'][1:3] for call in self.node_calls()], [['run', 'sync'], ['run', 'build']])
+        self.assertEqual(len(document['data']['run']['devices']), 2)
+
+    def test_all_devices_plan_uses_forwarded_build_architecture(self):
+        properties = {'emulator-5554': {'ro.product.cpu.abilist': 'x86_64'}}
+        result, document = self.run_android('android', '--all-devices', '--target_arch=x64', '--plan',
+                                            command='build-run', FAKE_ADB_PROPERTIES=json.dumps(properties))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        installs = [step for step in document['data']['plan']['steps'] if step['name'] == 'install-apk']
+        self.assertEqual([step['argv'][2] for step in installs], ['emulator-5554'])
+
+    def test_all_devices_continues_after_failure_and_records_each_result(self):
+        result, document = self.run_android('android', '--all-devices', FAKE_ADB_FAIL_DEVICE='emulator-5554')
+        self.assertEqual((result.returncode, document['error']['code']), (5, 'LAUNCH_FAILED'))
+        self.assertEqual(document['child_exit_code'], 7)
+        self.assertEqual([(item['device'], item['status']) for item in document['data']['run']['devices']],
+                         [('emulator-5554', 'error'), ('R58M1234', 'ok')])
+        self.assertFalse([call for call in self.adb_calls() if call[:2] == ['-s', 'emulator-5554']
+                          and 'force-stop' in call])
+        record = json.loads((self.sandbox.config.parent / '.bdev/operations' /
+                             (document['operation_id'] + '.json')).read_text())
+        self.assertEqual(record['details']['device_results'], document['data']['run']['devices'])
+
+    def test_all_devices_skips_incompatible_and_unavailable_devices(self):
+        properties = {'emulator-5554': {'ro.product.cpu.abilist': 'x86_64'},
+                      'old-phone': {'ro.build.version.sdk': '28'}}
+        result, document = self.run_android('android', '--all-devices',
+                                            devices=DEVICES_TWO + ';old-phone,device;locked,unauthorized',
+                                            FAKE_ADB_PROPERTIES=json.dumps(properties))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual([call[1] for call in self.adb_calls() if 'install' in call], ['R58M1234'])
+        outcomes = {item['device']: item for item in document['data']['run']['devices']}
+        self.assertEqual(outcomes['old-phone']['status'], 'skipped')
+        self.assertIn('API 29', outcomes['old-phone']['reason'])
+        self.assertEqual(outcomes['locked']['status'], 'skipped')
+
+    def test_all_devices_stops_before_build_when_no_abi_matches(self):
+        properties = {serial: {'ro.product.cpu.abilist': 'x86_64'} for serial in ('emulator-5554', 'R58M1234')}
+        result, document = self.run_android('android', '--all-devices', command='build-run',
+                                            FAKE_ADB_PROPERTIES=json.dumps(properties))
+        self.assertEqual((result.returncode, document['error']['code']), (3, 'DEVICE_UNAVAILABLE'))
+        self.assertEqual(self.node_calls(), [])
+        self.assertFalse([call for call in self.adb_calls() if 'install' in call])
+
+    def test_all_devices_unknown_apk_requirements_install_nothing(self):
+        result, document = self.run_android('android', '--all-devices', FAKE_APK_MIN_SDK='unknown')
+        self.assertEqual((result.returncode, document['error']['code']), (5, 'ARTIFACT_UNRESOLVED'))
+        self.assertFalse([call for call in self.adb_calls() if 'install' in call])
+
+    def test_all_devices_fails_when_actual_apk_matches_no_device(self):
+        for extra in ({'FAKE_APK_MIN_SDK': '99'}, {'FAKE_APK_ABI': 'x86_64'}):
+            result, document = self.run_android('android', '--all-devices', **extra)
+            self.assertEqual((result.returncode, document['error']['code']), (3, 'DEVICE_UNAVAILABLE'))
+            self.assertTrue(all(item['status'] == 'skipped' for item in document['data']['run']['devices']))
+        self.assertFalse([call for call in self.adb_calls() if 'install' in call])
+
+    def test_all_devices_reports_unreadable_device_properties_without_installing(self):
+        properties = {serial: {'ro.product.cpu.abilist': ''} for serial in ('emulator-5554', 'R58M1234')}
+        result, document = self.run_android('android', '--all-devices',
+                                            FAKE_ADB_PROPERTIES=json.dumps(properties))
+        self.assertEqual((result.returncode, document['error']['code']), (3, 'DEVICE_UNAVAILABLE'))
+        self.assertTrue(all('Could not read' in item['reason'] for item in document['error']['details']['devices']))
+        self.assertFalse([call for call in self.adb_calls() if 'install' in call])
+
+    def test_all_devices_overrides_saved_default_and_conflicts_with_device_flag(self):
+        with open(self.config, 'a') as stream:
+            stream.write('\n[defaults]\nandroid_device = "disconnected"\n')
+        result, document = self.run_android('android', '--all-devices', command='deploy')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(len(document['data']['run']['devices']), 2)
+        self.sandbox.record.unlink()
+        result, document = self.run_android('android', '--all-devices', '--device', 'R58M1234', command='build-run')
+        self.assertEqual((result.returncode, document['error']['code']), (2, 'SELECTOR_CONFLICT'))
+        self.assertEqual(self.node_calls(), [])
+        self.assertEqual(self.adb_calls(), [])
+
+    def test_all_devices_plan_lists_both_without_installing(self):
+        result, document = self.run_android('android', '--all-devices', '--plan', command='build-run')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        installs = [step for step in document['data']['plan']['steps'] if step['name'] == 'install-apk']
+        self.assertEqual([step['argv'][2] for step in installs], ['emulator-5554', 'R58M1234'])
+        self.assertFalse([call for call in self.adb_calls() if 'install' in call])
+
+    def test_all_devices_rejects_other_platforms_and_build_without_run(self):
+        for command, target in (('run', 'mac'), ('build-run', 'ios'), ('build', 'android'), ('sync-build', 'android')):
+            result, document = self.run_android(target, '--all-devices', command=command)
+            self.assertEqual((result.returncode, document['error']['code']), (2, 'INVALID_INPUT'), result.stderr)
+        self.assertEqual(self.node_calls(), [])
+        self.assertEqual(self.adb_calls(), [])
 
     def test_unresolved_output_stops_build_run_before_the_device_is_touched(self):
         result, document = self.run_android("android", "--device", "emulator-5554", "--target", "brave_unit_tests",
