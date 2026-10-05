@@ -61,7 +61,7 @@ class Context:
 
 
 def run_command(command, parsed, handler, argv_environ=None, needs_config=True, cwd=None, stdout=None, stderr=None,
-                may_create_config=False, notify=True, notifier=None):
+                may_create_config=False, notify=True, notifier=None, bell=None):
     """Run a handler and always emit exactly one result; return the exit code.
 
     One completion notification is sent per call after the result is emitted, so combined commands
@@ -118,11 +118,11 @@ def run_command(command, parsed, handler, argv_environ=None, needs_config=True, 
     if log.path:
         log.message("⏱️  Elapsed: %s\nLog: %s" % (format_duration(elapsed), log.path))
     if notify and (context.config is not None or not needs_config):
-        _notify(context, command, result, elapsed, notifier)
+        _notify(context, command, result, elapsed, notifier, bell)
     return result.exit_code
 
 
-def _notify(context, command, result, elapsed, notifier):
+def _notify(context, command, result, elapsed, notifier, bell):
     try:
         config = context.config
         if config is None:
@@ -136,13 +136,26 @@ def _notify(context, command, result, elapsed, notifier):
         policy = notify_module.effective_policy(context.parsed, config)
         if not notify_module.should_notify(policy, command, context.parsed):
             return
-        if notifier is None:
-            notifier = notify_module.default_notifier(context.environ)
+        delivery = notify_module.effective_delivery(config)
+        if delivery in ("desktop", "both"):
+            _deliver_desktop(context, command, result, elapsed, notifier)
+        if delivery in ("bell", "both"):
+            bell = bell or notify_module.default_bell(context.environ)
+            failure = notify_module.deliver_bell(bell) if bell else None
+            if failure:
+                context.log.message("Terminal bell not delivered: %s" % failure)
+    except Exception:  # noqa: BLE001 - notification problems never change the command's outcome
+        pass
+
+
+def _deliver_desktop(context, command, result, elapsed, notifier):
+    try:
+        notifier = notifier or notify_module.default_notifier(context.environ)
         if notifier is None:
             return
         title, body = notify_module.compose(command, result.redacted(), elapsed, context.log.path)
         failure = notify_module.deliver(notifier, title, body)
         if failure:
             context.log.message("Notification not delivered: %s" % failure)
-    except Exception:  # noqa: BLE001 - notification problems never change the command's outcome
+    except Exception:  # noqa: BLE001 - one delivery method failing must not stop the other
         pass

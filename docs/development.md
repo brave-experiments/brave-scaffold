@@ -28,7 +28,7 @@ Tooling code, launchers, and tests live under `scripts/`; there is no root
 | `common/env.py` | Pure export derivation, direnv approval, explicit loading, identity checks |
 | `common/tools.py` | Checkout-local Node/package-manager/Python inspection and argv construction |
 | `common/procs.py` | Subprocess execution, command logs, redaction, cancellation |
-| `common/notify.py` | Notification policy, operation classification, message text, and the macOS delivery backend (`BDEV_NOTIFY_BACKEND=none` disables delivery; tests set it) |
+| `common/notify.py` | Notification policy, operation classification, message text, the macOS and terminal-bell delivery backends (`BDEV_NOTIFY_BACKEND=none` disables both; tests set it) |
 | `common/cli.py` | Option parsing, forwarding rules, help rendering |
 | `common/checks.py` | Check records and readiness aggregation |
 | `common/platforms.py` | Targets and the capability table |

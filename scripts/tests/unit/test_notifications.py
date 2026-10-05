@@ -30,29 +30,44 @@ class FakeNotifier:
         self.sent.append((title, body))
 
 
+class FakeBell:
+    def __init__(self, error=None):
+        self.rings = 0
+        self.error = error
+
+    def ring(self):
+        self.rings += 1
+        if self.error:
+            raise self.error
+
+
 class NotificationTests(unittest.TestCase):
     def setUp(self):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         self.root = Path(directory.name)
 
-    def config(self, policy=None):
+    def config(self, policy=None, delivery=None):
         path = self.root / "brave-scaffold.toml"
         text = "schema_version = 1\n"
+        if policy is not None or delivery is not None:
+            text += "[notifications]\n"
         if policy is not None:
-            text += '[notifications]\npolicy = "%s"\n' % policy
+            text += 'policy = "%s"\n' % policy
+        if delivery is not None:
+            text += 'delivery = "%s"\n' % delivery
         path.write_text(text)
         return str(path)
 
-    def run_cli(self, argv, policy=None, handler=None, notifier=None):
+    def run_cli(self, argv, policy=None, handler=None, notifier=None, delivery=None, bell=None):
         """Run bdev.main with the named command's handler replaced; return (code, out, err, notifier)."""
         notifier = notifier or FakeNotifier()
-        argv = list(argv) + ["--config", self.config(policy)]
+        argv = list(argv) + ["--config", self.config(policy, delivery)]
         out, err = io.StringIO(), io.StringIO()
         spec, _ = bdev.resolve_command(argv)
         handler = handler or (lambda ctx: Result(command=spec.name, text="done"))
         with mock.patch.object(spec, "handler", handler):
-            code = bdev.main(argv, stdout=out, stderr=err, notifier=notifier)
+            code = bdev.main(argv, stdout=out, stderr=err, notifier=notifier, bell=bell)
         return code, out.getvalue(), err.getvalue(), notifier
 
     def test_configuration_policy_values(self):
@@ -190,6 +205,102 @@ class NotificationTests(unittest.TestCase):
             raise ScaffoldError("CHILD_FAILED", "failed")
         code, *_ = self.run_cli(["build"], handler=handler, notifier=FakeNotifier(fail=True))
         self.assertEqual(code, 5)
+
+    def test_delivery_configuration_and_default(self):
+        self.assertIsNone(load_config(self.config("major")).notification_delivery)
+        self.assertEqual(notify.effective_delivery(load_config(self.config())), "desktop")
+        for delivery in ("desktop", "bell", "both"):
+            self.assertEqual(load_config(self.config(delivery=delivery)).notification_delivery, delivery)
+        for bad in ("sound", "Desktop", ""):
+            with self.assertRaises(ScaffoldError):
+                load_config(self.config(delivery=bad))
+        path = Path(self.config())
+        path.write_text('schema_version = 1\n[notifications]\ndelivery = 1\n')
+        with self.assertRaises(ScaffoldError):
+            load_config(str(path))
+
+    def test_delivery_selects_methods_once_each(self):
+        for delivery, desktop, rings in (("desktop", 1, 0), ("bell", 0, 1), ("both", 1, 1), (None, 1, 0)):
+            with self.subTest(delivery=delivery):
+                bell = FakeBell()
+                fake = self.run_cli(["sbr"], delivery=delivery, bell=bell)[3]
+                self.assertEqual((len(fake.sent), bell.rings), (desktop, rings))
+
+    def test_delivery_does_not_change_when_notifications_fire(self):
+        for delivery in ("desktop", "bell", "both"):
+            with self.subTest(delivery=delivery):
+                bell = FakeBell()
+                self.run_cli(["doctor"], delivery=delivery, bell=bell)
+                self.run_cli(["build", "--notify=never"], delivery=delivery, bell=bell)
+                self.run_cli(["build", "--plan", "--notify=always"], delivery=delivery, bell=bell)
+                self.assertEqual(bell.rings, 0)
+                self.run_cli(["doctor", "--notify"], delivery=delivery, bell=bell)
+                self.assertEqual(bell.rings, 1 if delivery != "desktop" else 0)
+
+    def test_bell_is_one_per_combined_invocation_even_on_failure(self):
+        def handler(ctx):
+            ctx.log.phase("Sync")
+            ctx.log.phase("Build")
+            raise ScaffoldError("LAUNCH_FAILED", "failed")
+        bell = FakeBell()
+        code, *_ = self.run_cli(["sbr"], handler=handler, delivery="bell", bell=bell)
+        self.assertEqual((code, bell.rings), (5, 1))
+
+    def test_both_methods_fail_independently(self):
+        bell = FakeBell()
+        _, _, err, _ = self.run_cli(["build"], delivery="both", bell=bell, notifier=FakeNotifier(fail=True))
+        self.assertEqual(bell.rings, 1)
+        self.assertIn("Notification not delivered", err)
+        fake = FakeNotifier()
+        code, _, err, _ = self.run_cli(["build"], delivery="both", notifier=fake,
+                                       bell=FakeBell(error=OSError("write failed")))
+        self.assertEqual((code, len(fake.sent)), (0, 1))
+        self.assertIn("Terminal bell not delivered", err)
+
+    def test_missing_terminal_skips_the_bell_without_substitution(self):
+        bell = FakeBell(error=notify.NoTerminal("no tty"))
+        fake = FakeNotifier()
+        code, out, err, _ = self.run_cli(["build"], delivery="bell", notifier=fake, bell=bell)
+        self.assertEqual((code, bell.rings, fake.sent, "bell" in err.lower()), (0, 1, [], False))
+        bell = FakeBell(error=notify.NoTerminal("no tty"))
+        fake = FakeNotifier()
+        self.run_cli(["build"], delivery="both", notifier=fake, bell=bell)
+        self.assertEqual((bell.rings, len(fake.sent)), (1, 1))
+
+    def test_bell_leaves_streams_logs_and_exit_status_unchanged(self):
+        def handler(ctx):
+            return Result(command="build", data={"value": 1}, text="done")
+        results = {}
+        for delivery, bell in (("desktop", None), ("bell", FakeBell())):
+            code, out, err, _ = self.run_cli(["build", "--json"], handler=handler, delivery=delivery,
+                                             bell=bell, notifier=FakeNotifier())
+            log = next((self.root / ".bdev" / "logs").glob("*.log")).read_text()
+            for path in (self.root / ".bdev" / "logs").glob("*.log"):
+                path.unlink()
+            results[delivery] = (code, out, err.splitlines()[:-1], log)
+        self.assertEqual(results["bell"][:2], results["desktop"][:2])
+        for value in results["bell"][1:]:
+            self.assertNotIn("\a", str(value))
+        self.assertNotIn("ell", results["bell"][3])
+
+    def test_terminal_bell_writes_bel_to_the_terminal_device_only(self):
+        device = self.root / "tty"
+        device.write_bytes(b"")
+        out, err = io.StringIO(), io.StringIO()
+        with mock.patch.object(notify, "TERMINAL_DEVICE", str(device)), \
+                mock.patch("sys.stdout", out), mock.patch("sys.stderr", err):
+            notify.TerminalBell().ring()
+        self.assertEqual((device.read_bytes(), out.getvalue(), err.getvalue()), (b"\a", "", ""))
+
+    def test_terminal_bell_without_a_terminal_is_skipped(self):
+        with mock.patch.object(notify, "TERMINAL_DEVICE", str(self.root / "absent" / "tty")):
+            with self.assertRaises(notify.NoTerminal):
+                notify.TerminalBell().ring()
+            self.assertIsNone(notify.deliver_bell(notify.TerminalBell()))
+
+    def test_bell_backend_can_be_disabled(self):
+        self.assertIsNone(notify.default_bell({notify.BACKEND_VARIABLE: "none"}))
+        self.assertIsInstance(notify.default_bell({}), notify.TerminalBell)
 
     def test_macos_backend_passes_text_as_arguments(self):
         with mock.patch("subprocess.run") as run:

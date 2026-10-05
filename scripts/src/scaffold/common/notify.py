@@ -14,6 +14,9 @@ from .procs import format_duration
 
 POLICIES = ("always", "major", "never")
 DEFAULT_POLICY = "major"
+DELIVERIES = ("desktop", "bell", "both")
+DEFAULT_DELIVERY = "desktop"
+TERMINAL_DEVICE = "/dev/tty"
 BACKEND_VARIABLE = "BDEV_NOTIFY_BACKEND"
 
 # Operations that `major` covers. Everything else that performs work is notified only by `always`.
@@ -39,6 +42,10 @@ def effective_policy(parsed, config):
     if cli is not None:
         return cli
     return getattr(config, "notification_policy", None) or DEFAULT_POLICY
+
+
+def effective_delivery(config):
+    return getattr(config, "notification_delivery", None) or DEFAULT_DELIVERY
 
 
 def is_operation(command, parsed):
@@ -110,10 +117,46 @@ class MacNotifier:
                        stderr=subprocess.DEVNULL, timeout=10, check=True)
 
 
+class NoTerminal(Exception):
+    """The process has no controlling terminal to ring."""
+
+
+class TerminalBell:
+    """A terminal bell (BEL) written to the controlling terminal, never to stdout or stderr.
+
+    Whether the bell is heard, shown as a visual flash, or ignored depends on the terminal's settings.
+    """
+
+    def ring(self):
+        try:
+            fd = os.open(TERMINAL_DEVICE, os.O_WRONLY | os.O_NOCTTY)
+        except OSError as error:
+            raise NoTerminal(str(error)) from error
+        try:
+            os.write(fd, b"\a")
+        finally:
+            os.close(fd)
+
+
 def default_notifier(environ):
     if environ.get(BACKEND_VARIABLE) == "none" or sys.platform != "darwin":
         return None
     return MacNotifier()
+
+
+def default_bell(environ):
+    return None if environ.get(BACKEND_VARIABLE) == "none" else TerminalBell()
+
+
+def deliver_bell(bell):
+    """Ring once. Returns an error text on failure; a missing terminal is skipped, not an error."""
+    try:
+        bell.ring()
+    except NoTerminal:
+        return None
+    except Exception as error:  # noqa: BLE001 - delivery must never change the command's outcome
+        return "%s: %s" % (type(error).__name__, error)
+    return None
 
 
 def deliver(notifier, title, body):

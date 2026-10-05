@@ -14,6 +14,8 @@ verbosity = "normal"
 # Desktop completion notification: always, major (sync, build, test, run, deploy, setup, patches,
 # executed cleanup), or never. --notify[=POLICY] overrides it for one command.
 policy = "major"
+# How it is delivered: desktop (Notification Center), bell (terminal bell), or both.
+delivery = "desktop"
 
 # Optional platform override. Omit to use the current host platform.
 # [defaults]

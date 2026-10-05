@@ -36,8 +36,10 @@ Set the default in `brave-scaffold.toml`:
 ```toml
 [notifications]
 policy = "major"
+delivery = "desktop"
 ```
 
+`policy` decides when a notification fires; `delivery` decides how it is delivered.
 `policy` is `always`, `major` (the default when omitted), or `never`. On the
 command line, `--notify` alone means `always`, and `--notify=always|major|never`
 overrides the file for that invocation. An invalid value is rejected before any
@@ -50,6 +52,7 @@ work starts. See [notifications](commands.md#completion-notifications).
 | `schema_version` | Configuration format version. Must be `1`. | required |
 | `logging.verbosity` | Console detail: `quiet`, `normal`, or `verbose`; CLI flags override it. | `"normal"` |
 | `notifications.policy` | Desktop completion notifications: `always`, `major`, or `never`; `--notify` overrides it. | `"major"` |
+| `notifications.delivery` | How notifications are delivered: `desktop`, `bell` (terminal bell), or `both`. | `"desktop"` |
 | `defaults.platform` | Target used when no target is named: `mac`, `macos`, or `android`. | the host platform |
 | `defaults.android_device` | Device id used when several Android devices are usable and `--device` is not given. | none |
 | `checkouts[].core` | Path to the checkout's `src/brave` directory, absolute or relative to the configuration file. | required |

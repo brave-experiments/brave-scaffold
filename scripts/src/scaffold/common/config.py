@@ -22,7 +22,7 @@ ALIAS_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]*")
 PLATFORM_NAMES = ("mac", "macos", "android")
 TOP_FIELDS = {"schema_version", "logging", "notifications", "defaults", "checkouts", "android_support_path"}
 LOGGING_FIELDS = {"verbosity"}
-NOTIFICATION_FIELDS = {"policy"}
+NOTIFICATION_FIELDS = {"policy", "delivery"}
 DEFAULT_FIELDS = {"platform", "android_device"}
 CHECKOUT_FIELDS = {"alias", "core", "direnv_dir"}
 EXAMPLE = """[[checkouts]]
@@ -50,6 +50,7 @@ class Config:
     exists: bool
     verbosity: str = "normal"
     notification_policy: str | None = None
+    notification_delivery: str | None = None
     default_platform: str | None = None
     default_android_device: str | None = None
     checkouts: list = field(default_factory=list)
@@ -121,6 +122,12 @@ def _validate(path, data):
                 raise _invalid(path, "notifications.policy", "must be always, major, or never",
                                '[notifications]\npolicy = "major"')
             config.notification_policy = policy
+        if "delivery" in data["notifications"]:
+            delivery = data["notifications"]["delivery"]
+            if not isinstance(delivery, str) or delivery not in ("desktop", "bell", "both"):
+                raise _invalid(path, "notifications.delivery", "must be desktop, bell, or both",
+                               '[notifications]\ndelivery = "desktop"')
+            config.notification_delivery = delivery
     if "defaults" in data:
         _expect_table(path, data["defaults"], "defaults", DEFAULT_FIELDS)
         platform = data["defaults"].get("platform")

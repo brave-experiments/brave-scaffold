@@ -97,7 +97,7 @@ def _wants_help(tokens):
     return False
 
 
-def main(argv, stdout=None, stderr=None, notifier=None):
+def main(argv, stdout=None, stderr=None, notifier=None, bell=None):
     stdout = stdout or sys.stdout
     stderr = stderr or sys.stderr
     install_signal_handlers()
@@ -123,4 +123,4 @@ def main(argv, stdout=None, stderr=None, notifier=None):
                            notify=False)
     return run_command(spec.name, parsed, spec.handler,
                        needs_config=spec.name not in ("capabilities",), stdout=stdout, stderr=stderr,
-                       may_create_config=spec.creates_config, notifier=notifier)
+                       may_create_config=spec.creates_config, notifier=notifier, bell=bell)

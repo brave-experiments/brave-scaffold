@@ -24,7 +24,7 @@ SPEC = CommandSpec(
     examples=("bpm run build", "bpm --checkout main run test -- --filter Example", "bpm -- --version"))
 
 
-def main(argv, stdout=None, stderr=None, notifier=None):
+def main(argv, stdout=None, stderr=None, notifier=None, bell=None):
     stdout = stdout or sys.stdout
     stderr = stderr or sys.stderr
     install_signal_handlers()
@@ -39,4 +39,4 @@ def main(argv, stdout=None, stderr=None, notifier=None):
         def raise_error(_context):
             raise error
         return run_command("bpm", failure, raise_error, needs_config=False, stdout=stdout, stderr=stderr, notify=False)
-    return run_command("bpm", parsed, cmd_tools.bpm_run, stdout=stdout, stderr=stderr, notifier=notifier)
+    return run_command("bpm", parsed, cmd_tools.bpm_run, stdout=stdout, stderr=stderr, notifier=notifier, bell=bell)

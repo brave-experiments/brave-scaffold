@@ -384,8 +384,26 @@ cancellation (Ctrl-C) are each reported. The text holds the command, checkout na
 elapsed time, exit code, error code, and the diagnostic log path. It never includes child
 output, error messages, environment values, or browser arguments.
 
+### Delivery
+
+`[notifications] delivery` chooses how a notification that fires is delivered; the
+policy and `--notify` only decide when. There is no command-line option for delivery.
+
+| Delivery | Behavior |
+| --- | --- |
+| `desktop` | The macOS notification described above (default). |
+| `bell` | One terminal bell per notified invocation. |
+| `both` | Each method is attempted once; one failing or being unavailable does not stop the other. |
+
+The terminal bell is the BEL character (`\a`) written to the controlling terminal
+(`/dev/tty`), never to stdout, stderr, or the saved log, so redirected and JSON output
+are unchanged. Your terminal's settings decide what it does: it may make a sound, flash
+the window or tab, or do nothing. With no controlling terminal (for example, in a
+background job without one), the bell is skipped; no other method is substituted. A
+bell that fails to write prints one line on stderr and never changes the exit status.
+
 Notification Center shows the log path as text; it is not clickable. If delivery
 fails (for example, notifications are blocked for the terminal application), the
 exit status and stdout are unchanged and stderr gets one line saying so. macOS
 attributes these notifications to the application that runs `osascript`, so allow
-notifications for your terminal in System Settings. Other hosts send nothing.
+notifications for your terminal in System Settings. Other hosts send no desktop notification.
