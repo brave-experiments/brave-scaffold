@@ -147,4 +147,4 @@ loaded or that it will stay running afterward.
 directory; after a clean, `out/ios_current_link` dangles until Core's next build repoints it, and
 `bdev doctor ios` then reports missing bootstrap files (repair: `bdev bpm run ios_bootstrap`).
 
-Not available for iOS: `bdev test`, `bdev test-local`, and physical devices.
+Not available for iOS: `bdev test` and physical devices.

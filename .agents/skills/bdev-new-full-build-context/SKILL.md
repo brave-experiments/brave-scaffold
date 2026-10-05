@@ -40,9 +40,10 @@ launch or deployment require a request covering those actions. Only the user run
 | Request | Action |
 | --- | --- |
 | Build the app | Run `bdev build` for the selected platform. |
-| Run changed tests | Discover and execute mapped suites with `bdev test-local`. |
+| Run changed tests | Discover and execute mapped suites with `bdev test`. |
+| Run one file's tests | Use `bdev test --file <path>`; the file need not be changed. |
 | Build the app and test branch changes | Build the selected platform, then run its mapped changed tests. |
-| Run a named suite or filter | Use `bdev test`; it need not appear in the branch diff. |
+| Run a named suite or filter | Use `bdev test <suite> --filter ...`; it need not appear in the branch diff. |
 | Show a plan | Use `--plan`; do not execute the resulting commands. |
 
 ## Build
@@ -74,26 +75,29 @@ Use the built-in discovery and runner; do not recreate test mapping in a skill
 helper. Start with a read-only discovery plan:
 
 ```sh
-"$SCAFFOLD_ROOT/scripts/bdev" --checkout <checkout> test-local --base origin/master --scope both --plan --json
+"$SCAFFOLD_ROOT/scripts/bdev" --checkout <checkout> test <mac|android> --plan --json
 ```
 
-`both` includes committed, staged, unstaged, and untracked changes. Honor a supplied
-base or scope. Otherwise use `origin/master` when it exists locally, then `master`.
-If neither exists, use `--base HEAD --scope worktree` and report that committed
-changes were not considered. Even worktree-only discovery requires a valid base.
-Do not fetch or change refs merely to discover tests.
+Discovery covers committed branch changes against the base (default
+`origin/master`, whether or not pushed) plus staged, unstaged, and untracked files.
+Without a platform it covers the configured platform, otherwise the host; changed
+tests for the other platform are listed as not selected, so run each requested
+platform. Honor a supplied `--base`. If `origin/master` is missing, report that and
+ask for a base; do not fetch or change refs merely to discover tests.
 
-Read `data.discovery`, including its phases, filters, and unmapped files. Execute
-the same command without `--plan` for authorized test work; a plan alone does not
-fulfill a request to run tests. Add `mac` or `android` after `test-local` when the
-user limits the platform. If nothing maps, report that nothing ran rather than
-substituting an unrelated broad suite.
+Read `data.discovery`, including its phases, filters, unmapped files, and
+deselected files. Execute the same command without `--plan` for authorized test
+work; a plan alone does not fulfill a request to run tests. For one file use
+`bdev test --file <path>`; a relative path resolves from the current directory and
+must be inside the checkout. A suite, `--file`, and `--base` cannot be combined, and
+`--filter` needs a suite. If nothing is selected, the command says so and runs
+nothing; report that rather than substituting an unrelated broad suite.
 
 Current mappings include Java `junit` tests to `brave_junit_tests`, Java
 `javatests` to `brave_java_unit_tests`, desktop C++ unit tests to
 `brave_unit_tests`, and desktop C++ browser/UI tests to `brave_browser_tests`.
 Desktop WebUI tests map through their registered C++ harness. Trust the command's
-mapping and exclusions; see [test-local](../../../docs/commands.md#test-local).
+mapping and exclusions; see [test](../../../docs/commands.md#test).
 
 For a named test, use the suite and filter directly:
 
@@ -108,9 +112,9 @@ must not receive `--device`; use a fully qualified class or wildcard filter.
 Device Java tests use the requested serial, configured default, or sole usable
 device. Resolve ambiguity before execution; never pick the first device.
 
-`test-local` checks Android support and device requirements before running any
-phase. If those block a mixed plan, run authorized independent macOS phases with
-`test-local mac`. If only the device is missing, execute the discovered host-side
+`bdev test android` checks Android support and device requirements before running
+any phase. If those block the plan, run authorized independent macOS phases with
+`bdev test mac`. If only the device is missing, execute the discovered host-side
 JUnit phase with `bdev test android brave_junit_tests` and its exact filter.
 Report the device-backed phases as blocked. Do not rerun phases already completed.
 

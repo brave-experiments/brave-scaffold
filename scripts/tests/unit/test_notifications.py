@@ -110,7 +110,7 @@ class NotificationTests(unittest.TestCase):
         self.assertEqual((code, len(fake.sent)), (0, 1))
 
     def test_major_operations_notify_and_others_do_not(self):
-        major = ["sync", "build", "build-run", "sb", "sbr", "test-local", "run", "patches update",
+        major = ["sync", "build", "build-run", "sb", "sbr", "run", "patches update",
                  "setup", "tools setup", "env init", "android setup", "clean --execute"]
         quiet = ["cd x", "context", "doctor", "checkout list", "checkout add a b", "drift", "env check",
                  "capabilities", "clean", "shell"]

@@ -66,11 +66,14 @@ class Discovery:
     test_files: list
     phases: list
     unmapped: list
+    mode: str = "changed"
+    deselected: list = field(default_factory=list)
 
     def to_dict(self):
-        return {"base": self.base, "scope": self.scope, "changed_files": self.considered,
+        return {"mode": self.mode, "base": self.base, "scope": self.scope, "changed_files": self.considered,
                 "test_files": self.test_files, "phases": [phase.to_dict() for phase in self.phases],
-                "unmapped": [{"path": path, "reason": reason} for path, reason in self.unmapped]}
+                "unmapped": [{"path": path, "reason": reason} for path, reason in self.unmapped],
+                "deselected": [{"path": path, "reason": reason} for path, reason in self.deselected]}
 
 
 class Repo:
@@ -96,7 +99,7 @@ def require_base(repo, base):
     if run_capture(["git", "-C", str(repo.path), "rev-parse", "--verify", "-q", base + "^{commit}"], str(repo.path),
                    None, repo.log, timeout=30).returncode != 0:
         raise ScaffoldError("INVALID_INPUT", "The base ref %r does not exist in this checkout." % base,
-                            details={"example": "bdev test-local --base origin/master"},
+                            details={"example": "bdev test --base origin/master"},
                             repairs=[repair(["git", "-C", str(repo.path), "branch", "-a"], note="Lists refs.")])
 
 
@@ -332,7 +335,8 @@ def map_file(repo, path, base, scope, groups, phases, unmapped):
         if not content:
             unmapped.append((path, "test file is missing or empty"))
             return
-        suites = changed_mocha_suites(content, changed_lines(repo, path, base, scope, groups, content))
+        suites = (changed_mocha_suites(content, changed_lines(repo, path, base, scope, groups, content))
+                  if base else set())
         selected, reason = select_webui_harnesses(find_webui_harnesses(repo, target), suites)
         if reason:
             unmapped.append((path, "%s for %s" % (reason, target)))
@@ -340,6 +344,22 @@ def map_file(repo, path, base, scope, groups, phases, unmapped):
             add("mac", "brave_browser_tests", [item.test_filter for item in selected])
         return
     unmapped.append((path, "test type is not supported"))
+
+
+def discover_files(core, paths, log=None):
+    """Map the named files, changed or not; `paths` are checkout-relative and already verified to exist."""
+    repo = Repo(core, log)
+    phases, unmapped = {}, []
+    tests = []
+    for path in paths:
+        if is_test_file(path):
+            tests.append(path)
+            map_file(repo, path, None, "worktree", {}, phases, unmapped)
+        else:
+            unmapped.append((path, "not a recognized test file"))
+    ordered = [phases[key] for key in SUITE_ORDER if key in phases]
+    return Discovery(None, "files", len(paths), [{"path": path, "changes": []} for path in tests], ordered, unmapped,
+                     mode="files")
 
 
 def discover(core, base=DEFAULT_BASE, scope="both", log=None):

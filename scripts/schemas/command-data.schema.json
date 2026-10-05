@@ -356,6 +356,9 @@
           "$ref": "#/$defs/plan"
         },
         {
+          "$ref": "#/$defs/test-changed"
+        },
+        {
           "type": "object",
           "required": [
             "suite",
@@ -1379,7 +1382,7 @@
         }
       ]
     },
-    "test-local": {
+    "test-changed": {
       "type": "object",
       "required": [
         "discovery",

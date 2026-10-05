@@ -73,9 +73,12 @@ its output directory and record describe; against an explicit target argument it
 bdev test brave_unit_tests
 bdev test mac brave_browser_tests --filter 'Example.*'
 bdev test brave_browser_tests -- --gtest_repeat=2
+bdev test mac --plan
+bdev test --file components/example/example_unittest.cc
 ```
 
-The suite is required and comes first; `mac` is optional and only recognized
+`bdev test` with no suite runs the changed macOS tests, and `--file` runs one
+file's tests; see [test](commands.md#test). To run a suite, name it. The suite comes first; `mac` is optional and only recognized
 before the suite. `--filter` narrows tests inside the suite and never supplies a
 missing suite. Both `--filter 'Example.*'` and `--filter='Example.*'` pass the
 pattern unchanged; colon-separated patterns select multiple groups in the same

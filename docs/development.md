@@ -38,7 +38,7 @@ Tooling code, launchers, and tests live under `scripts/`; there is no root
 | `brave/cmd_build.py`, `brave/cmd_patches.py`, `brave/cmd_tools.py`, `brave/cmd_setup.py`, `brave/clean.py`, `brave/android.py`, `brave/doctor.py` | Command handlers and their platform code |
 | `brave/sync.py` | Sync arguments, the target list kept across syncs, and dispatch to Core's sync command |
 | `brave/packages.py` | The one place a package command is turned into a child process (bpm and every phase use it) |
-| `brave/branch_tests.py`, `brave/cmd_test_local.py` | Modified-test discovery and mapping to suites and filters (read-only Git), and the `test-local` runner |
+| `brave/branch_tests.py`, `brave/cmd_test.py` | Changed-test and named-file discovery, mapping to suites and filters (read-only Git), and the multi-suite runner behind `bdev test` |
 | `brave/android_tests.py` | Android test suites, the required support branch, the Core test overlay, device arguments, and result checks |
 | `brave/patches.py`, `brave/android_deps.py`, `brave/freshness.py` | Patch preparation, Android support preparation, and freshness evidence |
 | `brave/support_scripts.py`, `brave/support_script_contracts.json` | Reviewed shell identities and complete support write manifests |

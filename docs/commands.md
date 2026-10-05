@@ -106,8 +106,9 @@ without selecting a browser checkout. See [support repositories](support-reposit
 | `bdev capabilities` | Supported, limited, unverified, unsupported combinations | None; needs no checkout |
 | `bdev doctor [scope]` | Named readiness checks (`mac`, `android`, `ios`, `rbe`, `shell`, `signing`) | None |
 | `bdev build [target]` | Prepare, compile, and verify the output ([macOS](macos.md), [iOS](ios.md)); iOS runs `xcodebuild` | Writes build output; may apply patches |
+| `bdev test [target]` | Run the tests changed on this branch or in the working tree ([details](#test)) | Reads Git state; effects of each suite it runs |
+| `bdev test [target] --file PATH` | Run the tests in one file, changed or not ([details](#test)) | Same |
 | `bdev test [target] <suite>` | Compile if needed and run one suite ([macOS](macos.md), [Android](android.md#tests)); `--device` or `--all-devices` for Android device suites | Writes build output; runs tests; Android also applies the support test overlay to Core's `build/commands` |
-| `bdev test-local` | Run the tests the branch or working tree modifies, one suite after another ([details](#test-local)) | Effects of each `bdev test` phase it runs |
 | `bdev run [target]` | Restart the browser with an existing output; never builds | Quits and relaunches the application |
 | `bdev build-run` (`br`), `sync-build` (`sb`), `sync-build-run` (`sbr`) | Combined workflows; extras go to the build phase | Effects of each phase |
 | `bdev deploy android` | Install the APK and launch it; same as `run android`; `--all-devices` selects all compatible devices ([Android](android.md)) | Installs over the existing app and restarts the package on selected devices |
@@ -322,35 +323,63 @@ configuration, and architecture with a status. A combination is `supported` only
 after real validation on a checkout; until then it is reported `unverified`.
 `limited` combinations may work but are outside the validated workflow.
 
-## test-local
+## test
 
-`bdev test-local [mac|android] [--base REF] [--scope both|committed|worktree] [--device ID] [--offline] [--plan]`
-compares the selected checkout's Core with `--base` (default `origin/master`), finds the
-test files it modifies, builds the filters from those files, and runs each suite with
-`bdev test`. `--scope` chooses committed branch changes, staged, unstaged, and untracked
-files, or both (the default). Deleted tests are ignored.
+`bdev test` selects tests three ways. The selectors are mutually exclusive, and a conflict
+is refused before any work starts.
 
-| Modified file | Suite | Filter |
+| Form | Selection |
+| --- | --- |
+| `bdev test [mac\|android] [--base REF]` | Test files changed on this branch, for the named platform, otherwise the configured platform, otherwise the host |
+| `bdev test [mac\|android] --file PATH` | The tests in that file, whether or not it changed |
+| `bdev test [mac\|android] <suite> [--filter PATTERN]` | One whole suite, or the filtered part of it |
+
+Add `--plan` to show the selection without running anything. Discovery reads Git state only.
+
+Default discovery compares the selected checkout's Core with `--base` (default
+`origin/master`). It includes commits on the branch since it diverged from the base, plus staged,
+unstaged, and untracked files. Pushing the branch changes nothing: the remote-tracking
+branch and push status are not consulted. Deleted tests are ignored. "Changed tests"
+means tests in modified test files; tests are not inferred from production-code changes.
+Changed test files for another platform are listed as not selected.
+
+`--file` takes one path, absolute or relative to the directory where you run `bdev`. It must be a file
+in the selected checkout's Core. Without a platform argument, the file decides the platform.
+
+Filters are built from the files:
+
+| File | Suite | Filter |
 | --- | --- | --- |
 | `*/junit/*.java` | Android `brave_junit_tests` | `package.Class.*` (`*Class.*` without a package) |
 | `*/javatests/*.java` | Android `brave_java_unit_tests` | `Class.*` |
 | `*_unittest.cc` | macOS `brave_unit_tests` | `Fixture.*` for each fixture in the file |
 | `*_browsertest.cc`, `*_uitest.cc` | macOS `brave_browser_tests` | `Fixture.*` for each fixture in the file |
-| desktop WebUI `.ts`/`.js` under `chrome/test/data/webui` | macOS `brave_browser_tests` | the C++ harness that registers the changed Mocha suite |
+| desktop WebUI `.ts`/`.js` under `chrome/test/data/webui` | macOS `brave_browser_tests` | the C++ harness that registers the changed Mocha suite (all suites in the file with `--file`) |
 
-A `mac` or `android` target runs only that platform's suites. Phases run quick host suites first (JUnit, device Java, unit, browser) and all run even
+The output lists the suites and filters that will run, and every file it cannot map (for
+example, C++ tests under an `android` or `ios` directory, or an unsupported file type) with the reason.
+If nothing is selected, the command says `No tests were selected.` and runs nothing; it never
+falls back to a whole suite. `--filter` needs a named suite.
+
+Phases run quick host suites first (JUnit, device Java, unit, browser) and all run even
 if one has a test failure; setup errors stop the remaining phases. The command
-fails and lists each phase's outcome. Android
-requirements are checked, and the device chosen, before the first build. The filters are
-logged for every phase. Files the command cannot map, including C++ tests under an
-`android/` or `ios/` directory, are listed under "Not run" with the reason, and in `data.discovery.unmapped`. The
-command never guesses a filter. The final summary shows each suite's test counts
-when available (Android suites use the runner's JSON results), or says that counts
-are unavailable. ✅ marks a passing phase with verified counts; the summary says
-"✅ All run tests passed" only when every phase has verified passing tests. Skipped
-tests have a separate count. The summary repeats the "Not run" files and reasons.
-`--plan` prints the phases and filters without running or
-changing anything. Android phases follow the rules in [Android tests](android.md#tests).
+fails and lists each phase's outcome. Android requirements are checked, and the device
+chosen, before the first build. Extra forwarded arguments go to every suite's build and run.
+iOS has no tests and fails with `UNSUPPORTED_CAPABILITY`.
+
+`--filter` reaches the suite's runner as a gtest-style filter. For
+`brave_junit_tests` use a fully qualified class (`org.example.SomeTest.*`) or a
+wildcard (`*SomeTest*`); a bare `SomeTest.*` can match no tests.
+
+Device-backed tests also accept `--all-devices`, and the terminal picker offers
+`a` for All. The suite builds once, then runs on each usable device with a
+compatible ABI. A failed run does not stop the remaining devices. Each device
+gets its own results file and entry in `data.devices`; any failed run makes the
+command return a nonzero exit. Discovery with `--all-devices` uses the same selection
+for device suites and still runs host suites on this Mac. Host-only suites
+reject `--all-devices`. It cannot be combined with `--device`.
+If you forward `--json-results-file`, its filename receives a distinct suffix
+for each device so results are not overwritten. Plans never prompt or run tests.
 
 ## cd
 
@@ -371,7 +400,7 @@ not involved. Choose the policy with `[notifications] policy` in `brave-scaffold
 
 | Policy | Notifies for |
 | --- | --- |
-| `major` | `sync`, `build`, `build-run`, `sync-build`, `sync-build-run`, `test`, `test-local`, `run`, `deploy`, `setup`, `env init`, `tools setup`, `android setup`, `patches update`, and `clean --execute` |
+| `major` | `sync`, `build`, `build-run`, `sync-build`, `sync-build-run`, `test`, `run`, `deploy`, `setup`, `env init`, `tools setup`, `android setup`, `patches update`, and `clean --execute` |
 | `always` | Everything in `major`, plus any other command that actually ran, such as `cd`, `context`, `doctor`, `drift`, `checkout`, `env check`, `capabilities`, `shell`, `vpython3`, and `bpm` |
 | `never` | Nothing |
 

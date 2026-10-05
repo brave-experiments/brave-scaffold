@@ -169,7 +169,14 @@ bdev test android brave_junit_tests --filter='*BraveCommandLineInitUtilTest*'
 
 # Instrumented tests: run on the selected emulator or device
 bdev test android brave_java_unit_tests --filter='BraveAppearancePreferencesTest.*' --device=emulator-5554
+
+# Tests changed on this branch or in the working tree, found and filtered for you
+bdev test android --plan
+bdev test android --device=emulator-5554
 ```
+
+Without a suite, `bdev test android` finds the changed Android tests and runs
+only those; see [test](commands.md#test).
 
 Two suites are available. `brave_junit_tests` needs no device and rejects `--device`.
 `brave_java_unit_tests` runs on one device chosen as for `run` (`--device`, then
@@ -187,7 +194,7 @@ Device-backed tests also accept `--all-devices`, and the terminal picker offers
 `a` for All. The suite builds once, then runs on each usable device with a
 compatible ABI. A failed run does not stop the remaining devices. Each device
 gets its own results file and entry in `data.devices`; any failed run makes the
-command return a nonzero exit. `test-local --all-devices` uses the same selection
+command return a nonzero exit. changed-test discovery with `--all-devices` uses the same selection
 for device suites and still runs host suites on this Mac. Host-only `test`
 commands reject `--all-devices`. It cannot be combined with `--device`.
 If you forward `--json-results-file`, its filename receives a distinct suffix

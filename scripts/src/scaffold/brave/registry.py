@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 from ..common.cli import CommandSpec, Opt, Positional
-from . import android, clean, cmd_build, cmd_patches, cmd_setup, cmd_test_local, cmd_tools, doctor
+from . import android, clean, cmd_build, cmd_patches, cmd_setup, cmd_test, cmd_tools, doctor
 
 WITH_PYTHONPATH = Opt("--with-pythonpath", "with_pythonpath", takes_value=False,
                       help="Also export PYTHONPATH for Core's script directory.")
@@ -30,9 +30,9 @@ ALL_DEVICES = Opt("--all-devices", "all_devices", takes_value=False,
 SOURCE = Opt("--source", "source", metavar="URL_OR_PATH", help="Support repository to clone (default: the standard source).")
 REF = Opt("--ref", "ref", metavar="REF", help="Shared support repository branch, tag, or commit.")
 DIFF = Opt("--diff", "diff", takes_value=False, help="Print the Git diff of each drifted file.")
-BASE = Opt("--base", "base", metavar="REF", help="Compare the branch with this ref (default: origin/master).")
-SCOPE = Opt("--scope", "scope", choices=("both", "committed", "worktree"), metavar="SCOPE",
-            help="Which changes to inspect: committed branch changes, the working tree, or both (default).")
+BASE = Opt("--base", "base", metavar="REF", help="Find changed tests against this ref (default: origin/master).")
+FILE = Opt("--file", "file", metavar="PATH",
+           help="Run the tests in this file, changed or not (relative to the current directory).")
 TARGET = Positional("target", help="mac, android, or ios (default: configured platform, else this host).")
 BUILD_SIDE_EFFECTS = ("Writes the build output under the checkout's src/out, applies Core patches when they are "
                       "out of date and no local edits are at risk, and may update the Metal toolchain setting for the "
@@ -125,37 +125,36 @@ def build_registry():
                     options=(CONFIGURATION, OFFLINE, FORCE_GN, PLAN, DEVICE, ALL_DEVICES, SKIP_SUPPORT_REFRESH), forward=True,
                     side_effects="Sync, build, and restart effects.", examples=("bdev sbr",),
                     notes="Extra arguments go to the build phase only."),
-        CommandSpec("test", "Compile if needed and run one test suite (macOS, or Android JUnit and device tests).",
-                    cmd_build.cmd_test,
-                    positionals=(TARGET, Positional("suite", True, help="Test suite, for example brave_unit_tests; on "
-                                                    "Android brave_junit_tests or brave_java_unit_tests.")),
-                    options=(CONFIGURATION, OFFLINE, FILTER, PLAN, DEVICE, ALL_DEVICES), forward=True, max_positionals=2,
-                    post_parse=cmd_build.post_parse_test,
+        CommandSpec("test", "Run the tests this branch or working tree changes, the tests in a file, or one named suite.",
+                    cmd_test.cmd_test,
+                    positionals=(TARGET, Positional("suite", False, help="Test suite, for example brave_unit_tests; on "
+                                                    "Android brave_junit_tests or brave_java_unit_tests. Omit it to run changed tests.")),
+                    options=(BASE, FILE, CONFIGURATION, OFFLINE, FILTER, PLAN, DEVICE, ALL_DEVICES), forward=True,
+                    max_positionals=2, post_parse=cmd_build.post_parse_test,
                     side_effects=BUILD_SIDE_EFFECTS.replace("Never cleans, installs, or launches anything.",
                                                             "Runs the tests, which may launch test browsers.")
-                    + " Android: also requires the support working copy on the android-testing-prototype branch "
-                      "(never switched), applies the support repository's test overlay to Core's build/commands "
-                      "and leaves it applied, builds in out/android_tests_<configuration>_arm64, and "
-                      "brave_java_unit_tests runs on the selected devices.",
-                    notes="The suite must come before any forwarded arguments. --filter only narrows the suite. "
+                    + " Reads Git state only to choose tests. Android: also requires the support working copy on the "
+                      "android-testing-prototype branch (never switched), applies the support repository's test overlay "
+                      "to Core's build/commands and leaves it applied, builds in out/android_tests_<configuration>_arm64, "
+                      "and brave_java_unit_tests runs on the selected devices.",
+                    notes="Without a suite or --file, finds test files changed on this branch (committed against --base, "
+                          "pushed or not, plus staged, unstaged, and untracked) for the configured platform, otherwise "
+                          "the host platform, or the named one. With --file, runs that file's tests whether or not it "
+                          "changed; the file decides the platform unless one is named. Discovery covers modified Android "
+                          "javatests and junit tests, C++ unit and browser tests, and desktop WebUI tests, builds the "
+                          "filters from the files, and runs each suite. Phases run quick host suites first and all run "
+                          "even if one fails. Files it cannot map are listed, never guessed, and no selection never runs "
+                          "a whole suite. A suite, --file, and --base are mutually exclusive, and --filter needs a suite. "
+                          "With a suite, the suite must come before any forwarded arguments. "
                           "On Android, brave_junit_tests runs on this Mac and takes no --device; "
                           "brave_java_unit_tests accepts --device or --all-devices (scaffold options, not forwarded). "
                           "Host-side filters need a fully qualified class or a wildcard such as '*ExampleTest*'.",
-                    examples=("bdev test brave_unit_tests", "bdev test mac brave_browser_tests --filter 'Example.*'",
+                    examples=("bdev test", "bdev test android --plan", "bdev test android --device=emulator-5554",
+                              "bdev test --file components/example/example_unittest.cc",
+                              "bdev test brave_unit_tests", "bdev test mac brave_browser_tests --filter 'Example.*'",
                               "bdev test android brave_junit_tests --filter='*BraveCommandLineInitUtilTest*'",
                               "bdev test android brave_java_unit_tests --filter='BraveAppearancePreferencesTest.*' "
                               "--device=emulator-5554")),
-        CommandSpec("test-local", "Run the tests this branch or working tree modifies, one suite after another.",
-                    cmd_test_local.cmd_test_local, positionals=(TARGET,), options=(BASE, SCOPE, CONFIGURATION, OFFLINE, DEVICE, ALL_DEVICES, PLAN),
-                    side_effects=BUILD_SIDE_EFFECTS.replace("Never cleans, installs, or launches anything.",
-                                                            "Runs the tests, which may launch test browsers.")
-                    + " Reads Git state only to choose tests. Android phases need the android-testing-prototype "
-                      "support branch and apply the test overlay (see 'bdev test --help').",
-                    notes="Finds modified Android javatests and junit tests, C++ unit and browser tests, and desktop "
-                          "WebUI tests; builds the filters from the files; runs each suite with 'bdev test'. Phases "
-                          "run quick host suites first and all run even if one fails. Files it cannot map are listed "
-                          "and skipped. The filters run are in the log. --plan lists them without running. A target (mac or android) limits the run to that platform's suites.",
-                    examples=("bdev test-local", "bdev test-local android --device=emulator-5554", "bdev test-local mac --scope worktree")),
         CommandSpec("run", "Restart the browser with an existing output; never builds.", cmd_build.cmd_run,
                     positionals=(TARGET,), options=(CONFIGURATION, ARTIFACT, PLAN, DEVICE, ALL_DEVICES),
                     side_effects="macOS: quits any running instance of the same application (from any checkout), "

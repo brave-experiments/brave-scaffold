@@ -77,6 +77,43 @@ class BranchTestsTests(unittest.TestCase):
         self.commit("t")
         self.assertEqual(self.phases(self.found()), {("android", "brave_junit_tests"): ["*NoPackageTest.*"]})
 
+    def test_pushing_the_branch_does_not_change_the_selection(self):
+        self.write("browser/foo_unittest.cc", CPP % {"f": "FooUnitTest"})
+        self.commit("tests")
+        before = self.phases(self.found())
+        remote = Path(self.tmp.name) / "remote.git"
+        subprocess.run(["git", "init", "-q", "--bare", str(remote)], check=True)
+        self.git("remote", "add", "origin", str(remote))
+        self.git("push", "-q", "-u", "origin", "HEAD:refs/heads/topic")
+        self.write("browser/bar_unittest.cc", CPP % {"f": "BarUnitTest"})
+        self.commit("unpushed")
+        after = self.phases(self.found())
+        self.assertEqual(before, {("mac", "brave_unit_tests"): ["FooUnitTest.*", "Other.*"]})
+        self.assertEqual(after, {("mac", "brave_unit_tests"): ["BarUnitTest.*", "FooUnitTest.*", "Other.*"]})
+
+    def test_all_change_kinds_are_discovered_together(self):
+        self.write("browser/committed_unittest.cc", CPP % {"f": "Committed"})
+        self.commit("committed")
+        self.write("browser/staged_unittest.cc", CPP % {"f": "Staged"})
+        self.git("add", "browser/staged_unittest.cc")
+        self.write("browser/committed_unittest.cc", CPP % {"f": "Committed"} + "// edit\n")
+        self.write("browser/untracked_unittest.cc", CPP % {"f": "Untracked"})
+        groups = {item["path"]: item["changes"] for item in self.found().to_dict()["test_files"]}
+        self.assertEqual(groups, {"browser/committed_unittest.cc": ["committed", "unstaged"],
+                                  "browser/staged_unittest.cc": ["staged"],
+                                  "browser/untracked_unittest.cc": ["untracked"]})
+
+    def test_named_files_run_whether_or_not_they_changed(self):
+        self.write("chromium_src/chrome/test/data/webui/settings/x_test.ts", WEBUI_TEST + "\n")
+        self.write("browser/old_unittest.cc", CPP % {"f": "Old"})
+        self.commit("tests")
+        self.git("branch", "-f", "base-ref", "HEAD")
+        discovery = branch_tests.discover_files(self.root, ["browser/old_unittest.cc", "browser/notes.cc"])
+        self.assertEqual(self.phases(discovery), {("mac", "brave_unit_tests"): ["Old.*", "Other.*"]})
+        self.assertEqual(discovery.mode, "files")
+        self.assertEqual(discovery.unmapped, [("browser/notes.cc", "not a recognized test file")])
+        self.assertEqual(self.phases(self.found()), {}, "nothing changed against the base")
+
     def test_scope_separates_committed_from_working_tree_changes(self):
         self.write("a/committed_unittest.cc", CPP % {"f": "Committed"})
         self.commit("committed")

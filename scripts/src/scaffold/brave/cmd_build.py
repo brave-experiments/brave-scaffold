@@ -505,19 +505,26 @@ def cmd_sync_build_run(ctx):
 
 
 def post_parse_test(spec, parsed):
-    """`test [<target>] <suite>`: a leading recognized platform name is the target."""
+    """`test [<target>] [<suite>]`: a leading recognized platform name is the target; no suite selects by changes or file."""
     from ..common.cli import _input_error
     positionals = list(parsed.positionals)
     target = None
     if positionals and positionals[0].lower() in RECOGNIZED_TARGETS:
         target = positionals.pop(0)
-    if not positionals:
-        raise _input_error("Missing required test suite.", spec,
-                           example="bdev test brave_browser_tests --filter 'Example.*'")
-    suite = positionals.pop(0)
-    if not SUITE_PATTERN.fullmatch(suite):
-        raise _input_error("%r is not a test suite name." % suite, spec, common_suites=list(COMMON_SUITES),
-                           example="bdev test brave_browser_tests --filter 'Example.*'")
+    suite = None
+    if positionals:
+        suite = positionals.pop(0)
+        if not SUITE_PATTERN.fullmatch(suite):
+            raise _input_error("%r is not a test suite name." % suite, spec, common_suites=list(COMMON_SUITES),
+                               example="bdev test brave_browser_tests --filter 'Example.*'")
+    selectors = [name for name, given in (("a test suite", suite), ("--file", parsed.get("file")),
+                                          ("--base", parsed.get("base"))) if given]
+    if suite and len(selectors) > 1 or parsed.get("file") and parsed.get("base"):
+        raise _input_error("%s cannot be combined: choose a suite, --file, or changed-test discovery." % (
+            " and ".join(selectors).capitalize()), spec, example="bdev test --file components/example/example_unittest.cc")
+    if parsed.get("filter") and not suite:
+        raise _input_error("--filter narrows a named suite; name one, or let discovery build the filters.", spec,
+                           example="bdev test brave_unit_tests --filter 'Example.*'")
     parsed.values["target"], parsed.values["suite"] = target, suite
     parsed.positionals = []
     parsed.forwarded = positionals + parsed.forwarded

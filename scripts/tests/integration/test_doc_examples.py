@@ -34,6 +34,10 @@ NOT_RUN = {
     'bdev run ios --device "iPhone 16 Pro"': 'needs an iOS checkout and Xcode; covered by tests/integration/test_ios.py',
     'bdev sync-build ios': 'needs an iOS checkout and Xcode; covered by tests/integration/test_ios.py',
     "bdev android setup --ref <tag-or-sha>": "clones the default support repository from the network",
+    'bdev test mac --plan': "needs a Core branch with a base ref; covered by tests.integration.test_test_changed",
+    'bdev test android --plan': "needs a Core branch with a base ref; covered by tests.integration.test_test_changed",
+    'bdev test android --device=emulator-5554': "needs a Core branch with a base ref; covered by tests.integration.test_test_changed",
+    'bdev test --file components/example/example_unittest.cc': "needs a Core branch with a base ref; covered by tests.integration.test_test_changed",
     "bdev test android brave_junit_tests --filter='*BraveCommandLineInitUtilTest*'":
         "needs the Android test support fixtures; run by tests.integration.test_android_tests",
     "bdev test android brave_java_unit_tests --filter='BraveAppearancePreferencesTest.*' --device=emulator-5554":
