@@ -182,6 +182,36 @@ class TestChangedTests(AndroidTestsTestCase):
         result, document = self.local("ios")
         self.assertEqual(document["error"]["code"], "UNSUPPORTED_CAPABILITY")
 
+    def test_forwarded_platform_selects_the_same_tests_in_plan_and_execution(self):
+        self.on_test_branch()
+        self.add_tests("junit", "unit")
+        for args in (("--target_os=android",), ("--target_os", "android")):
+            with self.subTest(args=args):
+                result, plan = self.local(*args, "--plan")
+                self.assertEqual(result.returncode, 0, result.stderr)
+                phases = plan["data"]["discovery"]["phases"]
+                self.assertEqual([(p["target"], p["suite"]) for p in phases],
+                                 [("android", "brave_junit_tests")])
+                result, run = self.local(*args)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(run["data"]["discovery"]["phases"], phases)
+
+    def test_forwarded_platform_conflict_is_rejected_even_in_a_plan(self):
+        self.add_tests("unit")
+        result, document = self.local("mac", "--target_os=android", "--plan")
+        self.assertEqual((result.returncode, document["error"]["code"]), (2, "SELECTOR_CONFLICT"))
+        self.assertEqual(self.runner_calls(), [])
+        self.assertFalse(self.overlay_file.exists())
+
+    def test_forwarded_platform_limits_explicit_file_selection(self):
+        self.add_tests("unit")
+        result = self.file_run("--file", "browser/foo_unittest.cc", "--target_os=android", "--plan")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        discovery = json.loads(result.stdout)["data"]["discovery"]
+        self.assertEqual(discovery["phases"], [])
+        self.assertEqual(len(discovery["deselected"]), 1)
+        self.assertEqual(self.runner_calls(), [])
+
     def test_a_setup_error_stops_the_remaining_phases_and_is_reported_as_itself(self):
         self.on_test_branch()
         self.add_tests("junit", "java")

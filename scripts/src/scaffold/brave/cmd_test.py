@@ -11,7 +11,6 @@ import os
 from pathlib import Path
 
 from ..common.cli import Parsed
-from ..common.platforms import effective_target, normalize_target
 from ..common.results import Result, ScaffoldError
 from . import android, android_tests, branch_tests, cmd_build, execution as execution_module
 
@@ -123,17 +122,14 @@ def cmd_test_discovered(ctx):
     parsed = ctx.parsed
     if parsed.get("all_devices") and parsed.get("device"):
         raise ScaffoldError("SELECTOR_CONFLICT", "Use either --device or --all-devices, not both.")
-    identity = ctx.identity()
-    explicit = normalize_target(parsed.get("target")) if parsed.get("target") else None
-    target, _ = effective_target(parsed.get("target"), ctx.config)
-    if target not in ("mac", "android"):
-        raise ScaffoldError("UNSUPPORTED_CAPABILITY", "Tests are not available for iOS.")
+    identity, effective = cmd_build.select_build(ctx, parsed.get("target"), parsed.forwarded, tests=True)
+    selected_target = bool(parsed.get("target")) or effective.sources["target"] == "forwarded"
     if parsed.get("file"):
         discovery = branch_tests.discover_files(identity.core, checkout_files(ctx, identity, [parsed.get("file")]), ctx.log)
-        scope_target = explicit
+        scope_target = effective.target if selected_target else None
     else:
         discovery = branch_tests.discover(identity.core, parsed.get("base") or branch_tests.DEFAULT_BASE, "both", ctx.log)
-        scope_target = target
+        scope_target = effective.target
     if scope_target:
         discovery.deselected = [(f, "%s tests are outside the requested %s run" % (p.target, scope_target))
                                 for p in discovery.phases if p.target != scope_target for f in p.files]

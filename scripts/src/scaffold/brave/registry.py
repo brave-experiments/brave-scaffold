@@ -140,7 +140,7 @@ def build_registry():
                     notes="Without a suite or --file, finds test files changed on this branch (committed against --base, "
                           "pushed or not, plus staged, unstaged, and untracked) for the configured platform, otherwise "
                           "the host platform, or the named one. With --file, runs that file's tests whether or not it "
-                          "changed; the file decides the platform unless one is named. Discovery covers modified Android "
+                          "changed; the file decides the platform unless one is named or forwarded with --target_os. Discovery covers modified Android "
                           "javatests and junit tests, C++ unit and browser tests, and desktop WebUI tests, builds the "
                           "filters from the files, and runs each suite. Phases run quick host suites first and all run "
                           "even if one fails. Files it cannot map are listed, never guessed, and no selection never runs "

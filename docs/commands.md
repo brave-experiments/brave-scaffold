@@ -344,7 +344,9 @@ means tests in modified test files; tests are not inferred from production-code 
 Changed test files for another platform are listed as not selected.
 
 `--file` takes one path, absolute or relative to the directory where you run `bdev`. It must be a file
-in the selected checkout's Core. Without a platform argument, the file decides the platform.
+in the selected checkout's Core. Without a platform argument or forwarded `--target_os`, the file decides the platform.
+For discovery and file selection, forwarded `--target_os` overrides the configured or
+host default; a conflict with a named platform fails before execution, including under `--plan`.
 
 Filters are built from the files:
 
