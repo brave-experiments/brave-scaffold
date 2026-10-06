@@ -187,7 +187,8 @@ dev/                        Scaffold repository
 ```
 
 For the nested layout, keep browser checkout directories ignored by Scaffold's
-Git configuration. No exclusions or integration files are needed inside Core.
+Git configuration. See the [FAQ](#faq) for local ignore rules. No exclusions or
+integration files are needed inside Core.
 
 In either layout, put Scaffold's `scripts/` directory on `PATH` and register each
 checkout. With the shell helper loaded, `bcore cd main` enters that checkout's
@@ -220,6 +221,43 @@ support and real-checkout validation by operation, configuration, and architectu
 | Drive the tools from an agent | [Agent workflows](docs/agent-workflows.md) |
 | Change or extend the tools | [Development](docs/development.md) |
 | Project skills for contributors | [Skills](docs/skills.md) |
+
+## FAQ
+
+### How do I clone other repositories under `~/dev`?
+
+Clone them as usual. If `~/dev` is your Scaffold repository, add each unrelated
+repository's directory to **Scaffold's** `.git/info/exclude`. For example, for
+`~/dev/my-project`, add this line to `~/dev/.git/info/exclude`:
+
+```text
+/my-project/
+```
+
+This keeps the directory out of Scaffold's untracked files without changing the
+shared `.gitignore` or the nested repository. The exclusion stays local to your
+Scaffold clone. Directories named `brave-browser*` are already ignored by the
+shared `.gitignore`.
+
+If Scaffold lives at `~/dev/brave-scaffold` instead, sibling repositories under
+`~/dev` are outside it and need no Scaffold ignore rule. Unrelated repositories
+do not need to be registered with `bcore`.
+
+### Can I keep using my existing scripts and Core commands?
+
+Yes. You can adopt individual commands, such as `bcore test mac`, while keeping
+your existing workflow. Scaffold setup leaves Core untouched. Avoid running
+Scaffold and another build, sync, or test process against the same checkout at
+the same time; Scaffold does not lock checkouts.
+
+### How does `bcore` choose which checkout to use?
+
+Commands select the checkout containing your current directory. From elsewhere,
+pass `--checkout <alias>`. You choose aliases when registering checkouts; they
+name directories, not Git branches. With the shell helper loaded,
+`bcore cd <alias>` enters that checkout's `src/brave` directory. Use Git to switch
+branches as usual. See
+[checkout configuration](docs/configuration-and-environments.md).
 
 Read [AGENTS.md](AGENTS.md) before contributing. `CLAUDE.md` links to the same
 instructions. Licensed under the [Mozilla Public License 2.0](LICENSE).
