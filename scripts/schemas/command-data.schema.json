@@ -1411,6 +1411,69 @@
         }
       },
       "additionalProperties": true
+    },
+    "status": {
+      "type": "object",
+      "required": [
+        "branch",
+        "head",
+        "upstream",
+        "base",
+        "changes",
+        "change_counts",
+        "history",
+        "outputs",
+        "incomplete_operations",
+        "disk_free_bytes",
+        "current_test_verification"
+      ],
+      "properties": {
+        "branch": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "head": {
+          "type": "string"
+        },
+        "upstream": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "base": {
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "changes": {
+          "type": "array"
+        },
+        "change_counts": {
+          "type": "object"
+        },
+        "history": {
+          "type": "array"
+        },
+        "outputs": {
+          "type": "array"
+        },
+        "incomplete_operations": {
+          "type": "array"
+        },
+        "disk_free_bytes": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "current_test_verification": {
+          "const": "unknown"
+        }
+      }
     }
   }
 }

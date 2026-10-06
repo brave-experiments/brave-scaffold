@@ -26,6 +26,9 @@ checkout writes; those are the requested work, not scaffold installation changes
 - `bpm` runs the checkout's own package manager with its own Node.js, never a
   global one.
 
+`bdev status` shows local Git state, prior build/test outcomes, output warnings,
+and free disk space. Saved results are labeled as history, not current verification.
+
 `scripts/sync-support-repos` separately clones, updates, inspects, and prunes
 shared support repositories ([guide](docs/support-repositories.md)).
 

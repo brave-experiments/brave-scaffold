@@ -750,6 +750,22 @@
           }
         }
       }
+    },
+    {
+      "if": {
+        "properties": {
+          "command": {
+            "const": "status"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "$ref": "command-data.schema.json#/$defs/status"
+          }
+        }
+      }
     }
   ]
 }

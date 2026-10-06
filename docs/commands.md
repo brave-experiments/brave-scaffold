@@ -102,6 +102,7 @@ without selecting a browser checkout. See [support repositories](support-reposit
 | `bdev env export --format bash` | Print exports for a generated `.envrc` | None; runs no direnv |
 | `bdev env check` | Compare the loaded environment and tools to the checkout | None; evaluates the approved `.envrc` |
 | `bdev shell` | Child shell in Core with the environment loaded | Whatever you do in the shell |
+| `bdev status` | Git state, prior build/test outcomes, output warnings, free disk space | None |
 | `bdev context` | Resolved checkout, selection source, environment, tools | None |
 | `bdev capabilities` | Supported, limited, unverified, unsupported combinations | None; needs no checkout |
 | `bdev doctor [scope]` | Named readiness checks (`mac`, `android`, `ios`, `rbe`, `shell`, `signing`) | None |
@@ -447,3 +448,23 @@ fails (for example, notifications are blocked for the terminal application), the
 exit status and stdout are unchanged and stderr gets one line saying so. macOS
 attributes these notifications to the application that runs `osascript`, so allow
 notifications for your terminal in System Settings. Other hosts send no desktop notification.
+
+## Checkout status
+
+Run `bdev status` inside a checkout, or `bdev status --checkout main`. Use
+`--json` for all changed paths and structured history. Status reads local Git refs
+without fetching and does not load direnv, run doctor, or change checkout files.
+It reports Core's branch, HEAD, upstream, staged/unstaged/untracked changes, and
+ahead/behind counts against local `origin/master` when available.
+
+Saved build and test outcomes are history, not proof that the current code passed.
+Each entry shows its recorded revision and whether it matches HEAD. Switching
+branches can change that comparison; even matching HEAD does not prove matching
+uncommitted files or build inputs. Current test verification therefore remains
+unknown. Historical failures remain visible, and a newer failure replaces an older
+success for the same platform and suite. Results from other checkouts are excluded.
+
+Status also shows outputs marked as needing revalidation, unfinished operation
+records, and free disk space. An unfinished record does not prove a process is
+running. Status does not inspect processes or verify build freshness. Like other
+inspection commands, it saves its diagnostic log outside Core.

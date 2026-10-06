@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 from ..common.cli import CommandSpec, Opt, Positional
-from . import android, clean, cmd_build, cmd_patches, cmd_setup, cmd_test, cmd_tools, doctor
+from . import android, clean, cmd_build, cmd_patches, cmd_setup, cmd_status, cmd_test, cmd_tools, doctor
 
 WITH_PYTHONPATH = Opt("--with-pythonpath", "with_pythonpath", takes_value=False,
                       help="Also export PYTHONPATH for Core's script directory.")
@@ -50,6 +50,8 @@ def build_registry():
                     cmd_setup.cd, positionals=(Positional("checkout", required=True, help="Checkout alias or path."),),
                     examples=("bdev cd main", "bdev cd alt-1"),
                     notes="Source scripts/bdev-shell.sh in Bash or Zsh to change the current shell directory."),
+        CommandSpec("status", "Show Git state, prior build/test outcomes, output warnings, and free disk space.",
+                    cmd_status.run_status, examples=("bdev status", "bdev status --checkout main --json")),
         CommandSpec("context", "Show the resolved checkout, environment mapping, configuration, and tool state.",
                     cmd_setup.context, examples=("bdev context", "bdev context --checkout main --json")),
         CommandSpec("capabilities", "List supported, limited, unverified, and unsupported combinations.",
