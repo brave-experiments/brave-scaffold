@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 from ..common.cli import CommandSpec, Opt, Positional
-from . import android, android_tests, clean, cmd_build, cmd_patches, cmd_setup, cmd_status, cmd_test, cmd_tools, doctor
+from . import android, android_tests, clean, cmd_build, cmd_patches, cmd_rebase, cmd_setup, cmd_status, cmd_test, cmd_tools, doctor
 
 WITH_PYTHONPATH = Opt("--with-pythonpath", "with_pythonpath", takes_value=False,
                       help="Also export PYTHONPATH for Core's script directory.")
@@ -50,6 +50,10 @@ def build_registry():
                     cmd_setup.cd, positionals=(Positional("checkout", required=True, help="Checkout alias or path."),),
                     examples=("bcore cd main", "bcore cd alt-1"),
                     notes="Source scripts/bcore-shell.sh in Bash or Zsh to change the current shell directory."),
+        CommandSpec("rebase", "Fetch origin/master and rebase Core only if it applies cleanly.",
+                    cmd_rebase.run_rebase, examples=("bcore rebase", "bcore rebase --checkout main"),
+                    side_effects="Fetches origin/master and rewrites Core branch commits. Aborts on conflicts. Never pushes or syncs dependencies.",
+                    notes="Requires a clean checkout and a branch without merge commits. Rewrites pushed commits too."),
         CommandSpec("status", "Show Git state, prior build/test outcomes, output warnings, and free disk space.",
                     cmd_status.run_status,
                     options=(Opt("--all-branches", "all_branches", takes_value=False,

@@ -102,6 +102,7 @@ without selecting a browser checkout. See [support repositories](support-reposit
 | `bcore env export --format bash` | Print exports for a generated `.envrc` | None; runs no direnv |
 | `bcore env check` | Compare the loaded environment and tools to the checkout | None; evaluates the approved `.envrc` |
 | `bcore shell` | Child shell in Core with the environment loaded | Whatever you do in the shell |
+| `bcore rebase` | Fetch origin/master and rebase a clean Core branch | Fetches refs; rewrites branch commits |
 | `bcore status` | Git state, prior build/test outcomes, output warnings, free disk space | None |
 | `bcore context` | Resolved checkout, selection source, environment, tools | None |
 | `bcore capabilities` | Supported, limited, unverified, unsupported combinations | None; needs no checkout |
@@ -411,7 +412,7 @@ not involved. Choose the policy with `[notifications] policy` in `brave-scaffold
 
 | Policy | Notifies for |
 | --- | --- |
-| `major` | `sync`, `build`, `build-run`, `sync-build`, `sync-build-run`, `test`, `run`, `deploy`, `setup`, `env init`, `tools setup`, `android setup`, `patches update`, and `clean --execute` |
+| `major` | `rebase`, `sync`, `build`, `build-run`, `sync-build`, `sync-build-run`, `test`, `run`, `deploy`, `setup`, `env init`, `tools setup`, `android setup`, `patches update`, and `clean --execute` |
 | `always` | Everything in `major`, plus any other command that actually ran, such as `cd`, `context`, `doctor`, `drift`, `checkout`, `env check`, `capabilities`, `shell`, `vpython3`, and `bpm` |
 | `never` | Nothing |
 
@@ -477,3 +478,18 @@ records, and free disk space when less than 200 GB remains. JSON output always
 includes the free-space value (or null if unavailable). An unfinished record does not prove a process is
 running. Status does not inspect processes or verify build freshness. Like other
 inspection commands, it saves its diagnostic log outside Core.
+
+## Rebase Core
+
+`bcore rebase` (or `bcore rebase --checkout main`) fetches `origin/master` and
+rebases the selected Core branch onto it. The checkout must have no staged,
+unstaged, or untracked changes and no Git operation in progress. Detached HEAD
+and branches with merge commits are refused. A failed fetch stops before rebase.
+
+If rebase fails or is interrupted, the command attempts to abort and verifies
+that the original branch HEAD and clean working tree are restored. If restoration
+fails, it reports that the checkout needs inspection. Forced termination or a
+machine crash can still leave an unfinished rebase.
+
+Rebase rewrites commit IDs, including pushed commits. It does not stash, resolve
+conflicts, push, sync dependencies, or build. Other local branch refs stay unchanged.

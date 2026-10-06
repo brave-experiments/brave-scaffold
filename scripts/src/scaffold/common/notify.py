@@ -21,7 +21,7 @@ BACKEND_VARIABLE = "BCORE_NOTIFY_BACKEND"
 
 # Operations that `major` covers. Everything else that performs work is notified only by `always`.
 MAJOR_COMMANDS = frozenset({
-    "sync", "build", "build-run", "sync-build", "sync-build-run", "test", "run", "deploy",
+    "rebase", "sync", "build", "build-run", "sync-build", "sync-build-run", "test", "run", "deploy",
     "setup", "env init", "tools setup", "android setup", "patches update", "clean"})
 # Commands that print or export without performing an operation.
 SILENT_COMMANDS = frozenset({"env export"})

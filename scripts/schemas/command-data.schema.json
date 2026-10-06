@@ -1475,6 +1475,29 @@
           "const": "unknown"
         }
       }
+    },
+    "rebase": {
+      "type": "object",
+      "required": [
+        "branch",
+        "base",
+        "original_head",
+        "head"
+      ],
+      "properties": {
+        "branch": {
+          "type": "string"
+        },
+        "base": {
+          "type": "string"
+        },
+        "original_head": {
+          "type": "string"
+        },
+        "head": {
+          "type": "string"
+        }
+      }
     }
   }
 }
