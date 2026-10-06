@@ -56,10 +56,10 @@ def setup(ctx):
     steps = []
     if direnv is None:
         steps.append("Install direnv: https://direnv.net/docs/installation.html")
-    steps.append("Register a checkout: bdev checkout add <name> <path-to-checkout>")
-    steps.append("Generate its environment: bdev env init --checkout <name>")
+    steps.append("Register a checkout: bcore checkout add <name> <path-to-checkout>")
+    steps.append("Generate its environment: bcore env init --checkout <name>")
     steps.append("Review the generated file, then approve it yourself: direnv allow <environment-dir>")
-    steps.append("Check readiness: bdev doctor --checkout <name>")
+    steps.append("Check readiness: bcore doctor --checkout <name>")
     lines = ["Scaffold: %s" % root, "Runtime: Python %s (%s)" % (facts["runtime"]["python"], sys.executable),
              "direnv: %s" % (direnv or "not installed"), "git: %s" % (facts["git"] or "not found"),
              "Configuration: %s%s" % (config.path, " (created)" if created else ""),
@@ -137,7 +137,7 @@ def checkout_list(ctx):
             record.alias or "(no alias)", record.core_real, "", approval["state"],
             "\n%12s PROBLEM: %s" % ("", problem) if problem else ""))
     if not rows:
-        lines.append("No checkouts are registered. Register one with: bdev checkout add <name> <path>")
+        lines.append("No checkouts are registered. Register one with: bcore checkout add <name> <path>")
     return Result(command="checkout list", data={"checkouts": rows, "configuration": str(ctx.config.path)},
                   text="\n".join(lines))
 
@@ -266,7 +266,7 @@ def env_init(ctx):
                   "To use the scaffold environment, integrate this content yourself:", "", content]
     else:
         lines += ["", content]
-    lines += ["This file runs: %s" % (env_module.scaffold_root() / "scripts" / "bdev"),
+    lines += ["This file runs: %s" % (env_module.scaffold_root() / "scripts" / "bcore"),
               "with configuration: %s" % ctx.config.path, "",
               "Nothing inside Brave Core was changed and nothing was approved.",
               "Review the file, then approve it yourself:", "  direnv allow %s" % shlex.quote(os.path.realpath(directory))]

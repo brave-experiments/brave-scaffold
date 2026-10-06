@@ -8,8 +8,8 @@ import sys
 
 
 def run_tool(tool, argv):
-    if tool == "bdev":
-        from .brave.bdev import main
+    if tool == "bcore":
+        from .brave.bcore import main
     elif tool == "sync-support-repos":
         from .support import main
     elif tool == "bpm":

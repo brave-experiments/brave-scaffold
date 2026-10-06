@@ -249,7 +249,7 @@ class DeviceSuiteTests(AndroidTestsTestCase):
                     terminal.append(os.read(master, 65536))
         reader = threading.Thread(target=drain_terminal)
         try:
-            process = subprocess.Popen([str(self.sandbox.scripts / 'bdev'), '--config', str(self.config),
+            process = subprocess.Popen([str(self.sandbox.scripts / 'bcore'), '--config', str(self.config),
                                         '--checkout', 'main', 'test', 'android', 'brave_java_unit_tests'],
                                        cwd=self.sandbox.root,
                                        env=self.env(FAKE_ADB_DEVICES=DEVICES_TWO, FAKE_ADAPTER_NODE=shutil.which('node')),
@@ -429,10 +429,10 @@ class SupportBranchTests(AndroidTestsTestCase):
     def test_a_missing_support_working_copy_points_to_setup(self):
         result, document = self.run_tests("brave_junit_tests")
         self.assertEqual((result.returncode, document["error"]["code"]), (3, "DEPENDENCY_INCOMPATIBLE"))
-        self.assertEqual(document["error"]["repairs"][0]["argv"][:3], ["bdev", "android", "setup"])
+        self.assertEqual(document["error"]["repairs"][0]["argv"][:3], ["bcore", "android", "setup"])
 
     def test_the_default_setup_lands_on_the_required_branch(self):
-        result = self.sandbox.bdev("--json", "--config", self.config, "--checkout", "main", "android", "setup",
+        result = self.sandbox.bcore("--json", "--config", self.config, "--checkout", "main", "android", "setup",
                                    "--source", str(self.support), env=self.env())
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.head_state(self.wc())[0], BRANCH)
@@ -444,7 +444,7 @@ class SupportBranchTests(AndroidTestsTestCase):
         other = self.sandbox.make_checkout("second", git=True)
         self.assertNotEqual(other.parent.parent, self.src.parent)
         self.sandbox.register("second")
-        result, document = self.sandbox.bdev("--json", "--config", self.config, "--checkout", "second", "test",
+        result, document = self.sandbox.bcore("--json", "--config", self.config, "--checkout", "second", "test",
                                              "android", "brave_junit_tests", env=self.env()), None
         self.assertEqual(json.loads(result.stdout)["error"]["code"], "DEPENDENCY_INCOMPATIBLE")
 
@@ -458,7 +458,7 @@ class OutputTests(AndroidTestsTestCase):
         for command in (("test", "android", "brave_junit_tests"), ("build", "android")):
             for verbosity in ("normal", "verbose"):
                 with self.subTest(command=command, verbosity=verbosity):
-                    result = self.sandbox.bdev("--json", "--config", self.config, "--checkout", "main", *command,
+                    result = self.sandbox.bcore("--json", "--config", self.config, "--checkout", "main", *command,
                                                "--verbosity", verbosity, env=self.env(FAKE_ADB_DEVICES=ONE_DEVICE))
                     self.assertEqual(result.returncode, 0, result.stderr)
                     self.assertEqual(detail in result.stderr, verbosity == "verbose")

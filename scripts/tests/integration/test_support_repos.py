@@ -81,7 +81,7 @@ class SupportRepositoriesTests(unittest.TestCase):
         self.assertEqual(self.git(checkout, "rev-parse", "HEAD"), after)
         self.assertIn("handbook: updated", document.stdout)
         self.assertIn("git fetch", document.stderr)
-        log = next((self.root / ".bdev" / "logs").glob("*.log"))
+        log = next((self.root / ".bcore" / "logs").glob("*.log"))
         self.assertTrue(log.is_file())
 
     def test_dirty_files_and_local_commits_survive_normal_sync_and_explicit_discard_resets(self):

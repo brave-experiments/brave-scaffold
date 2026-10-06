@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "bdev result envelope",
+  "title": "bcore result envelope",
   "description": "One document on stdout in JSON mode. Additive fields are compatible; removals or meaning changes need a new schema_version. `data` is checked against command-data.schema.json by `command`.",
   "type": "object",
   "required": [

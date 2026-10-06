@@ -98,7 +98,7 @@ def run_command(command, parsed, handler, argv_environ=None, needs_config=True, 
         result = Result(command=command, status="error", exit_code=EXIT_INTERNAL)
         result.error = {"code": "INTERNAL_ERROR", "message": "Unexpected failure: %s" % error,
                         "details": {"exception": type(error).__name__}, "repairs": []}
-        if os.environ.get("BDEV_TRACEBACK"):
+        if os.environ.get("BCORE_TRACEBACK"):
             traceback.print_exc(file=stderr or sys.stderr)
     if context.selected and result.context.get("checkout") is None:
         result.context = context.selected.to_context()

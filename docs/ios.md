@@ -6,8 +6,8 @@ Release, and other configurations are not. Nothing here changes how Core builds 
 
 Source sync, Debug simulator builds, and simulator installation and launch have been
 validated on a real checkout on an arm64 Mac, including opening the Simulator window.
-Output deletion with `bdev clean ios --execute` has not yet been validated on a real
-checkout. `bdev capabilities` reports these operations separately.
+Output deletion with `bcore clean ios --execute` has not yet been validated on a real
+checkout. `bcore capabilities` reports these operations separately.
 
 Core does not build iOS with its package build command. Its documented flow is to
 bootstrap the project once, then build the `Debug` scheme of
@@ -17,16 +17,16 @@ iOS through `bpm run build`.
 
 Prerequisites: a registered checkout with an approved environment
 ([getting started](getting-started.md)), Xcode with an iOS Simulator runtime, and
-`bdev doctor ios --checkout <name>` passing. Use one operator per checkout.
+`bcore doctor ios --checkout <name>` passing. Use one operator per checkout.
 
 ## Sync and bootstrap
 
 ```sh
-bdev sync ios              # adds ios to target_os and runs Core's sync
-bdev sync ios,android      # both mobile targets, in a fixed order
+bcore sync ios              # adds ios to target_os and runs Core's sync
+bcore sync ios,android      # both mobile targets, in a fixed order
 ```
 
-`bdev sync ios` is the normal sync with `--target_os` built from the checkout's
+`bcore sync ios` is the normal sync with `--target_os` built from the checkout's
 existing `.gclient` values plus `ios` ([source and cleanup](source-and-cleanup.md#sync-sources)).
 It needs Core's hooks, so `--nohooks` is refused. The `bootstrap_ios` hook runs
 Core's `script/ios_bootstrap.py`, which creates placeholders under
@@ -34,11 +34,11 @@ Core's `script/ios_bootstrap.py`, which creates placeholders under
 `PartitionAllocSupport` xcframeworks) and `ios/brave-ios/App/Configuration/LLDBInit`,
 so Xcode can resolve the Swift package. After the sync, the scaffold checks that
 these files exist and otherwise stops with `PREPARATION_CONFLICT`. The repair it
-suggests is Core's own command: `bdev bpm run ios_bootstrap`.
+suggests is Core's own command: `bcore bpm run ios_bootstrap`.
 
 ## Readiness
 
-`bdev doctor ios` is read-only. Besides the shared macOS host checks it reports:
+`bcore doctor ios` is read-only. Besides the shared macOS host checks it reports:
 
 | Check | Passes when |
 | --- | --- |
@@ -52,13 +52,13 @@ suggests is Core's own command: `bdev bpm run ios_bootstrap`.
 ## Build
 
 ```sh
-bdev build ios                             # Debug build for a simulator
-bdev build ios --device "iPhone 16"        # build for a named simulator or a UDID
-bdev build ios --plan                      # show the steps; runs nothing
-bdev build ios -jobs 4 CODE_SIGNING_ALLOWED=NO   # forwarded to xcodebuild
+bcore build ios                             # Debug build for a simulator
+bcore build ios --device "iPhone 16"        # build for a named simulator or a UDID
+bcore build ios --plan                      # show the steps; runs nothing
+bcore build ios -jobs 4 CODE_SIGNING_ALLOWED=NO   # forwarded to xcodebuild
 ```
 
-`bdev build ios` checks readiness, applies Core patches only when they are out of date
+`bcore build ios` checks readiness, applies Core patches only when they are out of date
 and no local edits are at risk ([source and cleanup](source-and-cleanup.md)), picks a
 simulator, runs `xcodebuild`, and verifies the result. It never cleans, boots a
 simulator, installs, or launches anything.
@@ -119,17 +119,17 @@ settings to it; whether that build uses remote execution comes from Core's own c
 A failed or interrupted build can partly overwrite earlier output. The scaffold marks the GN
 output and the derived-data directory as needing revalidation before `xcodebuild` starts, keeps
 their earlier records as history, and does not clean or roll back. An earlier app may still be
-run with `bdev run ios`.
+run with `bcore run ios`.
 `run` warns before installing when an attempt may have partly overwritten the selected
 output, tracked sources changed since its build, or its build freshness cannot be checked.
 
 ## Run
 
 ```sh
-bdev run ios                               # install and launch the existing build
-bdev run ios --device "iPhone 16 Pro"
-bdev build-run ios                         # build, then run exactly that app
-bdev sync-build ios                        # sync, then build
+bcore run ios                               # install and launch the existing build
+bcore run ios --device "iPhone 16 Pro"
+bcore build-run ios                         # build, then run exactly that app
+bcore sync-build ios                        # sync, then build
 ```
 
 `run` never builds. It boots the chosen simulator and waits for it (`simctl boot`,
@@ -143,8 +143,8 @@ checks that the process stays running for one second; an early exit reports
 loaded or that it will stay running afterward.
 
 `--artifact <path to Client.app>` runs a specific build. If more than one recorded build matches,
-`run` stops with `ARTIFACT_AMBIGUOUS`. `bdev clean ios` removes the GN output and derived-data
+`run` stops with `ARTIFACT_AMBIGUOUS`. `bcore clean ios` removes the GN output and derived-data
 directory; after a clean, `out/ios_current_link` dangles until Core's next build repoints it, and
-`bdev doctor ios` then reports missing bootstrap files (repair: `bdev bpm run ios_bootstrap`).
+`bcore doctor ios` then reports missing bootstrap files (repair: `bcore bpm run ios_bootstrap`).
 
-Not available for iOS: `bdev test` and physical devices.
+Not available for iOS: `bcore test` and physical devices.

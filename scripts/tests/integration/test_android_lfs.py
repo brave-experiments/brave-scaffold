@@ -67,11 +67,11 @@ class SupportLargeFileTests(AndroidTestCase):
         self.sandbox.configure_rbe("main")
         with open(self.src.parent / ".gclient", "a") as stream:
             stream.write("target_os = ['android']\n")
-        result = self.sandbox.bdev("--json", "--config", self.config, "doctor", "android", "--checkout", "main",
+        result = self.sandbox.bcore("--json", "--config", self.config, "doctor", "android", "--checkout", "main",
                                    env=self.env())
         checks = {check["name"]: check for check in json.loads(result.stdout)["checks"]}
         self.assertEqual(checks["android-support-lfs"]["status"], "blocker")
-        self.assertEqual(checks["android-support-lfs"]["repairs"][0]["argv"][:3], ["bdev", "android", "setup"])
+        self.assertEqual(checks["android-support-lfs"]["repairs"][0]["argv"][:3], ["bcore", "android", "setup"])
         result, document = self.document("build", "android")
         self.assertEqual((result.returncode, document["error"]["code"]), (3, "DEPENDENCY_INCOMPATIBLE"))
         self.assertIn("large file", document["error"]["message"])

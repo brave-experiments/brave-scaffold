@@ -21,7 +21,7 @@ class DoctorEnvironmentTests(BuildTestCase):
         write_executable(self.sandbox.bin / "xcrun", NEEDS_VARIABLE)
 
     def doctor(self, env=None):
-        result = self.sandbox.bdev("--json", "--config", self.config, "--checkout", "main", "doctor", "mac",
+        result = self.sandbox.bcore("--json", "--config", self.config, "--checkout", "main", "doctor", "mac",
                                    env=env or self.env())
         return result, json.loads(result.stdout)
 
@@ -53,7 +53,7 @@ class DoctorEnvironmentTests(BuildTestCase):
 
     def test_machine_checks_still_run_without_a_selected_checkout(self):
         self.sandbox.write_config([])
-        result = self.sandbox.bdev("--json", "--config", self.config, "doctor", "mac", env=self.env(),
+        result = self.sandbox.bcore("--json", "--config", self.config, "doctor", "mac", env=self.env(),
                                    cwd=self.sandbox.root)
         document = json.loads(result.stdout)
         self.assertEqual(self.check(document, "git")["status"], "pass")

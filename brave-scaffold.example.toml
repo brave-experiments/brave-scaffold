@@ -30,5 +30,5 @@ core = "/work/browser/_bad_scm/workspace/src/brave"
 # Directory containing the .envrc that supplies this checkout's tool paths.
 # Commands load it with direnv before running checkout tools.
 # Relative to brave-scaffold.toml: this example loads environments/main/.envrc.
-# `bdev env init` creates the file; you review it and run direnv allow.
+# `bcore env init` creates the file; you review it and run direnv allow.
 direnv_dir = "environments/main"

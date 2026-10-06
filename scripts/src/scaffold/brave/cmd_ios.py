@@ -259,13 +259,13 @@ def select_artifact(ctx, identity):
         raise ScaffoldError(
             "ARTIFACT_MISSING", "No iOS Simulator application was found for this checkout.",
             details={"searched": str(ios.app_in(ios.default_derived_data(identity)))},
-            repairs=[repair(["bdev", "build", "ios", "--checkout", str(identity.core)]),
-                     repair(["bdev", "build-run", "ios", "--checkout", str(identity.core)])])
+            repairs=[repair(["bcore", "build", "ios", "--checkout", str(identity.core)]),
+                     repair(["bcore", "build-run", "ios", "--checkout", str(identity.core)])])
     if len(candidates) > 1:
         raise ScaffoldError(
             "ARTIFACT_AMBIGUOUS", "More than one application matches; choose one with --artifact.",
             details={"candidates": [item["path"] for item in candidates]},
-            repairs=[repair(["bdev", "run", "ios", "--artifact", candidates[0]["path"]],
+            repairs=[repair(["bcore", "run", "ios", "--artifact", candidates[0]["path"]],
                             note="Example only; choose the application you intend to run.")])
     return candidates[0]
 

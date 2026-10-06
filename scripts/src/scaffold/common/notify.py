@@ -17,7 +17,7 @@ DEFAULT_POLICY = "major"
 DELIVERIES = ("desktop", "bell", "both")
 DEFAULT_DELIVERY = "desktop"
 TERMINAL_DEVICE = "/dev/tty"
-BACKEND_VARIABLE = "BDEV_NOTIFY_BACKEND"
+BACKEND_VARIABLE = "BCORE_NOTIFY_BACKEND"
 
 # Operations that `major` covers. Everything else that performs work is notified only by `always`.
 MAJOR_COMMANDS = frozenset({
@@ -81,7 +81,7 @@ def compose(command, result, elapsed, log_path=None):
         outcome = "cancelled"
     else:
         outcome = "failed"
-    title = "bdev %s %s" % (command, outcome)
+    title = "bcore %s %s" % (command, outcome)
     error = result.error or {}
     if outcome == "failed":
         detail = "exit %d" % result.exit_code

@@ -12,7 +12,7 @@ from pathlib import Path
 from unittest import mock
 
 import tests.support  # noqa: F401  (puts the source tree on sys.path)
-from scaffold.brave import bdev
+from scaffold.brave import bcore
 from scaffold.brave.registry import REGISTRY
 from scaffold.common import notify
 from scaffold.common.config import load_config
@@ -60,14 +60,14 @@ class NotificationTests(unittest.TestCase):
         return str(path)
 
     def run_cli(self, argv, policy=None, handler=None, notifier=None, delivery=None, bell=None):
-        """Run bdev.main with the named command's handler replaced; return (code, out, err, notifier)."""
+        """Run bcore.main with the named command's handler replaced; return (code, out, err, notifier)."""
         notifier = notifier or FakeNotifier()
         argv = list(argv) + ["--config", self.config(policy, delivery)]
         out, err = io.StringIO(), io.StringIO()
-        spec, _ = bdev.resolve_command(argv)
+        spec, _ = bcore.resolve_command(argv)
         handler = handler or (lambda ctx: Result(command=spec.name, text="done"))
         with mock.patch.object(spec, "handler", handler):
-            code = bdev.main(argv, stdout=out, stderr=err, notifier=notifier, bell=bell)
+            code = bcore.main(argv, stdout=out, stderr=err, notifier=notifier, bell=bell)
         return code, out.getvalue(), err.getvalue(), notifier
 
     def test_configuration_policy_values(self):
@@ -129,14 +129,14 @@ class NotificationTests(unittest.TestCase):
     def test_capabilities_honors_configured_policy_without_requiring_configuration(self):
         fake = FakeNotifier()
         config = self.config("always")
-        code = bdev.main(["capabilities", "--config", config], stdout=io.StringIO(), stderr=io.StringIO(),
+        code = bcore.main(["capabilities", "--config", config], stdout=io.StringIO(), stderr=io.StringIO(),
                          notifier=fake)
         self.assertEqual((code, len(fake.sent)), (0, 1))
         fake = FakeNotifier()
-        bdev.main(["capabilities", "--config", str(self.root / "missing.toml")], stdout=io.StringIO(),
+        bcore.main(["capabilities", "--config", str(self.root / "missing.toml")], stdout=io.StringIO(),
                   stderr=io.StringIO(), notifier=fake)
         self.assertEqual(fake.sent, [])
-        bdev.main(["capabilities", "--config", str(self.root / "missing.toml"), "--notify"],
+        bcore.main(["capabilities", "--config", str(self.root / "missing.toml"), "--notify"],
                   stdout=io.StringIO(), stderr=io.StringIO(), notifier=fake)
         self.assertEqual(len(fake.sent), 1)
 
@@ -146,8 +146,8 @@ class NotificationTests(unittest.TestCase):
                 self.assertEqual(self.run_cli(argv + ["--notify=always"])[3].sent, [])
         fake = FakeNotifier()
         out = io.StringIO()
-        bdev.main(["build", "--help", "--notify=always"], stdout=out, stderr=io.StringIO(), notifier=fake)
-        bdev.main(["--help"], stdout=io.StringIO(), stderr=io.StringIO(), notifier=fake)
+        bcore.main(["build", "--help", "--notify=always"], stdout=out, stderr=io.StringIO(), notifier=fake)
+        bcore.main(["--help"], stdout=io.StringIO(), stderr=io.StringIO(), notifier=fake)
         self.assertEqual(fake.sent, [])
 
     def test_combined_command_sends_one_notification_with_the_final_outcome(self):
@@ -166,10 +166,10 @@ class NotificationTests(unittest.TestCase):
     def test_success_text_and_contents(self):
         _, _, _, fake = self.run_cli(["build"])
         title, body = fake.sent[0]
-        self.assertEqual(title, "bdev build succeeded")
+        self.assertEqual(title, "bcore build succeeded")
         self.assertIn("Elapsed:", body)
         self.assertIn("Log: ", body)
-        self.assertIn(".bdev", body)
+        self.assertIn(".bcore", body)
 
     def test_checkout_name_appears(self):
         def handler(ctx):
@@ -274,8 +274,8 @@ class NotificationTests(unittest.TestCase):
         for delivery, bell in (("desktop", None), ("bell", FakeBell())):
             code, out, err, _ = self.run_cli(["build", "--json"], handler=handler, delivery=delivery,
                                              bell=bell, notifier=FakeNotifier())
-            log = next((self.root / ".bdev" / "logs").glob("*.log")).read_text()
-            for path in (self.root / ".bdev" / "logs").glob("*.log"):
+            log = next((self.root / ".bcore" / "logs").glob("*.log")).read_text()
+            for path in (self.root / ".bcore" / "logs").glob("*.log"):
                 path.unlink()
             results[delivery] = (code, out, err.splitlines()[:-1], log)
         self.assertEqual(results["bell"][:2], results["desktop"][:2])

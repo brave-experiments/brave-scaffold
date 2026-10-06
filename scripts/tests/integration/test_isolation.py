@@ -24,11 +24,11 @@ class IsolationTests(SandboxTest):
         before = tree_snapshot(core.parents[3])
         for args in (["setup", "--config", config], ["checkout", "add", "main", str(core), "--config", config],
                      ["env", "init", "--checkout", "main", "--config", config]):
-            self.assertEqual(self.sandbox.bdev(*args).returncode, 0, args)
+            self.assertEqual(self.sandbox.bcore(*args).returncode, 0, args)
         self.sandbox.approve("main")
         for args in (["context"], ["doctor", "mac"], ["env", "check"], ["env", "export", "--format", "bash"],
                      ["drift"], ["clean"], ["build", "--plan"], ["sync", "--plan"], ["capabilities"]):
-            result = self.sandbox.bdev(*args, "--checkout", "main", "--config", config)
+            result = self.sandbox.bcore(*args, "--checkout", "main", "--config", config)
             self.assertNotEqual(result.returncode, 1, (args, result.stderr))
         self.assertEqual(before, tree_snapshot(core.parents[3]), "no file, config, hook, or exclude changed in Core")
 
@@ -37,13 +37,13 @@ class IsolationTests(SandboxTest):
         second = self.sandbox.make_checkout("second")
         self.sandbox.write_config([("first", first, "environments/first"), ("second", second, "environments/second")])
         for name in ("first", "second"):
-            self.assertEqual(self.sandbox.bdev("env", "init", "--checkout", name, "--config",
+            self.assertEqual(self.sandbox.bcore("env", "init", "--checkout", name, "--config",
                                                str(self.sandbox.config)).returncode, 0)
             self.sandbox.approve(name)
         for core in (first, second, first):
             nested = core / "components"
             nested.mkdir(exist_ok=True)
-            result = self.sandbox.bdev("--config", str(self.sandbox.config), "run", "x", cwd=nested, tool="bpm")
+            result = self.sandbox.bcore("--config", str(self.sandbox.config), "run", "x", cwd=nested, tool="bpm")
             self.assertEqual(result.returncode, 0, result.stderr)
             record = self.sandbox.records()[-1]
             self.assertEqual(record["cwd"], str(core))
@@ -54,30 +54,30 @@ class IsolationTests(SandboxTest):
         first = self.sandbox.make_checkout("first")
         second = self.sandbox.make_checkout("second")
         self.sandbox.write_config([("first", first, "environments/first")])
-        self.sandbox.bdev("env", "init", "--checkout", "first", "--config", str(self.sandbox.config))
+        self.sandbox.bcore("env", "init", "--checkout", "first", "--config", str(self.sandbox.config))
         envrc = self.sandbox.root / "config" / "environments" / "first" / ".envrc"
         other_node = second / "third_party" / "node" / "node-mac-arm64" / "bin"
         envrc.write_text(envrc.read_text() + 'export PATH="%s:$PATH"\nexport BRAVE_LAUNCHER_CHECKOUT_DIR="%s"\n' %
                          (other_node, second))
         self.sandbox.approve("first")
-        result = self.sandbox.bdev("--json", "--config", str(self.sandbox.config), "--checkout", "first", "run", "x",
+        result = self.sandbox.bcore("--json", "--config", str(self.sandbox.config), "--checkout", "first", "run", "x",
                                    tool="bpm")
         self.assertEqual(json.loads(result.stdout)["error"]["code"], "CHECKOUT_ENV_CONFLICT")
         self.assertEqual(self.sandbox.records(), [])
         envrc.write_text(envrc.read_text().replace('export BRAVE_LAUNCHER_CHECKOUT_DIR="%s"\n' % second, ""))
         self.sandbox.approve("first")
-        result = self.sandbox.bdev("--config", str(self.sandbox.config), "--checkout", "first", "run", "x", tool="bpm")
+        result = self.sandbox.bcore("--config", str(self.sandbox.config), "--checkout", "first", "run", "x", tool="bpm")
         self.assertEqual(result.returncode, 0, result.stderr)
         record = self.sandbox.records()[-1]
         node_bin = first / "third_party" / "node" / "node-mac-arm64" / "bin"
         self.assertEqual(record["path"].split(os.pathsep)[1], str(node_bin), "own tools stay first")
         self.assertTrue(record["argv"][0].startswith(str(first)))
 
-    def test_a_competing_bdev_on_path_does_not_redirect_generated_environments(self):
+    def test_a_competing_bcore_on_path_does_not_redirect_generated_environments(self):
         core = self.sandbox.make_checkout("main")
         self.sandbox.prepare_environment("main")
-        write_executable(self.sandbox.bin / "bdev", "#!/bin/sh\necho competing >&2\nexit 9\n")
-        result = self.sandbox.bdev("env", "check", "--checkout", "main", "--config", str(self.sandbox.config))
+        write_executable(self.sandbox.bin / "bcore", "#!/bin/sh\necho competing >&2\nexit 9\n")
+        result = self.sandbox.bcore("env", "check", "--checkout", "main", "--config", str(self.sandbox.config))
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertNotIn("competing", result.stderr)
 
@@ -86,7 +86,7 @@ class IsolationTests(SandboxTest):
         self.sandbox.prepare_environment("main")
         envrc = self.sandbox.root / "config" / "environments" / "main" / ".envrc"
         before = envrc.read_text()
-        self.sandbox.bdev("checkout", "add", "main", str(core), "--config", str(self.sandbox.config))
+        self.sandbox.bcore("checkout", "add", "main", str(core), "--config", str(self.sandbox.config))
         self.assertEqual(envrc.read_text(), before)
 
 

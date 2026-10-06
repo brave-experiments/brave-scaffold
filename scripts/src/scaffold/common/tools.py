@@ -253,7 +253,7 @@ def payload_freshness(identity, layout, manager, log=None):
 
 
 def tools_setup_command(identity):
-    return ["bdev", "tools", "setup", "--checkout", str(identity.core)]
+    return ["bcore", "tools", "setup", "--checkout", str(identity.core)]
 
 
 def inspect_toolchain(identity, log=None):

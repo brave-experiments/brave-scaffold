@@ -1,6 +1,6 @@
 # Commands
 
-`bdev <command> --help` is the authoritative reference for arguments, defaults,
+`bcore <command> --help` is the authoritative reference for arguments, defaults,
 and side effects. This page is the readable guide to what exists, how results
 look, and what the codes mean. Only delivered commands appear here.
 
@@ -31,7 +31,7 @@ look, and what the codes mean. Only delivered commands appear here.
   use `--` to forward a conflicting option to a package command.
 - Set `[logging] verbosity = "normal"` (or `"quiet"` / `"verbose"`) in configuration
   for a persistent default. CLI verbosity wins.
-- Each configured invocation saves a mode-0600 log under `.bdev/logs/` beside its
+- Each configured invocation saves a mode-0600 log under `.bcore/logs/` beside its
   configuration, at every verbosity level. `--plan` previews create no log files.
   Pure `env export` and checkout navigation with `cd` create no log and remain silent on stderr on success. The final stderr line reports elapsed
   time and the log path, including in JSON mode. The JSON envelope stays unchanged.
@@ -52,7 +52,7 @@ look, and what the codes mean. Only delivered commands appear here.
   Direct `bpm` and `vpython3` stdout (or combined terminal output) stays raw and
   unredacted in normal text mode so prompts and binary output still work; its saved
   copy is redacted text.
-  `bdev shell` keeps direct terminal access, including prompts and output, at every
+  `bcore shell` keeps direct terminal access, including prompts and output, at every
   verbosity level; its interactive output is not captured. The child receives the
   original arguments and environment.
 - Completion notifications are described under
@@ -87,7 +87,7 @@ checks or your action.
 
 ## Support repository command
 
-`scripts/sync-support-repos` manages shared repositories separately from `bdev`.
+`scripts/sync-support-repos` manages shared repositories separately from `bcore`.
 It accepts status, prune, and explicit discard operations
 without selecting a browser checkout. See [support repositories](support-repositories.md).
 
@@ -95,31 +95,31 @@ without selecting a browser checkout. See [support repositories](support-reposit
 
 | Command | Purpose | Side effects |
 | --- | --- | --- |
-| `bdev setup` | Check prerequisites, create `brave-scaffold.toml` if missing, list next steps | Writes the scaffold configuration only |
-| `bdev checkout add <name> <path>` | Register an existing checkout under an alias | Edits `brave-scaffold.toml` |
-| `bdev checkout list` | Show registrations, environment state, invalid entries | None |
-| `bdev env init` | Generate the scaffold-owned `.envrc`, print the approval command | Writes the environment file and the record; never approves |
-| `bdev env export --format bash` | Print exports for a generated `.envrc` | None; runs no direnv |
-| `bdev env check` | Compare the loaded environment and tools to the checkout | None; evaluates the approved `.envrc` |
-| `bdev shell` | Child shell in Core with the environment loaded | Whatever you do in the shell |
-| `bdev status` | Git state, prior build/test outcomes, output warnings, free disk space | None |
-| `bdev context` | Resolved checkout, selection source, environment, tools | None |
-| `bdev capabilities` | Supported, limited, unverified, unsupported combinations | None; needs no checkout |
-| `bdev doctor [scope]` | Named readiness checks (`mac`, `android`, `ios`, `rbe`, `shell`, `signing`) | None |
-| `bdev build [target]` | Prepare, compile, and verify the output ([macOS](macos.md), [iOS](ios.md)); iOS runs `xcodebuild` | Writes build output; may apply patches |
-| `bdev test [target]` | Run the tests changed on this branch or in the working tree ([details](#test)) | Reads Git state; effects of each suite it runs |
-| `bdev test [target] --file PATH` | Run the tests in one file, changed or not ([details](#test)) | Same |
-| `bdev test [target] <suite>` | Compile if needed and run one suite ([macOS](macos.md), [Android](android.md#tests)); `--device` or `--all-devices` for Android device suites | Writes build output; runs tests; Android temporarily applies the support test overlay to Core's `build/commands`; preserves an existing overlay |
-| `bdev run [target]` | Restart the browser with an existing output; never builds | Quits and relaunches the application |
-| `bdev build-run` (`br`), `sync-build` (`sb`), `sync-build-run` (`sbr`) | Combined workflows; extras go to the build phase | Effects of each phase |
-| `bdev deploy android` | Install the APK and launch it; same as `run android`; `--all-devices` selects all compatible devices ([Android](android.md)) | Installs over the existing app and restarts the package on selected devices |
-| `bdev android setup` | Prepare shared Android-on-Mac support and link this workspace | Uses the network; writes the shared checkout and preserves existing workspace copies |
-| `bdev sync [targets]` | Core source sync ([details](source-and-cleanup.md)) | Changes sources and dependencies |
-| `bdev drift [--diff]` | Compare patched Chromium files with patch metadata | None |
-| `bdev patches update` | Regenerate patch files from local Chromium edits | Rewrites patch files; commits nothing |
-| `bdev clean [target]` | Preview generated build outputs of the selected checkout; `--execute` deletes them ([details](source-and-cleanup.md)) | Preview writes nothing; `--execute` deletes directories under `src/out` |
-| `bdev tools setup` | Explicit repair of checkout-local Node/package-manager payloads | Runs the checkout's payload installer inside the checkout |
-| `bdev vpython3 [options] [--] <args>` | Checkout-local Python | Whatever the program does |
+| `bcore setup` | Check prerequisites, create `brave-scaffold.toml` if missing, list next steps | Writes the scaffold configuration only |
+| `bcore checkout add <name> <path>` | Register an existing checkout under an alias | Edits `brave-scaffold.toml` |
+| `bcore checkout list` | Show registrations, environment state, invalid entries | None |
+| `bcore env init` | Generate the scaffold-owned `.envrc`, print the approval command | Writes the environment file and the record; never approves |
+| `bcore env export --format bash` | Print exports for a generated `.envrc` | None; runs no direnv |
+| `bcore env check` | Compare the loaded environment and tools to the checkout | None; evaluates the approved `.envrc` |
+| `bcore shell` | Child shell in Core with the environment loaded | Whatever you do in the shell |
+| `bcore status` | Git state, prior build/test outcomes, output warnings, free disk space | None |
+| `bcore context` | Resolved checkout, selection source, environment, tools | None |
+| `bcore capabilities` | Supported, limited, unverified, unsupported combinations | None; needs no checkout |
+| `bcore doctor [scope]` | Named readiness checks (`mac`, `android`, `ios`, `rbe`, `shell`, `signing`) | None |
+| `bcore build [target]` | Prepare, compile, and verify the output ([macOS](macos.md), [iOS](ios.md)); iOS runs `xcodebuild` | Writes build output; may apply patches |
+| `bcore test [target]` | Run the tests changed on this branch or in the working tree ([details](#test)) | Reads Git state; effects of each suite it runs |
+| `bcore test [target] --file PATH` | Run the tests in one file, changed or not ([details](#test)) | Same |
+| `bcore test [target] <suite>` | Compile if needed and run one suite ([macOS](macos.md), [Android](android.md#tests)); `--device` or `--all-devices` for Android device suites | Writes build output; runs tests; Android temporarily applies the support test overlay to Core's `build/commands`; preserves an existing overlay |
+| `bcore run [target]` | Restart the browser with an existing output; never builds | Quits and relaunches the application |
+| `bcore build-run` (`br`), `sync-build` (`sb`), `sync-build-run` (`sbr`) | Combined workflows; extras go to the build phase | Effects of each phase |
+| `bcore deploy android` | Install the APK and launch it; same as `run android`; `--all-devices` selects all compatible devices ([Android](android.md)) | Installs over the existing app and restarts the package on selected devices |
+| `bcore android setup` | Prepare shared Android-on-Mac support and link this workspace | Uses the network; writes the shared checkout and preserves existing workspace copies |
+| `bcore sync [targets]` | Core source sync ([details](source-and-cleanup.md)) | Changes sources and dependencies |
+| `bcore drift [--diff]` | Compare patched Chromium files with patch metadata | None |
+| `bcore patches update` | Regenerate patch files from local Chromium edits | Rewrites patch files; commits nothing |
+| `bcore clean [target]` | Preview generated build outputs of the selected checkout; `--execute` deletes them ([details](source-and-cleanup.md)) | Preview writes nothing; `--execute` deletes directories under `src/out` |
+| `bcore tools setup` | Explicit repair of checkout-local Node/package-manager payloads | Runs the checkout's payload installer inside the checkout |
+| `bcore vpython3 [options] [--] <args>` | Checkout-local Python | Whatever the program does |
 | `bpm [options] <package args>` | Checkout's package manager | Whatever the package command does |
 
 Sync commands run Core's package `sync` script with its normal resets, patches,
@@ -134,7 +134,7 @@ positionals and scaffold options; every other argument goes unchanged to that
 script, after the generated ones, in the same order. Unknown options and extra
 positionals are not errors. A value after an unknown option is never read as the
 target. Use `--` to forward a token that is also a scaffold option
-(`bdev build -- --json`). The first `--` is consumed; later ones are forwarded.
+(`bcore build -- --json`). The first `--` is consumed; later ones are forwarded.
 Combined commands send the tail to their build phase only; `sync` receives none
 of it. Commands that run no package script (`context`, `doctor`, `run`, `clean`,
 `drift`) reject extra arguments. The effective command and directory are logged
@@ -153,7 +153,7 @@ argument on, every token (including `--json` and `--checkout`) goes to the
 package manager. A leading `--` ends scaffold options: `bpm -- --help` asks the
 package manager for help, `bpm --help` (or `bpm --checkout main --help`, help among the
 leading scaffold options) shows scaffold help, and `bpm run test --help` passes `--help`
-to the package manager. `bdev vpython3` follows the same rule: `bdev vpython3 script.py
+to the package manager. `bcore vpython3` follows the same rule: `bcore vpython3 script.py
 --help` runs the script with `--help`.
 
 The package manager comes from `devEngines.packageManager` in Core's
@@ -172,10 +172,10 @@ Commands that do not forward arguments (for example `capabilities`, `context`, `
 `clean`) reject anything after a `--` with `INVALID_INPUT` and run nothing; an empty
 trailing `--` is accepted.
 
-### `bdev vpython3`
+### `bcore vpython3`
 
 ```sh
-bdev vpython3 [--checkout <name-or-path>] [--cwd <directory>] [--] <arguments...>
+bcore vpython3 [--checkout <name-or-path>] [--cwd <directory>] [--] <arguments...>
 ```
 
 Runs the checkout's vendored `vpython3`. The checkout only chooses the
@@ -204,7 +204,7 @@ Every command's JSON document has the same top-level fields, defined by
     "code": "CHECKOUT_REQUIRED",
     "message": "No checkout is selected: the current directory is not inside a Brave checkout.",
     "details": {"candidates": ["main"], "example": "--checkout /path/to/src/brave"},
-    "repairs": [{"argv": ["bdev", "checkout", "list"], "cwd": null, "requires_user_action": false}]
+    "repairs": [{"argv": ["bcore", "checkout", "list"], "cwd": null, "requires_user_action": false}]
   },
   "artifacts": [],
   "logs": [],
@@ -292,7 +292,7 @@ something, so a plan can be compared with what was dispatched.
 
 ## Doctor
 
-`bdev doctor [mac|android|ios|rbe|shell|signing]` runs named checks, each `pass`, `blocker`, `warning`,
+`bcore doctor [mac|android|ios|rbe|shell|signing]` runs named checks, each `pass`, `blocker`, `warning`,
 `unsupported`, or `not_checked` (in text output marked ✅, ❌, ⚠️, 🚫, and ❔, with a legend line;
 JSON keeps the status words), marked required or optional. Without a scope it
 runs every delivered scope. A blocker in a required check gives
@@ -313,27 +313,27 @@ approved environment. Text reports group checks by area, show shared checks once
 and end with a readiness summary and distinct repair suggestions. With no
 configured or selected checkout, dependent checks appear as one selection notice in text;
 JSON retains each unevaluated check. Select one explicitly with
-`bdev --checkout <alias> doctor`. Signing checks inspect configuration; they do
+`bcore --checkout <alias> doctor`. Signing checks inspect configuration; they do
 not prove that a signing attempt will succeed.
 Doctor never installs, updates, approves, or repairs.
 
 ## Support
 
-`bdev capabilities` lists every combination of host, target, operation,
+`bcore capabilities` lists every combination of host, target, operation,
 configuration, and architecture with a status. A combination is `supported` only
 after real validation on a checkout; until then it is reported `unverified`.
 `limited` combinations may work but are outside the validated workflow.
 
 ## test
 
-`bdev test` selects tests three ways. The selectors are mutually exclusive, and a conflict
+`bcore test` selects tests three ways. The selectors are mutually exclusive, and a conflict
 is refused before any work starts.
 
 | Form | Selection |
 | --- | --- |
-| `bdev test [mac\|android] [--base REF]` | Test files changed on this branch, for the named platform, otherwise the configured platform, otherwise the host |
-| `bdev test [mac\|android] --file PATH` | The tests in that file, whether or not it changed |
-| `bdev test [mac\|android] <suite> [--filter PATTERN]` | One whole suite, or the filtered part of it |
+| `bcore test [mac\|android] [--base REF]` | Test files changed on this branch, for the named platform, otherwise the configured platform, otherwise the host |
+| `bcore test [mac\|android] --file PATH` | The tests in that file, whether or not it changed |
+| `bcore test [mac\|android] <suite> [--filter PATTERN]` | One whole suite, or the filtered part of it |
 
 Add `--plan` to show the selection without running anything. Discovery reads Git state only.
 
@@ -344,7 +344,7 @@ branch and push status are not consulted. Deleted tests are ignored. "Changed te
 means tests in modified test files; tests are not inferred from production-code changes.
 Changed test files for another platform are listed as not selected.
 
-`--file` takes one path, absolute or relative to the directory where you run `bdev`. It must be a file
+`--file` takes one path, absolute or relative to the directory where you run `bcore`. It must be a file
 in the selected checkout's Core. Without a platform argument or forwarded `--target_os`, the file decides the platform.
 For discovery and file selection, forwarded `--target_os` overrides the configured or
 host default; a conflict with a named platform fails before execution, including under `--plan`.
@@ -394,16 +394,16 @@ the selected platform remain listed separately under “Not run.”
 
 ## cd
 
-`bdev cd main` and `bdev cd alt-1` enter the selected checkout’s `src/brave`
-directory when `scripts/bdev-shell.sh` is sourced in Bash or Zsh and `scripts/`
+`bcore cd main` and `bcore cd alt-1` enter the selected checkout’s `src/brave`
+directory when `scripts/bcore-shell.sh` is sourced in Bash or Zsh and `scripts/`
 is on `PATH`. The function also accepts `--notify` and `--notify=POLICY` with the
 checkout name. Other commands pass through to the launcher. Without the shell
-function, `bdev cd <checkout>` prints the resolved directory. An unknown checkout
+function, `bcore cd <checkout>` prints the resolved directory. An unknown checkout
 returns an error and leaves the current directory unchanged.
 
 ## Completion notifications
 
-`bdev` can post one macOS desktop notification when a command finishes. It uses the
+`bcore` can post one macOS desktop notification when a command finishes. It uses the
 system `osascript` command: no service runs, nothing is installed, and Brave Core is
 not involved. Choose the policy with `[notifications] policy` in `brave-scaffold.toml`
 (default `major`) or per invocation with `--notify` (meaning `always`) or
@@ -451,14 +451,14 @@ notifications for your terminal in System Settings. Other hosts send no desktop 
 
 ## Checkout status
 
-Run `bdev status` inside a checkout, or `bdev status --checkout main`. Use
+Run `bcore status` inside a checkout, or `bcore status --checkout main`. Use
 `--json` for all changed paths and structured history. Status reads local Git refs
 without fetching and does not load direnv, run doctor, or change checkout files.
 It reports Core's branch, HEAD, upstream, staged/unstaged/untracked changes, and
 ahead/behind counts against local `origin/master` when available.
 
 By default, operation history includes only runs recorded on the current branch.
-Use `bdev status --all-branches` to include other branches and older records whose
+Use `bcore status --all-branches` to include other branches and older records whose
 branch is unknown. The latest outcome is shown per branch, platform, and suite.
 Branches are recorded when operations start; commit ancestry is not used to guess
 missing branch names. Detached HEAD has no current-branch history; use

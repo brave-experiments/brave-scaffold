@@ -2,7 +2,7 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this file,
 # You can obtain one at https://mozilla.org/MPL/2.0/.
-"""`bdev test` without a suite: changed or named tests become suite phases that run through the single-suite path."""
+"""`bcore test` without a suite: changed or named tests become suite phases that run through the single-suite path."""
 
 import json
 import subprocess
@@ -62,7 +62,7 @@ class TestChangedTests(AndroidTestsTestCase):
         self.assertEqual([item["path"] for item in document["data"]["discovery"]["unmapped"]],
                          ["browser/extensions/android/n_unittest.cc"])
         self.assertEqual(result.stderr.count("browser/extensions/android/n_unittest.cc"), 1, "listed once, not repeated")
-        self.assertIn("Not run (Android native tests are not available through bdev):", result.stderr)
+        self.assertIn("Not run (Android native tests are not available through bcore):", result.stderr)
         self.assertIn("--filter=FooTest.*", result.stderr, "the filters run are in the log")
         self.assertIn("Phase 2/2: android brave_java_unit_tests", result.stderr)
         self.assertEqual([item["path"] for item in document["data"]["discovery"]["deselected"]], ["browser/foo_unittest.cc"])
@@ -76,7 +76,7 @@ class TestChangedTests(AndroidTestsTestCase):
         self.assertEqual(self.adb_calls(), [])
 
     def summary_run(self, **env):
-        return self.sandbox.bdev("--config", self.config, "--checkout", "main", "test", "android",
+        return self.sandbox.bcore("--config", self.config, "--checkout", "main", "test", "android",
                                  "--base", "base-ref", env=self.env(FAKE_ADB_DEVICES=ONE_DEVICE, **env))
 
     def test_final_summary_counts_each_suite_and_repeats_unmapped_files(self):
@@ -102,7 +102,7 @@ class TestChangedTests(AndroidTestsTestCase):
                                        ("brave_java_unit_tests", "FooTest.*")):
             index = next(i for i, row in enumerate(rows) if suite in row)
             self.assertEqual(rows[index + 1], "     --filter=" + expected_filter)
-        notice = "Not run (Android native tests are not available through bdev):"
+        notice = "Not run (Android native tests are not available through bcore):"
         for output in (result.stderr, summary):
             self.assertIn(notice, output)
             self.assertIn("  browser/extensions/android/n_unittest.cc", output)
@@ -118,7 +118,7 @@ class TestChangedTests(AndroidTestsTestCase):
 
     def test_mac_summary_marks_success_without_claiming_verified_counts(self):
         self.add_tests("unit", "browser")
-        result = self.sandbox.bdev("--config", self.config, "--checkout", "main", "test", "mac",
+        result = self.sandbox.bcore("--config", self.config, "--checkout", "main", "test", "mac",
                                    "--base", "base-ref", env=self.env())
         self.assertEqual(result.returncode, 0, result.stderr)
         summary = result.stdout.split("Test summary:", 1)[1]
@@ -285,7 +285,7 @@ class TestChangedTests(AndroidTestsTestCase):
         self.assertEqual(self.runner_calls(), [])
 
     def file_run(self, *args, cwd=None, **env):
-        return self.sandbox.bdev("--json", "--config", self.config, "--checkout", "main", "test", *args,
+        return self.sandbox.bcore("--json", "--config", self.config, "--checkout", "main", "test", *args,
                                  cwd=cwd or self.core, env=self.env(FAKE_ADB_DEVICES=ONE_DEVICE, **env))
 
     def test_a_file_runs_its_tests_from_a_relative_path_whether_or_not_it_changed(self):

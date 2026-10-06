@@ -87,7 +87,7 @@ class Parsed:
         return bool(self.values.get("json")) or self.values.get("format") == "json"
 
 
-def usage_line(spec, prefix="bdev"):
+def usage_line(spec, prefix="bcore"):
     parts = [prefix] if spec.name == prefix else [prefix, spec.name]
     for positional in spec.positionals:
         parts.append("<%s>" % positional.name if positional.required else "[<%s>]" % positional.name)
@@ -210,7 +210,7 @@ def detect_json(tokens):
     return False
 
 
-def render_help(spec, prefix="bdev"):
+def render_help(spec, prefix="bcore"):
     lines = ["Usage: " + usage_line(spec, prefix), "", spec.summary, ""]
     if spec.aliases:
         lines.append("Aliases: %s" % ", ".join(spec.aliases))

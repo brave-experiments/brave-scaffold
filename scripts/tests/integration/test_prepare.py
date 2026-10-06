@@ -67,7 +67,7 @@ class PatchPreparationTests(BuildTestCase):
         self.assertEqual([f["path"] for f in document["error"]["details"]["files"]], ["base/BUILD.gn"])
         self.assertEqual(len(self.node_calls()), calls, "neither apply_patches nor build ran")
         self.assertEqual((self.src / "base" / "BUILD.gn").read_text(), "my local experiment\n")
-        self.assertEqual(document["error"]["repairs"][0]["argv"][:3], ["bdev", "drift", "--diff"])
+        self.assertEqual(document["error"]["repairs"][0]["argv"][:3], ["bcore", "drift", "--diff"])
 
     def test_drift_without_any_earlier_record_is_uncertain_ownership(self):
         self.update_patch_upstream()
@@ -153,7 +153,7 @@ print("suite test output", file=sys.stderr, flush=True)
         self.assertEqual(document["data"]["cwd"], str(self.core))
         self.assertIn("suite build output", result.stderr)
         self.assertIn("suite test output", result.stderr)
-        records = self.sandbox.config.parent / ".bdev" / "operations"
+        records = self.sandbox.config.parent / ".bcore" / "operations"
         record = next(json.loads(path.read_text()) for path in records.glob("*.json")
                       if json.loads(path.read_text())["operation_id"] == document["operation_id"])
         self.assertEqual(record["details"]["effective"]["output_dir"], str(self.src / "out" / "selected tests"))
@@ -163,7 +163,7 @@ print("suite test output", file=sys.stderr, flush=True)
 
     def test_unresolved_ninja_directory_does_not_crash_or_change_default_output_record(self):
         self.assertEqual(self.document("build")[0].returncode, 0)
-        state = next((self.sandbox.config.parent / ".bdev" / "outputs").rglob("*.json"))
+        state = next((self.sandbox.config.parent / ".bcore" / "outputs").rglob("*.json"))
         before = state.read_bytes()
         result, document = self.document("test", "brave_browser_tests", "--ninja", "C:other-output")
         self.assertEqual((result.returncode, document["child_exit_code"]), (0, 0), result.stderr)
@@ -189,7 +189,7 @@ print("suite test output", file=sys.stderr, flush=True)
         result, document = self.document("test", "--filter", "Example.*")
         self.assertEqual((result.returncode, document["error"]["code"]), (2, "INVALID_INPUT"))
         self.assertIn("--filter narrows a named suite", document["error"]["message"])
-        self.assertIn("bdev test brave_unit_tests", document["error"]["details"]["example"])
+        self.assertIn("bcore test brave_unit_tests", document["error"]["details"]["example"])
         self.assertEqual(self.node_calls(), [])
         result, document = self.document("test", "not-a-suite")
         self.assertEqual(document["error"]["code"], "INVALID_INPUT")

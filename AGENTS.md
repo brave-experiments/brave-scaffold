@@ -17,6 +17,11 @@ Use the configured human Git identity; never substitute an agent identity.
 
 ## Product boundaries
 
+`bcore` handles Brave Core checkout operations: readiness checks, sync, build,
+test, run, and related inspection. It is not the general entry point for Brave
+developer tooling. A feature belongs here because it operates on a Core checkout,
+not merely because Core developers use it.
+
 Brave Scaffold is entirely supplementary to Brave Core and optional to use.
 Adopting or using it must require no changes to Brave Core. Preserve Core's
 supported standalone workflow. State this clearly in the README and setup guides;

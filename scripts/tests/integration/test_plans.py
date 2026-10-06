@@ -91,7 +91,7 @@ class MacPlanTests(BuildTestCase):
         document = self.plan("build")
         step = by_name(document)["patch-preparation"]
         self.assertTrue(set(targets) <= set(step["writes"]))
-        result = self.sandbox.bdev("--config", self.config, "--checkout", "main", "build", "--plan", env=self.env())
+        result = self.sandbox.bcore("--config", self.config, "--checkout", "main", "build", "--plan", env=self.env())
         self.assertIn("writes 122 file", result.stdout)  # 60 targets, 60 metadata files, two version files
         self.assertLess(result.stdout.count("planned/file_"), 60)
 
@@ -130,7 +130,7 @@ class MacPlanTests(BuildTestCase):
         self.assertIn(str(self.src), step["writes"])
 
     def records(self):
-        directory = self.sandbox.config.parent / ".bdev" / "operations"
+        directory = self.sandbox.config.parent / ".bcore" / "operations"
         return [json.loads(path.read_text()) for path in sorted(directory.glob("*.json"))]
 
     def test_unresolved_prerequisites_are_reported_not_raised(self):
@@ -178,7 +178,7 @@ class AndroidPlanTests(AndroidTestCase):
 
     def plan(self, *args, **extra):
         env = self.env(FAKE_ADB_DEVICES=extra.pop("devices", "emulator-5554,device"), **extra)
-        result = self.sandbox.bdev("--json", "--config", self.config, "--checkout", "main", *args, "--plan", env=env)
+        result = self.sandbox.bcore("--json", "--config", self.config, "--checkout", "main", *args, "--plan", env=env)
         self.assertEqual(result.returncode, 0, result.stderr)
         return json.loads(result.stdout)
 
@@ -201,11 +201,11 @@ class AndroidPlanTests(AndroidTestCase):
     def test_executed_android_steps_carry_the_planned_descriptions(self):
         planned = by_name(self.plan("build-run", "android"))
         env = self.env(FAKE_ADB_DEVICES="emulator-5554,device")
-        result = self.sandbox.bdev("--json", "--config", self.config, "--checkout", "main", "build-run", "android",
+        result = self.sandbox.bcore("--json", "--config", self.config, "--checkout", "main", "build-run", "android",
                                    env=env)
         document = json.loads(result.stdout)
         self.assertEqual(result.returncode, 0, result.stderr)
-        directory = self.sandbox.config.parent / ".bdev" / "operations"
+        directory = self.sandbox.config.parent / ".bcore" / "operations"
         record = json.loads((directory / (document["operation_id"] + ".json")).read_text())
         executed = {step["name"]: step for step in record["steps"]}
         for name in ("gn-overrides", "install-apk"):

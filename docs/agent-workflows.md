@@ -30,7 +30,7 @@ preserve.
 
 A suggested repair in a result, or a passing `doctor`, grants nothing. `requires_user_action` says only whether a step needs a person; `false`
 does not mean it is permitted. For an unresolved checkout, list candidates with
-`bdev checkout list`; never pick one yourself.
+`bcore checkout list`; never pick one yourself.
 
 An implementation task authorizes code changes and isolated tests. It does not by
 itself authorize builds, tests, or launches on a developer's checkout or device.
@@ -45,7 +45,7 @@ State once, before real-checkout work:
 
 - the checkout (an alias or path) and, for mobile, the device;
 - the operations allowed, for example "inspect, run `bpm` package commands, run
-  `bdev tools setup` if a payload is stale";
+  `bcore tools setup` if a payload is stale";
 - that the agent has exclusive use for the period.
 
 Do not infer exclusive use from the absence of a visible build process. If
@@ -57,15 +57,15 @@ checkout at a time; the scaffold does not lock.
 - Every call is a fresh process. Nothing depends on a shell hook, activation, or
   state from an earlier call; pass `--checkout` explicitly unless the working
   directory is inside the checkout.
-- For `bdev` and `bpm`, use `--json`. Read `status`, `error.code`, and `exit_code`; treat
+- For `bcore` and `bpm`, use `--json`. Read `status`, `error.code`, and `exit_code`; treat
   `child_exit_code` as the child's own result. Stdout has one document; child
   output is on stderr.
 - Interpret `error.repairs` as suggestions. Run one only when the current task
   authorizes its effect. Approval repairs (`direnv allow`) are for the user.
-- `bpm` and `bdev vpython3` forward everything after their leading scaffold
+- `bpm` and `bcore vpython3` forward everything after their leading scaffold
   options unchanged; use `--` to forward a token that collides with a scaffold
   option.
-- Use `bdev doctor <scope> --checkout <name>` to learn readiness before a
+- Use `bcore doctor <scope> --checkout <name>` to learn readiness before a
   workflow. It changes nothing.
 - On cancellation, inspect the checkout before retrying anything that modifies it.
 

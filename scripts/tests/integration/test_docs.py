@@ -75,7 +75,7 @@ class DocumentationTests(unittest.TestCase):
         tomllib.loads(example)
 
     def test_documented_command_lines_match_the_parser(self):
-        from scaffold.brave import bdev, bpm
+        from scaffold.brave import bcore, bpm
         from scaffold.common.cli import parse_leading
         commands = 0
         for document in DOCUMENTS:
@@ -84,7 +84,7 @@ class DocumentationTests(unittest.TestCase):
                     continue
                 for line in body.splitlines():
                     line = re.sub(r"\s+#.*$", "", line.strip())
-                    match = re.match(r"^(?:scripts/)?(bdev|bpm)\s+(.*)$", line)
+                    match = re.match(r"^(?:scripts/)?(bcore|bpm)\s+(.*)$", line)
                     if not match or any(mark in line for mark in ("<", "...", "|")):
                         continue
                     words = shlex.split(match.group(2))
@@ -92,8 +92,8 @@ class DocumentationTests(unittest.TestCase):
                         if match.group(1) == "bpm":
                             parse_leading(bpm.SPEC, words)
                         else:
-                            spec, tokens = bdev.resolve_command(words)
-                            bdev.parse_command(spec, tokens)
+                            spec, tokens = bcore.resolve_command(words)
+                            bcore.parse_command(spec, tokens)
                         commands += 1
         self.assertGreater(commands, 15)
 

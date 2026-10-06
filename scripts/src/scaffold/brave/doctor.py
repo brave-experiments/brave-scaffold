@@ -153,12 +153,12 @@ def shell_checks(ctx, scope):
                              "direnv hook is active in interactive %s." % name if hooked else
                              "The direnv hook is not active in interactive %s. Direct commands do not need it." % name,
                              scope, required=False, affects=("automatic activation",)))
-    launcher = ctx.scaffold_root / "scripts" / "bdev"
-    found = shutil.which("bdev", path=ctx.environ.get("PATH"))
+    launcher = ctx.scaffold_root / "scripts" / "bcore"
+    found = shutil.which("bcore", path=ctx.environ.get("PATH"))
     same = found and os.path.realpath(found) == os.path.realpath(launcher)
-    checks.append(_check("bdev-on-path", PASS if same else WARNING,
-                         "bdev resolves to this installation." if same else
-                         "bdev is not on PATH (or resolves elsewhere). Invoke %s directly." % launcher,
+    checks.append(_check("bcore-on-path", PASS if same else WARNING,
+                         "bcore resolves to this installation." if same else
+                         "bcore is not on PATH (or resolves elsewhere). Invoke %s directly." % launcher,
                          scope, required=False, found=found))
     return checks
 

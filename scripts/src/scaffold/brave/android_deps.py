@@ -50,7 +50,7 @@ def require_workspace_link(identity, config):
         raise ScaffoldError(
             "DEPENDENCY_INCOMPATIBLE", "The workspace support path must link to %s; run Android setup." % shared,
             details={"working_copy": str(wc), "shared_checkout": str(shared)},
-            repairs=[repair(["bdev", "android", "setup", "--checkout", str(identity.core)])])
+            repairs=[repair(["bcore", "android", "setup", "--checkout", str(identity.core)])])
 
 
 def script_environment(wc, environ):
@@ -265,8 +265,8 @@ def incompatible(identity, wc, detail, facts=None):
         details={"working_copy": facts or {"path": str(wc)}, "checkout": str(identity.core), "reason": detail},
         repairs=[repair(["git", "-C", str(wc), "log", "--oneline", "-n", "10"],
                         note="Choose a newer or older support revision for every linked checkout, then run "
-                             "'bdev android setup --ref <ref>' or switch the working copy yourself."),
-                 repair(["bdev", "android", "setup", "--checkout", str(identity.core), "--ref", "<ref>"],
+                             "'bcore android setup --ref <ref>' or switch the working copy yourself."),
+                 repair(["bcore", "android", "setup", "--checkout", str(identity.core), "--ref", "<ref>"],
                         note="Placeholder ref; switches only a clean working copy.")])
 
 
@@ -274,7 +274,7 @@ def missing_working_copy(identity, wc):
     return ScaffoldError(
         "DEPENDENCY_INCOMPATIBLE", "The Android-on-Mac support working copy is missing: %s" % wc,
         details={"working_copy": str(wc), "checkout": str(identity.core)},
-        repairs=[repair(["bdev", "android", "setup", "--checkout", str(identity.core)],
+        repairs=[repair(["bcore", "android", "setup", "--checkout", str(identity.core)],
                         note="Explicit preparation: clones the support repository (network) into one shared working copy.")])
 
 
@@ -498,7 +498,7 @@ def plan_preparation(ctx, identity, log=None):
             "%d large file(s) in the support working copy are still Git LFS pointers rather than downloaded files, so its resources "
             "cannot be copied. Nothing was fetched." % len(pointers),
             details={"working_copy": str(wc), "pointers": pointers[:20]},
-            repairs=[repair(["bdev", "android", "setup", "--checkout", str(identity.core)],
+            repairs=[repair(["bcore", "android", "setup", "--checkout", str(identity.core)],
                             note="Explicit preparation: fetches the missing large files (network).")])
     evidence = {"working_copy": facts, "version_gate": "passed"}
     receipt = _read_state(identity, ctx.state_root)
@@ -603,10 +603,10 @@ def conflict_error(plan, identity):
         "PREPARATION_CONFLICT",
         "Android support preparation is blocked. Review the paths below. Nothing was changed by the support scripts.",
         details={"files": plan.conflicts[:50], "total": len(plan.conflicts), "checkout": str(identity.core)},
-        repairs=([repair(["bdev", "build", "android", "--checkout", str(identity.core)],
+        repairs=([repair(["bcore", "build", "android", "--checkout", str(identity.core)],
                          note="Omit --skip-support-refresh only if you want the listed support files replaced.")]
                  if plan.conflicts and all("--skip-support-refresh" in item["reason"] for item in plan.conflicts)
-                 else [repair(["bdev", "doctor", "android", "--checkout", str(identity.core)],
+                 else [repair(["bcore", "doctor", "android", "--checkout", str(identity.core)],
                               note="Inspect support readiness. Missing repository data or unknown scripts must be "
                                    "resolved before refresh can run; retrying a build alone will not fix them.")]))
 

@@ -208,7 +208,7 @@ class SigningDoctorTests(SandboxTest):
         empty = self.sandbox.root / "empty.git"
         subprocess.run(["git", "init", "-q", "--bare", str(empty)], check=True)
         env = self.sandbox.env(GIT_CONFIG_GLOBAL=str(config), GIT_CONFIG_NOSYSTEM="1", GIT_DIR=str(empty))
-        result = self.sandbox.bdev("--json", "doctor", "signing", "--config", str(self.sandbox.config), env=env)
+        result = self.sandbox.bcore("--json", "doctor", "signing", "--config", str(self.sandbox.config), env=env)
         return result, json.loads(result.stdout)
 
     def statuses(self, document):

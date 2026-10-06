@@ -63,7 +63,7 @@ class IosTestCase(BuildTestCase):
         return result, document, self.statuses(document)
 
     def output_states(self):
-        directory = self.sandbox.config.parent / ".bdev" / "outputs"
+        directory = self.sandbox.config.parent / ".bcore" / "outputs"
         return [json.loads(path.read_text()) for path in sorted(directory.glob("*/*.json"))]
 
     def xcode_calls(self):
@@ -91,7 +91,7 @@ class IosSyncTests(IosTestCase):
     def test_sync_fails_with_the_bootstrap_repair_when_core_leaves_the_project_unbootstrapped(self):
         result, document = self.document("sync", "ios", env=self.env(FAKE_NO_BOOTSTRAP="1"))
         self.assertEqual((result.returncode, document["error"]["code"]), (4, "PREPARATION_CONFLICT"))
-        self.assertIn(["bdev", "bpm", "run", "ios_bootstrap"], [r["argv"][:4] for r in document["error"]["repairs"]])
+        self.assertIn(["bcore", "bpm", "run", "ios_bootstrap"], [r["argv"][:4] for r in document["error"]["repairs"]])
 
     def test_sync_ios_refuses_options_that_defeat_the_bootstrap_hook_or_the_target_list(self):
         for option in ("--nohooks", "--target_os=ios"):
@@ -134,14 +134,14 @@ class IosDoctorTests(IosTestCase):
         result, document, statuses = self.doctor()
         self.assertEqual(statuses["ios-bootstrap"], "blocker")
         check = next(c for c in document["checks"] if c["name"] == "ios-bootstrap")
-        self.assertEqual(check["repairs"][0]["argv"][:4], ["bdev", "bpm", "run", "ios_bootstrap"])
+        self.assertEqual(check["repairs"][0]["argv"][:4], ["bcore", "bpm", "run", "ios_bootstrap"])
 
     def test_a_checkout_without_an_ios_target_gets_the_sync_repair(self):
         (self.src.parent / ".gclient").write_text("target_os = []\n")
         result, document, statuses = self.doctor()
         self.assertEqual(statuses["ios-gclient-target"], "blocker")
         check = next(c for c in document["checks"] if c["name"] == "ios-gclient-target")
-        self.assertEqual(check["repairs"][0]["argv"][:3], ["bdev", "sync", "ios"])
+        self.assertEqual(check["repairs"][0]["argv"][:3], ["bcore", "sync", "ios"])
 
 
 class IosBuildTests(IosTestCase):
@@ -367,7 +367,7 @@ class IosRunTests(IosTestCase):
 
     def test_run_warns_when_the_app_has_no_build_record(self):
         self.built()
-        for path in (self.sandbox.config.parent / ".bdev" / "outputs").glob("*/*.json"):
+        for path in (self.sandbox.config.parent / ".bcore" / "outputs").glob("*/*.json"):
             path.unlink()
         result, document = self.document("run", "ios")
         self.assertEqual(result.returncode, 0, result.stderr)

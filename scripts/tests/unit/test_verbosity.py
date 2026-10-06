@@ -54,7 +54,7 @@ class VerbosityTests(unittest.TestCase):
             return Result(command='example', exit_code=rc, text='Finished')
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
             rc = run_command('example', parsed, handler, stdout=out, stderr=err)
-        files = list((root / '.bdev' / 'logs').glob('*.log'))
+        files = list((root / '.bcore' / 'logs').glob('*.log'))
         self.assertEqual(len(files), 1)
         self.assertEqual(files[0].stat().st_mode & 0o777, 0o600)
         saved_revision = json.loads(files[0].read_text().splitlines()[0].split(': ', 1)[1])

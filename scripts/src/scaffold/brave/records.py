@@ -29,7 +29,7 @@ def now():
 
 
 def store_root(root=None):
-    return Path(root or scaffold_root()) / ".bdev"
+    return Path(root or scaffold_root()) / ".bcore"
 
 
 def checkout_key(core):

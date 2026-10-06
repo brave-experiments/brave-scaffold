@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "bdev per-command result data",
+  "title": "bcore per-command result data",
   "description": "Shapes of `data` for each delivered command, selected by `command` in the result envelope. Additive fields are compatible; removals or meaning changes need a new schema_version.",
   "$defs": {
     "step": {

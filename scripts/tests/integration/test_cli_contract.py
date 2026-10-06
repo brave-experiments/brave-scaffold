@@ -17,10 +17,10 @@ ENVELOPE_KEYS = ["schema_version", "status", "command", "operation_id", "context
 
 class EnvelopeTests(SandboxTest):
     def test_success_and_failure_share_the_envelope_and_exit_codes(self):
-        ok, document = self.sandbox.bdev_json("capabilities")
+        ok, document = self.sandbox.bcore_json("capabilities")
         self.assertEqual(list(document), ENVELOPE_KEYS)
         self.assertEqual((ok.returncode, document["exit_code"], document["error"]), (0, 0, None))
-        bad, failure = self.sandbox.bdev_json("env", "check")
+        bad, failure = self.sandbox.bcore_json("env", "check")
         self.assertEqual(list(failure), ENVELOPE_KEYS)
         self.assertEqual((bad.returncode, failure["exit_code"], failure["status"]), (2, 2, "error"))
 
@@ -28,7 +28,7 @@ class EnvelopeTests(SandboxTest):
         for args in (["nonsense"], ["context", "--bogus"], ["context", "--checkout"], ["env"], ["doctor", "a", "b"],
                      ["context", "--format", "yaml"]):
             with self.subTest(args=args):
-                result = self.sandbox.bdev("--json", *args)
+                result = self.sandbox.bcore("--json", *args)
                 document = json.loads(result.stdout)
                 self.assertEqual((result.returncode, document["error"]["code"]), (2, "INVALID_INPUT"))
 
@@ -36,30 +36,30 @@ class EnvelopeTests(SandboxTest):
         for args in (["--json", "capabilities"], ["capabilities", "--json"], ["capabilities", "--format", "json"],
                      ["--format=json", "capabilities"]):
             with self.subTest(args=args):
-                self.assertEqual(json.loads(self.sandbox.bdev(*args).stdout)["command"], "capabilities")
+                self.assertEqual(json.loads(self.sandbox.bcore(*args).stdout)["command"], "capabilities")
 
     def test_unknown_command_suggests_the_closest_names(self):
-        result, document = self.sandbox.bdev_json("contxt")
+        result, document = self.sandbox.bcore_json("contxt")
         self.assertIn("context", document["error"]["details"]["did_you_mean"])
 
     def test_help_goes_to_stdout_and_lists_side_effects(self):
-        result = self.sandbox.bdev("env", "init", "--help")
+        result = self.sandbox.bcore("env", "init", "--help")
         self.assertEqual(result.returncode, 0)
         self.assertIn("Side effects:", result.stdout)
         self.assertIn("Never approves", result.stdout)
         self.assertEqual(result.stderr, "")
 
     def test_every_help_example_parses(self):
-        from scaffold.brave import bdev, bpm
+        from scaffold.brave import bcore, bpm
         from scaffold.brave.registry import REGISTRY
         from scaffold.common.cli import parse_leading
         for spec in REGISTRY.values():
             for example in spec.examples:
                 with self.subTest(example=example):
                     words = shlex.split(example)
-                    self.assertEqual(words[0], "bdev")
-                    found, tokens = bdev.resolve_command(words[1:])
-                    bdev.parse_command(found, tokens)
+                    self.assertEqual(words[0], "bcore")
+                    found, tokens = bcore.resolve_command(words[1:])
+                    bcore.parse_command(found, tokens)
         for example in bpm.SPEC.examples:
             words = shlex.split(example)
             parse_leading(bpm.SPEC, words[1:])
@@ -70,11 +70,11 @@ class SchemaTests(SandboxTest):
         core = self.sandbox.make_checkout("main")
         self.sandbox.write_config([("main", core, "environments/main")])
         config = str(self.sandbox.config)
-        outputs = [self.sandbox.bdev_json("capabilities")[1],
-                   self.sandbox.bdev_json("env", "check", "--config", config)[1],
-                   self.sandbox.bdev_json("doctor", "mac", "--checkout", "main", "--config", config)[1],
-                   self.sandbox.bdev_json("context", "--checkout", "main", "--config", config)[1],
-                   self.sandbox.bdev_json("nonsense")[1]]
+        outputs = [self.sandbox.bcore_json("capabilities")[1],
+                   self.sandbox.bcore_json("env", "check", "--config", config)[1],
+                   self.sandbox.bcore_json("doctor", "mac", "--checkout", "main", "--config", config)[1],
+                   self.sandbox.bcore_json("context", "--checkout", "main", "--config", config)[1],
+                   self.sandbox.bcore_json("nonsense")[1]]
         for document in outputs:
             with self.subTest(command=document["command"]):
                 self.assertEqual(Validator().problems(document), [])
@@ -87,7 +87,7 @@ class SetupAndRegistrationTests(SandboxTest):
         core = self.sandbox.make_checkout("main")
         before = tree_snapshot(core.parents[3])
         target = self.sandbox.root / "fresh" / "brave-scaffold.toml"
-        result, document = self.sandbox.bdev_json("setup", "--config", str(target))
+        result, document = self.sandbox.bcore_json("setup", "--config", str(target))
         self.assertEqual(document["status"], "ok", document)
         self.assertTrue(target.is_file())
         self.assertEqual(before, tree_snapshot(core.parents[3]))
@@ -97,11 +97,11 @@ class SetupAndRegistrationTests(SandboxTest):
         main = self.sandbox.make_checkout("main")
         other = self.sandbox.make_checkout("other")
         config = str(self.sandbox.config)
-        first = self.sandbox.bdev("checkout", "add", "main", str(main.parents[3]), "--config", config)
+        first = self.sandbox.bcore("checkout", "add", "main", str(main.parents[3]), "--config", config)
         self.assertEqual(first.returncode, 0, first.stderr)
-        again = self.sandbox.bdev("checkout", "add", "main", str(main), "--config", config)
+        again = self.sandbox.bcore("checkout", "add", "main", str(main), "--config", config)
         self.assertEqual(again.returncode, 0)
-        clash, document = self.sandbox.bdev_json("checkout", "add", "main", str(other), "--config", config)
+        clash, document = self.sandbox.bcore_json("checkout", "add", "main", str(other), "--config", config)
         self.assertEqual(document["error"]["code"], "CONFIG_INVALID")
         text = self.sandbox.config.read_text()
         self.assertEqual(text.count("[[checkouts]]"), 1)
@@ -111,7 +111,7 @@ class SetupAndRegistrationTests(SandboxTest):
         main = self.sandbox.make_checkout("main")
         gone = self.sandbox.root / "gone" / "src" / "brave"
         self.sandbox.write_config([("main", main, "environments/main"), ("gone", gone, None)])
-        result, document = self.sandbox.bdev_json("checkout", "list", "--config", str(self.sandbox.config))
+        result, document = self.sandbox.bcore_json("checkout", "list", "--config", str(self.sandbox.config))
         rows = {row["alias"]: row for row in document["data"]["checkouts"]}
         self.assertIsNone(rows["main"]["problem"])
         self.assertEqual(rows["main"]["environment_state"], "environment file missing")
@@ -125,7 +125,7 @@ class SetupAndRegistrationTests(SandboxTest):
         (gitdir / "commondir").write_text("../..\n")
         shutil.rmtree(core / ".git")
         (core / ".git").write_text("gitdir: %s\n" % gitdir)
-        result, document = self.sandbox.bdev_json("checkout", "add", "wt", str(core),
+        result, document = self.sandbox.bcore_json("checkout", "add", "wt", str(core),
                                                   "--config", str(self.sandbox.config))
         self.assertEqual(document["error"]["code"], "UNSUPPORTED_CAPABILITY")
         self.assertFalse(self.sandbox.config.exists())

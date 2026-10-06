@@ -26,7 +26,7 @@ class PackageExecutionTests(SandboxTest):
             write_executable(self.sandbox.bin / name, GLOBAL_TOOL % (name, self.sandbox.root / "global-used"))
 
     def bpm(self, *args, **kwargs):
-        return self.sandbox.bdev("--config", self.config, "--checkout", "main", *args, tool="bpm", **kwargs)
+        return self.sandbox.bcore("--config", self.config, "--checkout", "main", *args, tool="bpm", **kwargs)
 
     def test_runs_local_node_and_manager_in_core_despite_global_tools(self):
         result = self.bpm("run", "build", cwd=self.core.parent)
@@ -43,10 +43,10 @@ class PackageExecutionTests(SandboxTest):
     def test_the_pnpm_shim_works_from_a_checkout_whose_path_has_an_apostrophe_and_a_space(self):
         core = self.sandbox.make_checkout("owner's checkout")
         self.sandbox.write_config([("odd", core, "environments/odd")])
-        self.sandbox.bdev("env", "init", "--checkout", "odd", "--config", self.config)
+        self.sandbox.bcore("env", "init", "--checkout", "odd", "--config", self.config)
         self.sandbox.approve("odd")
         hook = self.sandbox.hook("import subprocess\nif 'outer' in argv:\n    subprocess.run(['pnpm', 'inner', '--flag'], check=True)\n")
-        result = self.sandbox.bdev("--config", self.config, "--checkout", "odd", "run", "outer", tool="bpm",
+        result = self.sandbox.bcore("--config", self.config, "--checkout", "odd", "run", "outer", tool="bpm",
                                    env=self.sandbox.env(FAKE_HOOK=hook))
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual([r["argv"][1:] for r in self.sandbox.records()], [["run", "outer"], ["inner", "--flag"]])
@@ -64,11 +64,11 @@ class PackageExecutionTests(SandboxTest):
     def test_leading_delimiter_forwards_help_and_json_to_the_package_manager(self):
         result = self.bpm("--", "--help")
         self.assertEqual(self.sandbox.records()[0]["argv"][1:], ["--help"])
-        self.assertIn("Usage", self.sandbox.bdev("--help", tool="bpm").stdout)
+        self.assertIn("Usage", self.sandbox.bcore("--help", tool="bpm").stdout)
 
     def test_json_mode_keeps_child_output_off_stdout(self):
         env = self.sandbox.env(FAKE_STDOUT="child-output-line")
-        result = self.sandbox.bdev("--json", "--config", self.config, "--checkout", "main", "run", "x",
+        result = self.sandbox.bcore("--json", "--config", self.config, "--checkout", "main", "run", "x",
                                    tool="bpm", env=env)
         document = json.loads(result.stdout)
         self.assertEqual(document["status"], "ok")
@@ -79,7 +79,7 @@ class PackageExecutionTests(SandboxTest):
 
     def test_failing_child_reports_its_exit_separately(self):
         env = self.sandbox.env(FAKE_EXIT="3")
-        result = self.sandbox.bdev("--json", "--config", self.config, "--checkout", "main", "run", "x",
+        result = self.sandbox.bcore("--json", "--config", self.config, "--checkout", "main", "run", "x",
                                    tool="bpm", env=env)
         document = json.loads(result.stdout)
         self.assertEqual((result.returncode, document["exit_code"], document["child_exit_code"]), (5, 5, 3))
@@ -97,7 +97,7 @@ class PackageExecutionTests(SandboxTest):
 
     def test_quiet_configuration_keeps_results(self):
         self.sandbox.config.write_text(self.sandbox.config.read_text() + "\n[logging]\nverbosity = \"quiet\"\n")
-        result = self.sandbox.bdev("--json", "--config", self.config, "--checkout", "main", "run", "x",
+        result = self.sandbox.bcore("--json", "--config", self.config, "--checkout", "main", "run", "x",
                                    tool="bpm")
         self.assertNotIn("Current directory", result.stderr)
         document = json.loads(result.stdout)
@@ -107,13 +107,13 @@ class PackageExecutionTests(SandboxTest):
         older_npm = self.sandbox.make_checkout("older_npm", declaration=False)
         self.sandbox.write_config([("main", self.core, "environments/main"),
                                    ("older_npm", older_npm, "environments/older_npm")])
-        self.sandbox.bdev("env", "init", "--checkout", "older_npm", "--config", self.config)
+        self.sandbox.bcore("env", "init", "--checkout", "older_npm", "--config", self.config)
         self.sandbox.approve("older_npm")
-        self.sandbox.bdev("--config", self.config, "--checkout", "older_npm", "run", "sync", "--force", "", "a b",
+        self.sandbox.bcore("--config", self.config, "--checkout", "older_npm", "run", "sync", "--force", "", "a b",
                           tool="bpm")
-        self.sandbox.bdev("--config", self.config, "--checkout", "older_npm", "run", "sync", "--", "--force",
+        self.sandbox.bcore("--config", self.config, "--checkout", "older_npm", "run", "sync", "--", "--force",
                           tool="bpm")
-        self.sandbox.bdev("--config", self.config, "--checkout", "older_npm", "install", tool="bpm")
+        self.sandbox.bcore("--config", self.config, "--checkout", "older_npm", "install", tool="bpm")
         self.bpm("run", "sync", "--force")
         argvs = [record["argv"][1:] for record in self.sandbox.records()]
         self.assertEqual(argvs[0], ["run", "sync", "--", "--force", "", "a b"])
@@ -125,15 +125,15 @@ class PackageExecutionTests(SandboxTest):
     def test_missing_local_node_never_falls_back_to_a_global_one(self):
         node = self.core / "third_party" / "node" / "node-mac-arm64" / "bin" / "node"
         node.unlink()
-        result = self.sandbox.bdev("--json", "--config", self.config, "--checkout", "main", "run", "x", tool="bpm")
+        result = self.sandbox.bcore("--json", "--config", self.config, "--checkout", "main", "run", "x", tool="bpm")
         document = json.loads(result.stdout)
         self.assertEqual((result.returncode, document["error"]["code"]), (3, "LOCAL_TOOL_MISSING"))
-        self.assertEqual(document["error"]["repairs"][0]["argv"][:3], ["bdev", "tools", "setup"])
+        self.assertEqual(document["error"]["repairs"][0]["argv"][:3], ["bcore", "tools", "setup"])
         self.assertEqual(self.sandbox.records(), [])
         self.assertFalse((self.sandbox.root / "global-used").exists())
 
     def blocked(self, name="main"):
-        result = self.sandbox.bdev("--json", "--config", self.config, "--checkout", name, "run", "x", tool="bpm")
+        result = self.sandbox.bcore("--json", "--config", self.config, "--checkout", name, "run", "x", tool="bpm")
         document = json.loads(result.stdout)
         self.assertEqual((result.returncode, document["error"]["code"]), (3, "LOCAL_TOOL_MISSING"), result.stderr)
         self.assertEqual(self.sandbox.records(), [], "the package command never started")
@@ -165,7 +165,7 @@ class PackageExecutionTests(SandboxTest):
         external.chmod(0o755)
         vpython.unlink()
         vpython.symlink_to(external)
-        result = self.sandbox.bdev("--json", "--config", self.config, "--checkout", "main", "run", "x", tool="bpm")
+        result = self.sandbox.bcore("--json", "--config", self.config, "--checkout", "main", "run", "x", tool="bpm")
         self.assertEqual(result.returncode, 3, result.stderr)
         self.assertEqual(self.sandbox.records(), [])
 
@@ -184,12 +184,12 @@ class PackageExecutionTests(SandboxTest):
         self.sandbox.write_config([("main", self.core, "environments/main"), ("nometa", unverifiable, "environments/nometa"),
                                    ("broken", unreadable, "environments/broken")])
         for name in ("nometa", "broken"):
-            self.sandbox.bdev("env", "init", "--checkout", name, "--config", self.config)
+            self.sandbox.bcore("env", "init", "--checkout", name, "--config", self.config)
             self.sandbox.approve(name)
             with self.subTest(name):
                 document = self.blocked(name)
                 self.assertIn("verif", document["error"]["message"])
-        result = self.sandbox.bdev("--json", "--config", self.config, "doctor", "mac", "--checkout", "nometa")
+        result = self.sandbox.bcore("--json", "--config", self.config, "doctor", "mac", "--checkout", "nometa")
         local = next(check for check in json.loads(result.stdout)["checks"] if check["name"] == "local-tools")
         self.assertEqual(local["status"], "blocker")
         nested = {check["name"]: check["status"] for check in local["evidence"]["checks"]}
@@ -199,10 +199,10 @@ class PackageExecutionTests(SandboxTest):
         older_npm = self.sandbox.make_checkout("older_npm", declaration=False)
         self.sandbox.write_config([("main", self.core, "environments/main"),
                                    ("older_npm", older_npm, "environments/older_npm")])
-        self.sandbox.bdev("env", "init", "--checkout", "older_npm", "--config", self.config)
+        self.sandbox.bcore("env", "init", "--checkout", "older_npm", "--config", self.config)
         self.sandbox.approve("older_npm")
         self.sandbox.mark_stale("older_npm", only="pnpm")
-        result = self.sandbox.bdev("--config", self.config, "--checkout", "older_npm", "run", "x", tool="bpm")
+        result = self.sandbox.bcore("--config", self.config, "--checkout", "older_npm", "run", "x", tool="bpm")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.sandbox.mark_stale("older_npm", only="node")
         self.sandbox.record.unlink()
@@ -210,20 +210,20 @@ class PackageExecutionTests(SandboxTest):
 
     def test_stale_payload_stops_before_the_command_and_names_the_repair(self):
         self.sandbox.mark_stale("main")
-        result = self.sandbox.bdev("--json", "--config", self.config, "--checkout", "main", "run", "x", tool="bpm")
+        result = self.sandbox.bcore("--json", "--config", self.config, "--checkout", "main", "run", "x", tool="bpm")
         document = json.loads(result.stdout)
         self.assertEqual(document["error"]["code"], "LOCAL_TOOL_MISSING")
         self.assertEqual(self.sandbox.records(), [])
 
     def test_inspection_never_runs_the_installer(self):
         self.sandbox.mark_stale("main")
-        self.sandbox.bdev("context", "--checkout", "main", "--config", self.config)
-        self.sandbox.bdev("doctor", "mac", "--checkout", "main", "--config", self.config)
+        self.sandbox.bcore("context", "--checkout", "main", "--config", self.config)
+        self.sandbox.bcore("doctor", "mac", "--checkout", "main", "--config", self.config)
         self.assertEqual([r for r in self.sandbox.records() if r["tool"] == "installer"], [])
 
     def test_explicit_tools_setup_runs_the_installer_then_revalidates(self):
         self.sandbox.mark_stale("main")
-        result = self.sandbox.bdev("--json", "tools", "setup", "--checkout", "main", "--config", self.config)
+        result = self.sandbox.bcore("--json", "tools", "setup", "--checkout", "main", "--config", self.config)
         document = json.loads(result.stdout)
         self.assertEqual(document["status"], "ok", document)
         installs = [r for r in self.sandbox.records() if r["tool"] == "installer"]
@@ -233,7 +233,7 @@ class PackageExecutionTests(SandboxTest):
 
     def test_node_outside_the_declared_range_is_not_usable(self):
         (self.core / "third_party" / "node" / "node-mac-arm64" / "bin" / "version").write_text("v22.1.0")
-        result = self.sandbox.bdev("--json", "--config", self.config, "--checkout", "main", "run", "x", tool="bpm")
+        result = self.sandbox.bcore("--json", "--config", self.config, "--checkout", "main", "run", "x", tool="bpm")
         document = json.loads(result.stdout)
         self.assertEqual(document["error"]["code"], "LOCAL_TOOL_MISSING")
         self.assertIn("v22.1.0", document["error"]["message"])
@@ -245,7 +245,7 @@ class PackageExecutionTests(SandboxTest):
                      '{"name": "brave-core", "devEngines": []}'):
             with self.subTest(text=text):
                 package.write_text(text)
-                result = self.sandbox.bdev("--json", "--config", self.config, "--checkout", "main", "run", "x",
+                result = self.sandbox.bcore("--json", "--config", self.config, "--checkout", "main", "run", "x",
                                            tool="bpm")
                 document = json.loads(result.stdout)
                 self.assertEqual(document["error"]["code"], "LOCAL_TOOL_MISSING")
@@ -312,12 +312,12 @@ class ToolRepairTests(SandboxTest):
         core = self.sandbox.make_checkout(name, **options)
         entries = [(other, path, "environments/" + other) for other, path in self.sandbox.checkouts.items()]
         self.sandbox.write_config(entries)
-        self.sandbox.bdev("env", "init", "--checkout", name, "--config", self.config)
+        self.sandbox.bcore("env", "init", "--checkout", name, "--config", self.config)
         self.sandbox.approve(name)
         return core
 
     def setup_tools(self, name):
-        result = self.sandbox.bdev("--json", "tools", "setup", "--checkout", name, "--config", self.config)
+        result = self.sandbox.bcore("--json", "tools", "setup", "--checkout", name, "--config", self.config)
         return result, json.loads(result.stdout)
 
     def installed(self):
@@ -359,7 +359,7 @@ class ToolRepairTests(SandboxTest):
     def test_missing_local_python_gives_manual_restoration_without_a_circular_repair(self):
         core = self.checkout("modern")
         (core / "vendor/depot_tools/vpython3").unlink()
-        result = self.sandbox.bdev("--json", "vpython3", "--checkout", "modern", "--config", self.config, "--", "a.py")
+        result = self.sandbox.bcore("--json", "vpython3", "--checkout", "modern", "--config", self.config, "--", "a.py")
         document = json.loads(result.stdout)
         self.assertEqual(result.returncode, 3, result.stderr)
         (step,) = document["error"]["repairs"]
@@ -403,7 +403,7 @@ class VersionedNpmPayloadTests(SandboxTest):
         self.config = str(self.sandbox.config)
 
     def package(self):
-        return self.sandbox.bdev("--json", "--config", self.config, "--checkout", "older",
+        return self.sandbox.bcore("--json", "--config", self.config, "--checkout", "older",
                                  "run", "test", "--filter=x", tool="bpm")
 
     def test_declaration_absent_versioned_payload_uses_its_own_npm_and_stamp(self):
@@ -418,7 +418,7 @@ class VersionedNpmPayloadTests(SandboxTest):
         result = self.package()
         self.assertEqual(result.returncode, 3, result.stderr)
         step = json.loads(result.stdout)["error"]["repairs"][0]
-        repaired = self.sandbox.bdev("--json", "--config", self.config, *step["argv"][1:])
+        repaired = self.sandbox.bcore("--json", "--config", self.config, *step["argv"][1:])
         self.assertEqual(repaired.returncode, 0, repaired.stderr)
         installs = [r["argv"] for r in self.sandbox.records() if r["tool"] == "installer"]
         self.assertEqual(installs, [[self.KEY]])
@@ -429,7 +429,7 @@ class VersionedNpmPayloadTests(SandboxTest):
         self.destination.rename(outside)
         self.destination.symlink_to(outside)
         before = (outside / self.stamp.name).read_bytes()
-        result = self.sandbox.bdev("--json", "--config", self.config, "--checkout", "older", "tools", "setup")
+        result = self.sandbox.bcore("--json", "--config", self.config, "--checkout", "older", "tools", "setup")
         self.assertEqual(result.returncode, 4, result.stderr)
         self.assertEqual(json.loads(result.stdout)["error"]["code"], "OWNERSHIP_CONFLICT")
         self.assertEqual((outside / self.stamp.name).read_bytes(), before)
@@ -460,7 +460,7 @@ class ToolLocalityTests(SandboxTest):
         path.symlink_to(target)
 
     def bpm(self):
-        return self.sandbox.bdev("--json", "--config", self.config, "--checkout", "main", "run", "x", tool="bpm")
+        return self.sandbox.bcore("--json", "--config", self.config, "--checkout", "main", "run", "x", tool="bpm")
 
     def assert_refused(self):
         result = self.bpm()
@@ -475,7 +475,7 @@ class ToolLocalityTests(SandboxTest):
     def test_a_whole_depot_tools_directory_linked_from_outside_is_rejected(self):
         self.move_out_and_link_back(self.core / "vendor" / "depot_tools", "depot_tools")
         self.assert_refused()
-        result = self.sandbox.bdev("--json", "vpython3", "--config", self.config, "--checkout", "main", "--", "a.py")
+        result = self.sandbox.bcore("--json", "vpython3", "--config", self.config, "--checkout", "main", "--", "a.py")
         self.assertEqual(result.returncode, 3, result.stdout + result.stderr)
         self.assertEqual(self.sandbox.records(), [])
 
@@ -497,7 +497,7 @@ class ToolLocalityTests(SandboxTest):
         depot = self.core / "vendor" / "depot_tools"
         depot.rename(self.core / "vendor" / "depot_real")
         depot.symlink_to(self.core / "vendor" / "depot_real")
-        result = self.sandbox.bdev("--config", self.config, "--checkout", "main", "run", "x", tool="bpm")
+        result = self.sandbox.bcore("--config", self.config, "--checkout", "main", "run", "x", tool="bpm")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(len(self.sandbox.records()), 1)
 
@@ -510,7 +510,7 @@ class ToolLocalityTests(SandboxTest):
             'export BRAVE_CORE_DIR="%s"' % self.core, 'export BRAVE_DEPOT_TOOLS_DIR="%s"' % foreign,
             'export VPYTHON3="%s/vpython3"' % foreign, ""]))
         self.sandbox.approve("main")
-        result = self.sandbox.bdev("--json", "vpython3", "--config", self.config, "--checkout", "main", "--", "a.py")
+        result = self.sandbox.bcore("--json", "vpython3", "--config", self.config, "--checkout", "main", "--", "a.py")
         document = json.loads(result.stdout)
         self.assertEqual((result.returncode, document["error"]["code"]), (3, "LOCAL_TOOL_MISSING"), result.stderr)
         self.assertEqual(self.sandbox.records(), [], "the foreign interpreter never ran")
@@ -520,7 +520,7 @@ class ToolLocalityTests(SandboxTest):
     def test_repair_does_not_write_through_a_payload_directory_that_leaves_the_checkout(self):
         self.move_out_and_link_back(self.core / "third_party" / "node", "node")
         self.sandbox.mark_stale("main")
-        result = self.sandbox.bdev("--json", "tools", "setup", "--checkout", "main", "--config", self.config)
+        result = self.sandbox.bcore("--json", "tools", "setup", "--checkout", "main", "--config", self.config)
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual([r for r in self.sandbox.records() if r["tool"] == "installer"], [])
 
@@ -534,7 +534,7 @@ class DirectPythonTests(SandboxTest):
         self.config = str(self.sandbox.config)
 
     def vpython(self, *args, cwd):
-        return self.sandbox.bdev("vpython3", "--config", self.config, "--checkout", "main", *args, cwd=cwd)
+        return self.sandbox.bcore("vpython3", "--config", self.config, "--checkout", "main", *args, cwd=cwd)
 
     def test_caller_cwd_is_preserved_from_unrelated_and_nested_directories(self):
         unrelated = self.sandbox.root / "elsewhere"
@@ -559,7 +559,7 @@ class DirectPythonTests(SandboxTest):
         first, second = self.sandbox.records()
         self.assertEqual(first["cwd"], str(base / "sub"))
         self.assertEqual(second["cwd"], str(absolute))
-        missing = self.sandbox.bdev("--json", "vpython3", "--config", self.config, "--checkout", "main",
+        missing = self.sandbox.bcore("--json", "vpython3", "--config", self.config, "--checkout", "main",
                                     "--cwd", "nope", "--", "z.py", cwd=base)
         self.assertEqual(json.loads(missing.stdout)["error"]["code"], "INVALID_INPUT")
         self.assertEqual(len(self.sandbox.records()), 2)
@@ -570,7 +570,7 @@ class DirectPythonTests(SandboxTest):
         self.assertEqual(record["argv"], ["script.py", "--json", "--checkout", "other"])
 
     def test_result_reports_interpreter_and_execution_cwd(self):
-        result = self.sandbox.bdev("--json", "vpython3", "--config", self.config, "--checkout", "main", "--",
+        result = self.sandbox.bcore("--json", "vpython3", "--config", self.config, "--checkout", "main", "--",
                                    "a.py", cwd=self.sandbox.root)
         data = json.loads(result.stdout)["data"]
         self.assertEqual(data["interpreter"], str(self.core / "vendor" / "depot_tools" / "vpython3"))

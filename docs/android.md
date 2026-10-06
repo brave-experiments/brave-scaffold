@@ -4,22 +4,22 @@ Existing-checkout Android workflows on an Apple Silicon Mac: a Debug arm64 APK
 build, installing and restarting it on a device, and running Robolectric/JUnit and
 device-backed Java tests. Android Studio project generation and emulator launching
 are not available. Verified support is
-listed by `bdev capabilities`.
+listed by `bcore capabilities`.
 
 Prerequisites: a registered checkout with an approved environment
 ([getting started](getting-started.md)), the platform tools (`adb`), and the
-checkout's Android support working copy (below). `bdev doctor android --checkout
+checkout's Android support working copy (below). `bcore doctor android --checkout
 <name>` reports each of them without changing anything.
 
 ## One-time setup per checkout
 
-1. Add Android to the checkout's targets: `bdev sync android`. This builds
+1. Add Android to the checkout's targets: `bcore sync android`. This builds
    `--target_os` from the union of the checkout's existing `.gclient` values and
    `android`, and changes the checkout ([source and cleanup](source-and-cleanup.md)).
-   `bdev sync-build android` does this first and then checks the build's readiness
+   `bcore sync-build android` does this first and then checks the build's readiness
    (the Android target, and the local RBE configuration unless you compile with
-   `--offline`) again; a standalone `bdev build android` needs the target already.
-2. Create the shared support checkout and workspace link: `bdev android setup`. This is
+   `--offline`) again; a standalone `bcore build android` needs the target already.
+2. Create the shared support checkout and workspace link: `bcore android setup`. This is
    the step that fetches support resources.
 
 ## Android-on-Mac support repository
@@ -49,18 +49,18 @@ changes and commits stay in the adopted or preserved checkout. Old caches are
 left for separate cleanup. Do not run setup or switch the shared revision while
 another checkout is building. Concurrent builds have not been verified.
 
-`bdev android setup` is also the only command that fetches large files. It materializes content from
+`bcore android setup` is also the only command that fetches large files. It materializes content from
 the checkout’s LFS store, fetches whatever is missing from the source, and then lists the
 large files that are still pointers: if any remain, it fails with `CHILD_FAILED` (a
 plain `git lfs checkout` reports success while leaving pointers), and it verifies an
-existing working copy the same way when you run it again after an interruption. `bdev
+existing working copy the same way when you run it again after an interruption. `bcore
 doctor android` (`android-support-lfs`) and builds only look: pointers are a blocker
-or `DEPENDENCY_INCOMPATIBLE` that names `bdev android setup`, and nothing is fetched.
+or `DEPENDENCY_INCOMPATIBLE` that names `bcore android setup`, and nothing is fetched.
 
 ```sh
-bdev android setup                     # clone at the default ref
-bdev android setup --ref <tag-or-sha>  # change the revision for all linked checkouts
-bdev android setup --source <url-or-path>
+bcore android setup                     # clone at the default ref
+bcore android setup --ref <tag-or-sha>  # change the revision for all linked checkouts
+bcore android setup --source <url-or-path>
 ```
 
 The scaffold never resets or cleans an existing working copy. `--ref`
@@ -75,7 +75,7 @@ is used. The support repository carries its own version gates (Chromium and
 toolchain versions); `copyMacRes.sh -v` checks them against the checkout without
 copying anything. A build runs that gate first. If it fails, the command stops
 with `DEPENDENCY_INCOMPATIBLE`, the gate's own reason, and repairs (list the
-revisions, then `bdev android setup --ref <ref>`). What is verified: the gate result
+revisions, then `bcore android setup --ref <ref>`). What is verified: the gate result
 for this checkout at build time. What is not: that an untested combination builds
 successfully, or that the gate covers every incompatibility. Sources live in
 `scripts/src/scaffold/brave/android_support.toml`.
@@ -86,7 +86,7 @@ Before compiling, a build compares the working copy with the checkout and runs o
 the support scripts that are needed: `applyPatches.sh` when support patches are not
 applied (`applyPatches.sh -v` fails) or the working copy's inputs changed, and
 `copyMacRes.sh` when resources are not copied or stale. Either runs when there is no
-record of a refresh for this checkout (`.bdev/state/`). The scripts change Chromium
+record of a refresh for this checkout (`.bcore/state/`). The scripts change Chromium
 files (in the source root and in nested repositories such as `v8`) and copy resources
 into the checkout's `third_party` directories (the paths `copyMacRes.sh` declares);
 GN files are then regenerated.
@@ -115,7 +115,7 @@ lost, including files left by an earlier refresh or supplied by Chromium. The sc
 control replacement; Scaffold does not reset the Git index or remove extra files itself.
 Keep wanted edits elsewhere before running a build that needs refresh.
 
-Use `bdev build android --skip-support-refresh` to stop if refresh is needed. This option
+Use `bcore build android --skip-support-refresh` to stop if refresh is needed. This option
 also applies to `build-run`, `sync-build`, and `sync-build-run`; it does not suppress their
 other preparation or sync steps. Current support needs no refresh and builds normally.
 `doctor android` uses the same preparation decision: current support passes, a needed
@@ -140,9 +140,9 @@ Everything outside the block is left alone.
 ## Build
 
 ```sh
-bdev build android                  # Debug arm64 APK
-bdev build android --offline        # compile locally
-bdev build android -C Custom        # forwarded: output in <src>/out/Custom
+bcore build android                  # Debug arm64 APK
+bcore build android --offline        # compile locally
+bcore build android -C Custom        # forwarded: output in <src>/out/Custom
 ```
 
 The package build script receives `--target_os=android --target_arch=arm64
@@ -165,17 +165,17 @@ stopped, or launched. No default package name is assumed.
 
 ```sh
 # Host-side Robolectric/JUnit: runs on this Mac, no device
-bdev test android brave_junit_tests --filter='*BraveCommandLineInitUtilTest*'
+bcore test android brave_junit_tests --filter='*BraveCommandLineInitUtilTest*'
 
 # Instrumented tests: run on the selected emulator or device
-bdev test android brave_java_unit_tests --filter='BraveAppearancePreferencesTest.*' --device=emulator-5554
+bcore test android brave_java_unit_tests --filter='BraveAppearancePreferencesTest.*' --device=emulator-5554
 
 # Tests changed on this branch or in the working tree, found and filtered for you
-bdev test android --plan
-bdev test android --device=emulator-5554
+bcore test android --plan
+bcore test android --device=emulator-5554
 ```
 
-Without a suite, `bdev test android` finds the changed Android tests and runs
+Without a suite, `bcore test android` finds the changed Android tests and runs
 only those; see [test](commands.md#test).
 
 Two suites are available. `brave_junit_tests` needs no device and rejects `--device`.
@@ -216,7 +216,7 @@ already applied is left alone; a partial or conflicting one is a
 it reverses it after the run, including a failed run or a handled interruption.
 An overlay present before the command stays applied.
 Cleanup refuses conflicting edits made during the run and reports the failure.
-Nothing else in Core changes, and `bdev setup` and `env init` never apply it. To
+Nothing else in Core changes, and `bcore setup` and `env init` never apply it. To
 remove a pre-existing overlay, run `./applyBraveCoreTestSupport.sh --src-root <src> --reverse` from the
 support working copy. A sync checks for local work and may stop on the applied
 overlay, so reverse it first if it does.
@@ -238,11 +238,11 @@ runner script is `ARTIFACT_MISSING`. Success reports passed and skipped counts.
 ## Install and restart
 
 ```sh
-bdev run android --device <id>
-bdev deploy android                 # same as 'run android'
-bdev build-run android --device <id>
-bdev build-run android --all-devices
-bdev run android --all-devices
+bcore run android --device <id>
+bcore deploy android                 # same as 'run android'
+bcore build-run android --device <id>
+bcore build-run android --all-devices
+bcore run android --all-devices
 ```
 
 Device selection: `--device`, otherwise `defaults.android_device` from your
@@ -288,12 +288,12 @@ launch; they do not scan sources or compare build freshness. `adb` comes from `A
 
 - Failed, cancelled, or interrupted builds mark the output for revalidation; an
   older valid APK can still be installed. Nothing rebuilds or deletes for you.
-- Clean outputs with `bdev clean android` ([source and cleanup](source-and-cleanup.md)).
+- Clean outputs with `bcore clean android` ([source and cleanup](source-and-cleanup.md)).
 - Release, other architectures, and AAB output are accepted but `limited`.
 - Checked on a real checkout and emulator on 2026-09-30: creating the support
   working copy from a local clone, the compatibility gate, support preparation, a
   Debug arm64 build through RBE/Siso, and deploying to the only connected device
-  without naming it. Not yet verified: `bdev sync android`, cleanup, a second
+  without naming it. Not yet verified: `bcore sync android`, cleanup, a second
   checkout at a different support revision, and physical devices.
 
 `android setup --json` uses result schema version 2. Its data reports

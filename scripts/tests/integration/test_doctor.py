@@ -24,7 +24,7 @@ class DoctorTests(SandboxTest):
         self.config = str(self.sandbox.config)
 
     def doctor(self, *args, cwd=None, env=None):
-        result = self.sandbox.bdev("--json", "--config", self.config, "doctor", *args, cwd=cwd, env=env)
+        result = self.sandbox.bcore("--json", "--config", self.config, "doctor", *args, cwd=cwd, env=env)
         return result, json.loads(result.stdout)
 
     def statuses(self, document):
@@ -62,7 +62,7 @@ class DoctorTests(SandboxTest):
 
     def test_matching_host_checks_appear_once_in_text_but_remain_in_json(self):
         self.two_checkouts()
-        result = self.sandbox.bdev("--config", self.config, "doctor", "mac")
+        result = self.sandbox.bcore("--config", self.config, "doctor", "mac")
         self.assertEqual(result.stdout.count("Host platform:"), 1)
         self.assertEqual(result.stdout.count("macOS SDK:"), 1)
         self.assertEqual(result.stdout.count("Free disk space"), 1)
@@ -92,7 +92,7 @@ class DoctorTests(SandboxTest):
         self.assertEqual((result.returncode, document["status"]), (0, "ok"))
         codes = {warning["code"] for warning in document["warnings"]}
         self.assertIn("CHECK_WARNING", codes)
-        self.assertEqual(self.statuses(document)["bdev-on-path"], "warning")
+        self.assertEqual(self.statuses(document)["bcore-on-path"], "warning")
 
     def test_required_blocker_fails_with_the_check_named(self):
         node = self.core / "third_party" / "node" / "node-mac-arm64" / "bin" / "node"
@@ -144,7 +144,7 @@ class DoctorTests(SandboxTest):
         self.doctor("mac", "--checkout", "main")
         self.assertEqual(before_checkout, tree_snapshot(self.core.parents[3]))
         after_config = tree_snapshot(self.sandbox.root / "config")
-        logs = self.sandbox.root / "config" / ".bdev" / "logs"
+        logs = self.sandbox.root / "config" / ".bcore" / "logs"
         allowed = {str(logs.parent), str(logs), *(str(path) for path in logs.glob("*.log"))}
         self.assertEqual(before_config, {path: after_config.get(path) for path in before_config})
         self.assertLessEqual(after_config.keys() - before_config.keys(), allowed)
@@ -153,7 +153,7 @@ class DoctorTests(SandboxTest):
 
     def test_text_mode_matches_the_json_verdict(self):
         self.sandbox.write_config([])
-        result = self.sandbox.bdev("--config", self.config, "doctor", "mac", cwd=self.sandbox.root)
+        result = self.sandbox.bcore("--config", self.config, "doctor", "mac", cwd=self.sandbox.root)
         self.assertEqual(result.returncode, 3)
         self.assertIn("Readiness incomplete:", result.stdout)
         self.assertIn("❔  Checkout checks need a selected checkout", result.stdout)

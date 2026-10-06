@@ -36,8 +36,8 @@ def suite_kind(suite):
         raise ScaffoldError(
             "UNSUPPORTED_CAPABILITY", "The Android test suite %r is not available; nothing was prepared or built." % suite,
             details={"suites": {name: ("no device" if kind == HOST else "needs a device") for name, kind in SUITES.items()}},
-            repairs=[repair(["bdev", "test", "android", "brave_junit_tests"], note="Host-side Robolectric/JUnit tests."),
-                     repair(["bdev", "test", "android", "brave_java_unit_tests", "--device", "<serial>"],
+            repairs=[repair(["bcore", "test", "android", "brave_junit_tests"], note="Host-side Robolectric/JUnit tests."),
+                     repair(["bcore", "test", "android", "brave_java_unit_tests", "--device", "<serial>"],
                             note="Instrumented tests on a device; placeholder serial.")])
     return SUITES[suite]
 
@@ -49,13 +49,13 @@ def check_options(parsed, kind):
         raise ScaffoldError("INVALID_INPUT", "--all-devices applies to device-backed Android tests only.")
     if kind == HOST and parsed.get("device"):
         raise ScaffoldError("INVALID_INPUT", "--device does not apply to %s: it runs on this Mac and uses no device."
-                            % parsed.get("suite"), details={"example": "bdev test android %s" % parsed.get("suite")})
+                            % parsed.get("suite"), details={"example": "bcore test android %s" % parsed.get("suite")})
     for token in parsed.forwarded:
         name = token.partition("=")[0]
         if name in DEVICE_TOKENS:
             raise ScaffoldError(
                 "SELECTOR_CONFLICT", "%s is chosen by the scaffold and cannot be forwarded to the test command." % token,
-                details={"example": "bdev test android brave_java_unit_tests --device <serial>"})
+                details={"example": "bcore test android brave_java_unit_tests --device <serial>"})
 
 
 def device_arguments(adb, device):

@@ -155,7 +155,7 @@ def prepare_patches(ctx, execution, op):
         raise ScaffoldError("PREPARATION_CONFLICT",
                             "Patches were applied but %d file(s) still differ from their metadata." % len(after.files),
                             details={"files": sorted(after.files)[:50]},
-                            repairs=[repair(["bdev", "drift", "--diff", "--checkout", str(identity.core)])])
+                            repairs=[repair(["bcore", "drift", "--diff", "--checkout", str(identity.core)])])
     patches.write_receipt(identity, plan.trees, patches.snapshot_files(identity, after), ctx.state_root,
                           patches.core_output(identity))
     op.succeed("apply-patches", exit=0)
@@ -316,7 +316,7 @@ def unresolved_error(outcome, identity):
         "Compilation completed but no artifact was verified (%s). Restart, install, and launch were not "
         "attempted." % outcome.unresolved_reason,
         details={"build": build_data(outcome, identity), "phase": "build"}, child_exit_code=0,
-        repairs=[repair(["bdev", "run", "--artifact", "<path-to-the-artifact>", "--checkout", str(identity.core)],
+        repairs=[repair(["bcore", "run", "--artifact", "<path-to-the-artifact>", "--checkout", str(identity.core)],
                         note="Placeholder path: select the output you built yourself.")])
 
 
@@ -516,15 +516,15 @@ def post_parse_test(spec, parsed):
         suite = positionals.pop(0)
         if not SUITE_PATTERN.fullmatch(suite):
             raise _input_error("%r is not a test suite name." % suite, spec, common_suites=list(COMMON_SUITES),
-                               example="bdev test brave_browser_tests --filter 'Example.*'")
+                               example="bcore test brave_browser_tests --filter 'Example.*'")
     selectors = [name for name, given in (("a test suite", suite), ("--file", parsed.get("file")),
                                           ("--base", parsed.get("base"))) if given]
     if suite and len(selectors) > 1 or parsed.get("file") and parsed.get("base"):
         raise _input_error("%s cannot be combined: choose a suite, --file, or changed-test discovery." % (
-            " and ".join(selectors).capitalize()), spec, example="bdev test --file components/example/example_unittest.cc")
+            " and ".join(selectors).capitalize()), spec, example="bcore test --file components/example/example_unittest.cc")
     if parsed.get("filter") and not suite:
         raise _input_error("--filter narrows a named suite; name one, or let discovery build the filters.", spec,
-                           example="bdev test brave_unit_tests --filter 'Example.*'")
+                           example="bcore test brave_unit_tests --filter 'Example.*'")
     parsed.values["target"], parsed.values["suite"] = target, suite
     parsed.positionals = []
     parsed.forwarded = positionals + parsed.forwarded
@@ -822,13 +822,13 @@ def select_artifact(ctx, identity, target, configuration, arch):
             "ARTIFACT_MISSING", "No %s %s %s application was found for this checkout." % (
                 target, configuration, arch),
             details={"searched": str(identity.src / "out" / buildopts.default_build_dir(target, configuration, arch))},
-            repairs=[repair(["bdev", "build", target, "--checkout", str(identity.core)]),
-                     repair(["bdev", "build-run", target, "--checkout", str(identity.core)])])
+            repairs=[repair(["bcore", "build", target, "--checkout", str(identity.core)]),
+                     repair(["bcore", "build-run", target, "--checkout", str(identity.core)])])
     if len(candidates) > 1:
         raise ScaffoldError(
             "ARTIFACT_AMBIGUOUS", "More than one application matches; choose one with --artifact.",
             details={"candidates": [item["path"] for item in candidates]},
-            repairs=[repair(["bdev", "run", "--artifact", candidates[0]["path"]],
+            repairs=[repair(["bcore", "run", "--artifact", candidates[0]["path"]],
                             note="Example only; choose the application you intend to run.")])
     return candidates[0]
 
@@ -872,8 +872,8 @@ def run_plan(ctx, identity, bundle):
 def cmd_deploy(ctx):
     """`deploy android` is `run android`."""
     if ctx.parsed.positionals[0].lower() != "android":
-        raise ScaffoldError("INVALID_INPUT", "deploy installs an Android build; use 'bdev run' for macOS.",
-                            details={"example": "bdev deploy android"})
+        raise ScaffoldError("INVALID_INPUT", "deploy installs an Android build; use 'bcore run' for macOS.",
+                            details={"example": "bcore deploy android"})
     return cmd_run(ctx)
 
 

@@ -9,7 +9,7 @@ never edits any Git configuration.
 ## Read-only check
 
 ```sh
-scripts/bdev doctor signing
+scripts/bcore doctor signing
 ```
 
 Required checks: `gpg.format` is `ssh`, `gpg.ssh.program` names an executable

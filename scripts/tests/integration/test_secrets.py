@@ -20,7 +20,7 @@ SECRET_ARGS = ["--token=" + SECRET, "--password", SECRET + "-2", "https://user:%
 @unittest.skipIf(SKIP, "needs direnv on a macOS host")
 class SecretRedactionTests(BuildTestCase):
     def saved_records(self):
-        directory = self.sandbox.config.parent / ".bdev"
+        directory = self.sandbox.config.parent / ".bcore"
         return {str(path): path.read_text() for path in directory.rglob("*") if path.is_file()}
 
     def assert_secret_free(self, *outputs):
@@ -32,15 +32,15 @@ class SecretRedactionTests(BuildTestCase):
     def child_received_secret(self):
         return any("--token=" + SECRET in call["argv"] for call in self.node_calls())
 
-    def bdev_text(self, *args, env=None):
-        return self.sandbox.bdev("--config", self.config, "--checkout", "main", *args, env=env or self.env())
+    def bcore_text(self, *args, env=None):
+        return self.sandbox.bcore("--config", self.config, "--checkout", "main", *args, env=env or self.env())
 
     def test_successful_json_results_and_records_hide_secrets_but_the_child_receives_them(self):
         for command in (["build", *SECRET_ARGS], ["test", "brave_unit_tests", *SECRET_ARGS],
                         ["sync", *SECRET_ARGS], ["patches", "update", *SECRET_ARGS]):
             with self.subTest(command=command):
                 self.sandbox.record.unlink(missing_ok=True)
-                result = self.bdev(*command)
+                result = self.bcore(*command)
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertTrue(self.child_received_secret(), "execution keeps the real arguments")
                 self.assertTrue(any("--token=***" in entry["argv"] for entry in json.loads(result.stdout)["logs"]))
@@ -50,10 +50,10 @@ class SecretRedactionTests(BuildTestCase):
         env = self.env(FAKE_EXIT="7")
         for command in (["build", *SECRET_ARGS], ["test", "brave_unit_tests", *SECRET_ARGS], ["sync", *SECRET_ARGS]):
             with self.subTest(command=command):
-                result = self.bdev(*command, env=env)
+                result = self.bcore(*command, env=env)
                 self.assertEqual(json.loads(result.stdout)["error"]["code"], "CHILD_FAILED")
                 self.assert_secret_free(result.stdout, result.stderr)
-                text = self.bdev_text(*command, env=env)
+                text = self.bcore_text(*command, env=env)
                 self.assertNotEqual(text.returncode, 0)
                 self.assert_secret_free(text.stdout, text.stderr)
 
@@ -61,24 +61,24 @@ class SecretRedactionTests(BuildTestCase):
         for command in (["build", "--plan", *SECRET_ARGS], ["sync", "--plan", *SECRET_ARGS],
                         ["test", "brave_unit_tests", "--plan", *SECRET_ARGS]):
             with self.subTest(command=command):
-                self.assert_secret_free(self.bdev(*command).stdout, self.bdev_text(*command).stdout)
+                self.assert_secret_free(self.bcore(*command).stdout, self.bcore_text(*command).stdout)
 
     def test_a_plan_that_cannot_resolve_its_command_still_hides_secrets(self):
         (self.core / "third_party" / "node" / "node-mac-arm64" / "bin" / "node").unlink()
         command = ["build", "--plan", *SECRET_ARGS]
-        result = self.bdev(*command)
+        result = self.bcore(*command)
         self.assertIn("arguments:", result.stdout, "the unresolved command is still shown, redacted")
-        self.assert_secret_free(result.stdout, self.bdev_text(*command).stdout)
+        self.assert_secret_free(result.stdout, self.bcore_text(*command).stdout)
 
     def test_direct_package_results_hide_secrets(self):
         for env, flags in ((self.env(), ["--json"]), (self.env(FAKE_EXIT="3"), ["--json"]), (self.env(FAKE_EXIT="3"), [])):
-            result = self.sandbox.bdev(*flags, "--config", self.config, "--checkout", "main", "run", "x", *SECRET_ARGS,
+            result = self.sandbox.bcore(*flags, "--config", self.config, "--checkout", "main", "run", "x", *SECRET_ARGS,
                                        tool="bpm", env=env)
             self.assert_secret_free(result.stdout, result.stderr)
 
     def test_a_cancelled_build_leaves_no_secret_in_its_result_or_record(self):
         process = subprocess.Popen(
-            [str(SCRIPTS / "bdev"), "--json", "--config", self.config, "--checkout", "main", "build", *SECRET_ARGS],
+            [str(SCRIPTS / "bcore"), "--json", "--config", self.config, "--checkout", "main", "build", *SECRET_ARGS],
             env=self.env(FAKE_SLEEP="60"), stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         deadline = time.time() + 30
         while not [r for r in self.node_calls() if "build" in r["argv"]] and time.time() < deadline:
@@ -104,7 +104,7 @@ class RejectedArgumentTests(SandboxTest):
         self.sandbox.write_config([])
 
     def run_rejected(self, command, tail, *flags):
-        return self.sandbox.bdev(*flags, "--config", str(self.sandbox.config), *command, "--", *tail)
+        return self.sandbox.bcore(*flags, "--config", str(self.sandbox.config), *command, "--", *tail)
 
     def test_rejected_arguments_after_the_delimiter_hide_secrets_in_json_and_text(self):
         for command in (["capabilities"], ["context"], ["doctor", "shell"], ["clean"]):
@@ -115,7 +115,7 @@ class RejectedArgumentTests(SandboxTest):
                         self.assertEqual(result.returncode, 2, result.stderr)
                         self.assertNotIn(SECRET, result.stdout + result.stderr)
                         self.assertNotIn(SECRET, "".join(
-                            path.read_text() for path in self.sandbox.config.parent.parent.rglob(".bdev/**/*")
+                            path.read_text() for path in self.sandbox.config.parent.parent.rglob(".bcore/**/*")
                             if path.is_file()))
 
     def test_rejected_arguments_stay_visible_when_they_are_not_secret(self):

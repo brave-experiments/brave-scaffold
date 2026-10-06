@@ -48,7 +48,7 @@ def missing_bootstrap_artifacts(identity):
 
 
 def bootstrap_repair(identity):
-    return repair(["bdev", "bpm", "run", "ios_bootstrap", "--checkout", str(identity.core)],
+    return repair(["bcore", "bpm", "run", "ios_bootstrap", "--checkout", str(identity.core)],
                   note="Runs Core's iOS bootstrap, which writes placeholders under out/ios_current_link and "
                        "Configuration/LLDBInit in Core.")
 
@@ -267,7 +267,7 @@ def resolve_build(parsed, identity, run_after=False):
         index += 1
     if conflicts:
         raise ScaffoldError(
-            "SELECTOR_CONFLICT", "%s would change what is built. bdev builds the Debug scheme for the iOS "
+            "SELECTOR_CONFLICT", "%s would change what is built. bcore builds the Debug scheme for the iOS "
             "Simulator; run xcodebuild yourself for anything else." % ", ".join(conflicts),
             details={"options": conflicts})
     device = parsed.get("device")

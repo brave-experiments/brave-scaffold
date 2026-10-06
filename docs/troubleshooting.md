@@ -22,7 +22,7 @@ tools are untouched.
 *Meaning:* your current directory is not inside one checkout, or the path holds
 several source workspaces. Nothing is guessed.
 
-*Next:* run `bdev checkout list`, then repeat with
+*Next:* run `bcore checkout list`, then repeat with
 `--checkout <alias-or-path-to-src/brave>`.
 
 ## `UNSUPPORTED_CAPABILITY` about Git linked worktrees
@@ -37,7 +37,7 @@ delete anything.
 *Meaning:* the checkout has no configured environment, the file is missing, or
 direnv is not installed.
 
-*Next (changes files in the scaffold):* `bdev env init --checkout <name>`.
+*Next (changes files in the scaffold):* `bcore env init --checkout <name>`.
 Install direnv if it is missing (**you**).
 
 ## `ENVIRONMENT_UNAPPROVED`
@@ -55,7 +55,7 @@ stderr.
 
 *Next:* reproduce with `direnv exec <environment-dir> true`. If the file is the
 generated one, check that the scaffold path in it still exists; after moving the
-scaffold, run `bdev env init` again and approve the new file (**you**).
+scaffold, run `bcore env init` again and approve the new file (**you**).
 
 ## `CHECKOUT_ENV_CONFLICT`
 
@@ -63,7 +63,7 @@ scaffold, run `bdev env init` again and approve the new file (**you**).
 selected, for example a hand-edited `.envrc` exporting another `BRAVE_CORE_DIR`.
 The mismatched variables are listed.
 
-*Next:* fix or regenerate the environment (`bdev env init`), then approve it
+*Next:* fix or regenerate the environment (`bcore env init`), then approve it
 (**you**).
 
 ## `LOCAL_TOOL_MISSING`
@@ -72,9 +72,9 @@ The mismatched variables are listed.
 declared in `package.json`. The message names which. A global Node or pnpm never
 satisfies this and never causes a failure by itself.
 
-*Next (changes files in the checkout):* `bdev tools setup --checkout <name>`
+*Next (changes files in the checkout):* `bcore tools setup --checkout <name>`
 runs the checkout's payload installer. Run it only when the checkout may change.
-`bdev doctor` and `bdev context` show the same checks without changing anything.
+`bcore doctor` and `bcore context` show the same checks without changing anything.
 If local `vpython3` is missing, follow the manual depot_tools restoration in
 [tool layouts](configuration-and-environments.md#supported-tool-layout); sync
 and tools setup need that interpreter and cannot restore it through the broken
@@ -90,7 +90,7 @@ metadata (`tools/cr/extra_deps.py`, or a literal versioned npm archive entry in
 number alone does not prove the pinned payload, so the command stops rather than
 running unverified tools. Node is verified for every checkout; pnpm additionally for
 pnpm checkouts (an older npm checkout is never judged by pnpm's metadata). If the
-checkout has a payload installer the message names `bdev tools setup`; otherwise
+checkout has a payload installer the message names `bcore tools setup`; otherwise
 update the checkout to a revision that carries the metadata.
 
 ## `DEPENDENCY_INCOMPATIBLE`
@@ -102,7 +102,7 @@ Only `npm` and `pnpm` are supported.
 
 ## `READINESS_BLOCKED` and `READINESS_INCOMPLETE`
 
-*Meaning:* `bdev doctor` found a required check that fails (`BLOCKED`) or could
+*Meaning:* `bcore doctor` found a required check that fails (`BLOCKED`) or could
 not be evaluated (`INCOMPLETE`). Both exit 3. The failing checks are listed with
 their repairs.
 
@@ -131,8 +131,8 @@ files and operation. A guard failure before preparation leaves files alone. A
 failure after scripts run can leave changes behind; inspect the checkout before
 retrying.
 
-*Next:* review with `bdev drift --diff`. Keep wanted edits with
-`bdev patches update`, or restore the files yourself; then repeat the command.
+*Next:* review with `bcore drift --diff`. Keep wanted edits with
+`bcore patches update`, or restore the files yourself; then repeat the command.
 `--skip-support-refresh` blocks a needed Android refresh; omit it only if you want
 support files replaced. The scaffold never stashes or discards edits as an
 automatic repair.
@@ -152,7 +152,7 @@ twice with different values. Both values and an example are shown; nothing ran.
 architecture (`MISSING`), found one that is not a usable Brave application
 (`MISMATCH`), or found several (`AMBIGUOUS`). `run` never builds.
 
-*Next:* `bdev build` or `bdev build-run`; or choose with `--artifact <path>`. After
+*Next:* `bcore build` or `bcore build-run`; or choose with `--artifact <path>`. After
 a build, `MISSING` or `MISMATCH` means the build succeeded but its expected output
 is absent or unusable; inspect the output directory named in the message.
 
@@ -164,7 +164,7 @@ with `--prepare_only` or `--xcode_gen`).
 For `build`, this is a warning. For `build-run` and `sync-build-run` it is an error
 and nothing was stopped, installed, or launched.
 
-*Next:* run the application you built with `bdev run --artifact <path>`.
+*Next:* run the application you built with `bcore run --artifact <path>`.
 
 ## `LAUNCH_FAILED`
 
@@ -177,14 +177,14 @@ touched.
 *Meaning:* the checkout's support working copy is missing, or its version gate
 rejects this checkout (the reason is quoted). Nothing was prepared or built.
 
-*Next:* `bdev android setup` creates a missing working copy (network). For a
-mismatch, pick a revision for this checkout only: `bdev android setup --ref <ref>`,
+*Next:* `bcore android setup` creates a missing working copy (network). For a
+mismatch, pick a revision for this checkout only: `bcore android setup --ref <ref>`,
 which switches a clean working copy, or switch it yourself. A working copy with
 local changes or unpushed commits is never switched for you.
 
 ## `DEPENDENCY_INCOMPATIBLE` for the Android test branch
 
-*Meaning:* `bdev test android` needs the support working copy on the
+*Meaning:* `bcore test android` needs the support working copy on the
 `android-testing-prototype` branch, and it is on another branch or a detached HEAD.
 Nothing was switched, prepared, or built.
 
@@ -224,8 +224,8 @@ reconnect it.
 
 ## Running an older output
 
-`bdev run` and `bdev deploy` use the selected artifact without checking whether sources
-changed since the build. Run `bdev build` when you want a new build. Launching an
+`bcore run` and `bcore deploy` use the selected artifact without checking whether sources
+changed since the build. Run `bcore build` when you want a new build. Launching an
 artifact does not repair or clear records left by a failed or interrupted build.
 
 ## Interrupted operations
@@ -239,7 +239,7 @@ still held them, the result carries a `CLEANUP_INCOMPLETE` warning and
 `error.details.cleanup_incomplete`; look for leftover processes before retrying.
 Only processes this command started in its own group are signalled. An interrupted build leaves its output marked as needing
 revalidation; a command killed outright leaves an operation record still marked
-incomplete in `.bdev/operations/` beside your configuration. Inspect the checkout
+incomplete in `.bcore/operations/` beside your configuration. Inspect the checkout
 before retrying anything that modifies it.
 
 ## Support repositories are skipped

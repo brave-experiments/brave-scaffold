@@ -49,7 +49,7 @@ if "sync" in argv:
         self.assertEqual(target.read_text(), "Core sync output\n")
         self.assertNotIn("scope", document["data"]["sync"])
         self.assertNotIn("overwrite_backup", document["data"]["sync"])
-        state = self.sandbox.config.parent / ".bdev"
+        state = self.sandbox.config.parent / ".bcore"
         self.assertFalse(list(state.rglob("sync-baseline.json")))
         self.assertFalse((state / "backups").exists())
 

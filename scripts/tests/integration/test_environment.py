@@ -8,7 +8,7 @@ import os
 import shutil
 import unittest
 
-from tests.support import SandboxTest, tree_snapshot
+from tests.support import SandboxTest, SCRIPTS, tree_snapshot
 
 
 @unittest.skipUnless(shutil.which("direnv"), "direnv is required")
@@ -17,14 +17,14 @@ class EnvironmentTests(SandboxTest):
         core = self.sandbox.make_checkout("main")
         self.sandbox.register("main")
         before = tree_snapshot(core.parent.parent.parent)
-        result = self.sandbox.bdev("env", "init", "--checkout", "main", "--config", str(self.sandbox.config))
+        result = self.sandbox.bcore("env", "init", "--checkout", "main", "--config", str(self.sandbox.config))
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(before, tree_snapshot(core.parent.parent.parent), "checkout files changed")
         envrc = self.sandbox.root / "config" / "environments" / "main" / ".envrc"
         self.assertTrue(envrc.is_file())
         self.assertIn("direnv allow", result.stdout)
         # Not approved: the next execution stops with an approval repair.
-        bpm = self.sandbox.bdev("--json", "--checkout", "main", "--config", str(self.sandbox.config),
+        bpm = self.sandbox.bcore("--json", "--checkout", "main", "--config", str(self.sandbox.config),
                                 "run", tool="bpm")
         document = __import__("json").loads(bpm.stdout)
         self.assertEqual(document["error"]["code"], "ENVIRONMENT_UNAPPROVED")
@@ -36,7 +36,7 @@ class EnvironmentTests(SandboxTest):
     def test_approved_environment_runs_in_a_fresh_process_without_hooks(self):
         self.sandbox.make_checkout("main")
         self.sandbox.prepare_environment("main")
-        result = self.sandbox.bdev("env", "check", "--checkout", "main", "--config", str(self.sandbox.config))
+        result = self.sandbox.bcore("env", "check", "--checkout", "main", "--config", str(self.sandbox.config))
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("matches", result.stdout)
 
@@ -45,7 +45,7 @@ class EnvironmentTests(SandboxTest):
         self.sandbox.prepare_environment("main")
         envrc = self.sandbox.root / "config" / "environments" / "main" / ".envrc"
         envrc.write_text(envrc.read_text() + "\n# edited\n")
-        result, document = self.sandbox.bdev_json("env", "check", "--checkout", "main",
+        result, document = self.sandbox.bcore_json("env", "check", "--checkout", "main",
                                                   "--config", str(self.sandbox.config))
         self.assertEqual(document["error"]["code"], "ENVIRONMENT_UNAPPROVED")
 
@@ -55,7 +55,7 @@ class EnvironmentTests(SandboxTest):
         envrc = self.sandbox.root / "config" / "environments" / "main" / ".envrc"
         envrc.write_text("exit 7\n")
         self.sandbox.approve("main")
-        result = self.sandbox.bdev("--json", "--checkout", "main", "--config", str(self.sandbox.config), "run",
+        result = self.sandbox.bcore("--json", "--checkout", "main", "--config", str(self.sandbox.config), "run",
                                    tool="bpm")
         document = __import__("json").loads(result.stdout)
         self.assertEqual(document["error"]["code"], "ENVIRONMENT_LOAD_FAILED")
@@ -68,7 +68,7 @@ class EnvironmentTests(SandboxTest):
         envrc = self.sandbox.root / "config" / "environments" / "main" / ".envrc"
         envrc.write_text('export BRAVE_CORE_DIR="%s"\n' % other)
         self.sandbox.approve("main")
-        result, document = self.sandbox.bdev_json("env", "check", "--checkout", "main",
+        result, document = self.sandbox.bcore_json("env", "check", "--checkout", "main",
                                                   "--config", str(self.sandbox.config))
         self.assertEqual(document["error"]["code"], "CHECKOUT_ENV_CONFLICT")
         names = [item["variable"] for item in document["error"]["details"]["mismatches"]]
@@ -78,7 +78,7 @@ class EnvironmentTests(SandboxTest):
     def test_environment_directory_inside_core_is_rejected(self):
         core = self.sandbox.make_checkout("main")
         self.sandbox.write_config([("main", core, str(core / "env"))])
-        result, document = self.sandbox.bdev_json("env", "init", "--checkout", "main",
+        result, document = self.sandbox.bcore_json("env", "init", "--checkout", "main",
                                                   "--config", str(self.sandbox.config))
         self.assertEqual(document["error"]["code"], "INVALID_INPUT")
         self.assertFalse((core / "env").exists())
@@ -89,7 +89,7 @@ class EnvironmentTests(SandboxTest):
         directory = self.sandbox.root / "config" / "environments" / "main"
         directory.mkdir(parents=True)
         (directory / ".envrc").write_text("export CUSTOM=1\n")
-        result = self.sandbox.bdev("env", "init", "--checkout", "main", "--config", str(self.sandbox.config))
+        result = self.sandbox.bcore("env", "init", "--checkout", "main", "--config", str(self.sandbox.config))
         self.assertEqual(result.returncode, 0)
         self.assertEqual((directory / ".envrc").read_text(), "export CUSTOM=1\n")
         self.assertIn("preserved", result.stdout)
@@ -103,7 +103,7 @@ class EnvironmentTests(SandboxTest):
         envrc.rename(target)
         before = target.read_text()
         envrc.symlink_to(target)
-        result = self.sandbox.bdev("env", "init", "--checkout", "main", "--config", str(self.sandbox.config))
+        result = self.sandbox.bcore("env", "init", "--checkout", "main", "--config", str(self.sandbox.config))
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertTrue(envrc.is_symlink())
         self.assertEqual(target.read_text(), before)
@@ -116,10 +116,10 @@ class EnvironmentTests(SandboxTest):
         self.sandbox.prepare_environment("main")
         env = self.sandbox.env(BRAVE_CORE_DIR=str(other), BRAVE_SRC_ROOT=str(other.parent),
                                BRAVE_LAUNCHER_CHECKOUT_DIR=str(other))
-        result = self.sandbox.bdev("env", "check", "--checkout", "main", "--config", str(self.sandbox.config),
+        result = self.sandbox.bcore("env", "check", "--checkout", "main", "--config", str(self.sandbox.config),
                                    env=env)
         self.assertEqual(result.returncode, 0, result.stderr)
-        result = self.sandbox.bdev("--config", str(self.sandbox.config), "run", "x", tool="bpm", env=env,
+        result = self.sandbox.bcore("--config", str(self.sandbox.config), "run", "x", tool="bpm", env=env,
                                    cwd=main)
         self.assertEqual(result.returncode, 0, result.stderr)
         record = self.sandbox.records()[-1]
@@ -129,7 +129,7 @@ class EnvironmentTests(SandboxTest):
     def test_env_export_is_pure(self):
         core = self.sandbox.make_checkout("main")
         self.sandbox.register("main")
-        result = self.sandbox.bdev("env", "export", "--checkout", "main", "--format", "bash",
+        result = self.sandbox.bcore("env", "export", "--checkout", "main", "--format", "bash",
                                    "--config", str(self.sandbox.config))
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("export BRAVE_CORE_DIR=%s" % core, result.stdout)

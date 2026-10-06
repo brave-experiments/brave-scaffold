@@ -49,7 +49,7 @@ class RbeCheckTests(SandboxTest):
         (siso / ".sisoenv").write_text("REAPI=https://user:%s@rbe.example:443\n" % CREDENTIAL)
 
     def doctor(self, scope, *extra, cwd=None, env=None):
-        result = self.sandbox.bdev("--json", "--config", self.config, "doctor", scope, *extra, cwd=cwd, env=env)
+        result = self.sandbox.bcore("--json", "--config", self.config, "doctor", scope, *extra, cwd=cwd, env=env)
         return result, json.loads(result.stdout)
 
     def status(self, document):
@@ -102,7 +102,7 @@ class RbeCheckTests(SandboxTest):
         self.write_env()
         self.write_sync_artifacts()
         json_result, document = self.doctor("mac", "--checkout", "main")
-        text = self.sandbox.bdev("--config", self.config, "doctor", "mac", "--checkout", "main")
+        text = self.sandbox.bcore("--config", self.config, "doctor", "mac", "--checkout", "main")
         self.assertEqual(self.status(document)["services-key"], "pass")
         for output in (json_result.stdout, json_result.stderr, text.stdout, text.stderr):
             self.assertNotIn(SECRET, output)
@@ -133,12 +133,12 @@ class RbeCheckTests(SandboxTest):
     def test_text_mode_writes_only_external_diagnostics(self):
         self.write_env()
         before = (tree_snapshot(self.core.parents[3]), tree_snapshot(self.sandbox.root / "config"))
-        text = self.sandbox.bdev("--config", self.config, "doctor", "rbe", "--checkout", "main")
+        text = self.sandbox.bcore("--config", self.config, "doctor", "rbe", "--checkout", "main")
         self.assertIn("RBE network access", text.stdout)
         self.assertIn("❔  RBE network access", text.stdout)
         self.assertEqual(before[0], tree_snapshot(self.core.parents[3]))
         after = tree_snapshot(self.sandbox.root / "config")
-        logs = self.sandbox.root / "config" / ".bdev" / "logs"
+        logs = self.sandbox.root / "config" / ".bcore" / "logs"
         allowed = {str(logs.parent), str(logs), *(str(path) for path in logs.glob("*.log"))}
         self.assertEqual(before[1], {path: after.get(path) for path in before[1]})
         self.assertLessEqual(after.keys() - before[1].keys(), allowed)

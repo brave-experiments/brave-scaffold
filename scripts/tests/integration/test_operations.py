@@ -17,7 +17,7 @@ from tests.support import SCRIPTS
 
 class RecordCase:
     def records(self, command=None):
-        directory = self.sandbox.config.parent / ".bdev" / "operations"
+        directory = self.sandbox.config.parent / ".bcore" / "operations"
         found = [json.loads(path.read_text()) for path in sorted(directory.glob("*.json"))]
         return [item for item in found if command is None or item["command"] == command]
 
@@ -59,7 +59,7 @@ class RecordLifecycleTests(RecordCase, BuildTestCase):
 
     def test_dispatch_is_saved_before_the_child_finishes(self):
         process = subprocess.Popen(
-            [str(SCRIPTS / "bdev"), "--json", "--config", self.config, "--checkout", "main", "build"],
+            [str(SCRIPTS / "bcore"), "--json", "--config", self.config, "--checkout", "main", "build"],
             env=self.env(FAKE_SLEEP="60"), stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         deadline = time.time() + 30
         while not [r for r in self.node_calls() if "build" in r["argv"]] and time.time() < deadline:
@@ -77,7 +77,7 @@ class RecordLifecycleTests(RecordCase, BuildTestCase):
             with self.subTest(signal=signum.name):
                 self.sandbox.record.unlink(missing_ok=True)
                 process = subprocess.Popen(
-                    [str(SCRIPTS / "bdev"), "--json", "--config", self.config, "--checkout", "main", "test",
+                    [str(SCRIPTS / "bcore"), "--json", "--config", self.config, "--checkout", "main", "test",
                      "brave_unit_tests"], env=self.env(FAKE_SLEEP="60"), stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE, text=True)
                 deadline = time.time() + 30
@@ -127,7 +127,7 @@ class RecordLifecycleTests(RecordCase, BuildTestCase):
                 self.sandbox.record.unlink(missing_ok=True)
                 earlier = {item["operation_id"] for item in self.records("test")}
                 process = subprocess.Popen(
-                    [str(SCRIPTS / "bdev"), "--json", "--config", self.config, "--checkout", "main", "test",
+                    [str(SCRIPTS / "bcore"), "--json", "--config", self.config, "--checkout", "main", "test",
                      "brave_unit_tests"], env=self.env(FAKE_SLEEP="60"), stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE, text=True)
                 deadline = time.time() + 30
@@ -216,7 +216,7 @@ class AndroidRecordTests(RecordCase, AndroidTestCase):
             stream.write("target_os = ['android']\n")
         self.assertEqual(self.document("build", "android")[0].returncode, 0)
         env = self.env(FAKE_ADB_DEVICES="emulator-5554,device")
-        result = self.sandbox.bdev("--json", "--config", self.config, "--checkout", "main", "deploy", "android",
+        result = self.sandbox.bcore("--json", "--config", self.config, "--checkout", "main", "deploy", "android",
                                    env=env)
         document = json.loads(result.stdout)
         self.assertEqual(result.returncode, 0, result.stderr)

@@ -29,12 +29,12 @@ class StatusTests(SandboxTest):
                 'source': {'core_branch': self.git('branch', '--show-current').strip(), 'core_head': self.head, 'core_uncommitted_files': 1},
                 'details': {'target': 'mac', 'suite': 'brave_unit_tests'}}
         data.update(overrides)
-        path = self.sandbox.config.parent / '.bdev' / 'operations' / (name + '.json')
+        path = self.sandbox.config.parent / '.bcore' / 'operations' / (name + '.json')
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(data))
 
     def status(self, *args):
-        result, document = self.sandbox.bdev_json('status', *args, '--config', str(self.sandbox.config), cwd=self.core)
+        result, document = self.sandbox.bcore_json('status', *args, '--config', str(self.sandbox.config), cwd=self.core)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(Validator().problems(document), [])
         return document['data']
@@ -79,7 +79,7 @@ class StatusTests(SandboxTest):
         self.record('b-failure', status='error', finished='2026-10-06T01:00:00+0000')
         self.record('c-other', checkout='/another/checkout', finished='2026-10-07T01:00:00+0000')
         self.record('d-incomplete', state='incomplete', started='2026-10-06T11:01:00+1000')
-        folder = self.sandbox.config.parent / '.bdev' / 'outputs' / records.checkout_key(self.core)
+        folder = self.sandbox.config.parent / '.bcore' / 'outputs' / records.checkout_key(self.core)
         folder.mkdir(parents=True)
         (folder / 'output.json').write_text(json.dumps({'output_dir': '/out/mac', 'needs_revalidation': True}))
         data = self.status()
@@ -87,7 +87,7 @@ class StatusTests(SandboxTest):
         self.assertEqual(data['history'][0]['status'], 'error')
         self.assertEqual(data['incomplete_operations'][0]['process_state'], 'unknown')
         self.assertTrue(data['outputs'][0]['needs_revalidation'])
-        result = self.sandbox.bdev('status', '--config', str(self.sandbox.config), cwd=self.core)
+        result = self.sandbox.bcore('status', '--config', str(self.sandbox.config), cwd=self.core)
         self.assertIn('failed', result.stdout)
         self.assertIn('history, not current verification', result.stdout)
         self.assertIn('process state unknown', result.stdout)
@@ -98,5 +98,5 @@ class StatusTests(SandboxTest):
         self.assertEqual([r['operation_id'] for r in self.status()['history']], ['current'])
         history = self.status('--all-branches')['history']
         self.assertEqual({r['operation_id'] for r in history}, {'legacy', 'current'})
-        result = self.sandbox.bdev('status', '--all-branches', '--config', str(self.sandbox.config), cwd=self.core)
+        result = self.sandbox.bcore('status', '--all-branches', '--config', str(self.sandbox.config), cwd=self.core)
         self.assertIn('branch unknown', result.stdout)

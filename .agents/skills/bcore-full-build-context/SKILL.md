@@ -1,13 +1,13 @@
 ---
-name: bdev-new-full-build-context
-description: Build Brave for macOS or Android and run tests directly changed by the selected branch or working tree through this repository's bdev commands. Use for app builds, changed-test execution, combined build/test work, and Android-on-macOS test preparation while preserving the local Core test overlay.
+name: bcore-full-build-context
+description: Build Brave for macOS or Android and run tests directly changed by the selected branch or working tree through this repository's bcore commands. Use for app builds, changed-test execution, combined build/test work, and Android-on-macOS test preparation while preserving the local Core test overlay.
 ---
 
 # Brave full build context
 
 Use this as an execution skill for the user's requested build or test work.
 Resolve `SCAFFOLD_ROOT` to the repository containing this skill, following
-symlinks. Call its absolute `scripts/bdev` path; no global installation or shell
+symlinks. Call its absolute `scripts/bcore` path; no global installation or shell
 activation is needed. Read [agent workflows](../../../docs/agent-workflows.md)
 for execution authority and reporting.
 
@@ -22,8 +22,8 @@ launch or deployment require a request covering those actions. Only the user run
 
 ## Select the checkout and scope
 
-- Use the checkout named by the user, otherwise let `bdev` infer it from cwd.
-  Outside a checkout, inspect `bdev checkout list --json` and resolve a precise
+- Use the checkout named by the user, otherwise let `bcore` infer it from cwd.
+  Outside a checkout, inspect `bcore checkout list --json` and resolve a precise
   selection. Ask when the intended checkout is unclear. Checkout paths come from
   local configuration and may be outside this repository; do not derive an alias
   from directory naming conventions.
@@ -33,17 +33,17 @@ launch or deployment require a request covering those actions. Only the user run
 - Honor the requested platform. For an app build with no platform choice, use
   the host platform. For changed tests, use the discovery result's platforms;
   restrict to the user's platform when supplied.
-- Inspect the selected checkout with `bdev doctor <platform> --json`. Readiness
+- Inspect the selected checkout with `bcore doctor <platform> --json`. Readiness
   failures and suggested repairs do not authorize setup or source changes beyond
   the requested work.
 
 | Request | Action |
 | --- | --- |
-| Build the app | Run `bdev build` for the selected platform. |
-| Run changed tests | Discover and execute mapped suites with `bdev test`. |
-| Run one file's tests | Use `bdev test --file <path>`; the file need not be changed. |
+| Build the app | Run `bcore build` for the selected platform. |
+| Run changed tests | Discover and execute mapped suites with `bcore test`. |
+| Run one file's tests | Use `bcore test --file <path>`; the file need not be changed. |
 | Build the app and test branch changes | Build the selected platform, then run its mapped changed tests. |
-| Run a named suite or filter | Use `bdev test <suite> --filter ...`; it need not appear in the branch diff. |
+| Run a named suite or filter | Use `bcore test <suite> --filter ...`; it need not appear in the branch diff. |
 | Show a plan | Use `--plan`; do not execute the resulting commands. |
 
 ## Build
@@ -52,8 +52,8 @@ Use the scaffold's build commands with Debug arm64 and remote execution by
 default, unless the user specifies otherwise:
 
 ```sh
-"$SCAFFOLD_ROOT/scripts/bdev" --checkout <checkout> build mac --json
-"$SCAFFOLD_ROOT/scripts/bdev" --checkout <checkout> build android --json
+"$SCAFFOLD_ROOT/scripts/bcore" --checkout <checkout> build mac --json
+"$SCAFFOLD_ROOT/scripts/bcore" --checkout <checkout> build android --json
 ```
 
 Use `--configuration release`, `--target_arch=<arch>`, or other forwarded package
@@ -75,7 +75,7 @@ Use the built-in discovery and runner; do not recreate test mapping in a skill
 helper. Start with a read-only discovery plan:
 
 ```sh
-"$SCAFFOLD_ROOT/scripts/bdev" --checkout <checkout> test <mac|android> --plan --json
+"$SCAFFOLD_ROOT/scripts/bcore" --checkout <checkout> test <mac|android> --plan --json
 ```
 
 Discovery covers committed branch changes against the base (default
@@ -88,7 +88,7 @@ ask for a base; do not fetch or change refs merely to discover tests.
 Read `data.discovery`, including its phases, filters, unmapped files, and
 deselected files. Execute the same command without `--plan` for authorized test
 work; a plan alone does not fulfill a request to run tests. For one file use
-`bdev test --file <path>`; a relative path resolves from the current directory and
+`bcore test --file <path>`; a relative path resolves from the current directory and
 must be inside the checkout. A suite, `--file`, and `--base` cannot be combined, and
 `--filter` needs a suite. If nothing is selected, the command says so and runs
 nothing; report that rather than substituting an unrelated broad suite.
@@ -102,9 +102,9 @@ mapping and exclusions; see [test](../../../docs/commands.md#test).
 For a named test, use the suite and filter directly:
 
 ```sh
-"$SCAFFOLD_ROOT/scripts/bdev" --checkout <checkout> test mac brave_unit_tests --filter 'Example.*' --json
-"$SCAFFOLD_ROOT/scripts/bdev" --checkout <checkout> test android brave_junit_tests --filter '*ExampleTest*' --json
-"$SCAFFOLD_ROOT/scripts/bdev" --checkout <checkout> test android brave_java_unit_tests --filter 'ExampleTest.*' --device <serial> --json
+"$SCAFFOLD_ROOT/scripts/bcore" --checkout <checkout> test mac brave_unit_tests --filter 'Example.*' --json
+"$SCAFFOLD_ROOT/scripts/bcore" --checkout <checkout> test android brave_junit_tests --filter '*ExampleTest*' --json
+"$SCAFFOLD_ROOT/scripts/bcore" --checkout <checkout> test android brave_java_unit_tests --filter 'ExampleTest.*' --device <serial> --json
 ```
 
 Core's test command builds the suite before running it. JUnit runs on the host and
@@ -112,10 +112,10 @@ must not receive `--device`; use a fully qualified class or wildcard filter.
 Device Java tests use the requested serial, configured default, or sole usable
 device. Resolve ambiguity before execution; never pick the first device.
 
-`bdev test android` checks Android support and device requirements before running
+`bcore test android` checks Android support and device requirements before running
 any phase. If those block the plan, run authorized independent macOS phases with
-`bdev test mac`. If only the device is missing, execute the discovered host-side
-JUnit phase with `bdev test android brave_junit_tests` and its exact filter.
+`bcore test mac`. If only the device is missing, execute the discovered host-side
+JUnit phase with `bcore test android brave_junit_tests` and its exact filter.
 Report the device-backed phases as blocked. Do not rerun phases already completed.
 
 ## Android support and Core overlay
@@ -127,7 +127,7 @@ exactly `android-testing-prototype`; another branch or detached HEAD blocks them
 Report the actual path and branch. Do not switch it or create a support working
 copy without authorization covering that change.
 
-Let `bdev test` prepare the reviewed support scripts and Core test overlay. The
+Let `bcore test` prepare the reviewed support scripts and Core test overlay. The
 overlay currently affects these paths relative to Core:
 
 ```text

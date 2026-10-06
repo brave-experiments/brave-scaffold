@@ -20,7 +20,7 @@ Run these from the scaffold root:
 
 ```sh
 python3.14 -m venv --without-pip scripts/.venv
-scripts/bdev setup
+scripts/bcore setup
 ```
 
 The first command creates the scaffold-owned virtual environment. It installs no
@@ -30,22 +30,22 @@ environment. An absolute path to another compatible Python works too. If the
 scaffold moves or the base Python disappears, recreate only this environment with
 the command shown in the launcher's error message.
 
-`scripts/bdev setup` prepares `brave-scaffold.toml` when it is missing and lists
+`scripts/bcore setup` prepares `brave-scaffold.toml` when it is missing and lists
 the next steps. It changes nothing inside Brave Core.
 
-To type `bdev` and `bpm` without a path, put `scripts/` on your `PATH`. That is
-optional; every example works with `scripts/bdev`.
+To type `bcore` and `bpm` without a path, put `scripts/` on your `PATH`. That is
+optional; every example works with `scripts/bcore`.
 
-To change directories with `bdev cd main` or `bdev cd alt-1`, also source
-`scripts/bdev-shell.sh` in your Bash or Zsh startup file. These commands enter
+To change directories with `bcore cd main` or `bcore cd alt-1`, also source
+`scripts/bcore-shell.sh` in your Bash or Zsh startup file. These commands enter
 the selected checkout's `src/brave` directory. A separate process cannot change
-your shell's directory, so running `scripts/bdev cd main` directly prints the
+your shell's directory, so running `scripts/bcore cd main` directly prints the
 path instead.
 
 ## Register a checkout
 
 ```sh
-scripts/bdev checkout add main /work/browser/_bad_scm/workspace/src/brave
+scripts/bcore checkout add main /work/browser/_bad_scm/workspace/src/brave
 ```
 
 Give the Core directory, the Chromium `src` directory, or the outer checkout
@@ -56,7 +56,7 @@ worktrees are rejected.
 ## Create and approve the environment
 
 ```sh
-scripts/bdev env init --checkout main
+scripts/bcore env init --checkout main
 ```
 
 This writes `environments/main/.envrc` beside your configuration, prints its
@@ -73,8 +73,8 @@ new approval. See [configuration and environments](configuration-and-environment
 ## First commands
 
 ```sh
-scripts/bdev doctor mac --checkout main     # readiness; changes nothing
-scripts/bdev context --checkout main        # what the tools resolved
+scripts/bcore doctor mac --checkout main     # readiness; changes nothing
+scripts/bcore context --checkout main        # what the tools resolved
 scripts/bpm --checkout main run --help      # checkout-local package manager
 ```
 

@@ -139,7 +139,7 @@ def unsupported_worktree_error(worktrees, core):
         "The selected checkout uses Git linked worktrees (%s). Brave browser development "
         "needs a separate full checkout for each branch or workspace." % roles,
         details={"core": str(core), "worktrees": worktrees},
-        repairs=[repair(["bdev", "context", "--checkout", "<path-to-a-full-checkout>"],
+        repairs=[repair(["bcore", "context", "--checkout", "<path-to-a-full-checkout>"],
                         note="Select an existing full checkout; nothing was moved or changed.")])
 
 
@@ -175,7 +175,7 @@ def resolve_selector(config, selector, cwd):
         raise ScaffoldError(
             "CHECKOUT_NOT_FOUND", "No checkout has the alias %r." % selector,
             details={"candidates": _candidate_list(config)},
-            repairs=[repair(["bdev", "checkout", "list"])])
+            repairs=[repair(["bcore", "checkout", "list"])])
     path = Path(os.path.expanduser(selector))
     if not path.is_absolute():
         path = Path(cwd) / path
@@ -184,7 +184,7 @@ def resolve_selector(config, selector, cwd):
         raise ScaffoldError(
             "CHECKOUT_NOT_FOUND", "No Brave Core checkout was found at or above %s." % path,
             details={"path": str(path)},
-            repairs=[repair(["bdev", "checkout", "list"])])
+            repairs=[repair(["bcore", "checkout", "list"])])
     if len(found) > 1:
         raise ambiguous(found, selector)
     return build_identity(found[0], config, "explicit_path", selector)
@@ -195,7 +195,7 @@ def ambiguous(found, where):
         "CHECKOUT_AMBIGUOUS",
         "%s contains more than one Brave source workspace; name the Core directory." % where,
         details={"candidates": [str(item) for item in found]},
-        repairs=[repair(["bdev", "context", "--checkout", str(found[0])],
+        repairs=[repair(["bcore", "context", "--checkout", str(found[0])],
                         note="Example only; choose the checkout you intend to use.")])
 
 
@@ -217,7 +217,7 @@ def select_checkout(config, selector=None, cwd=None, required=True):
         "CHECKOUT_REQUIRED",
         "No checkout is selected: the current directory is not inside a Brave checkout.",
         details={"candidates": candidates, "example": "--checkout %s" % example},
-        repairs=[repair(["bdev", "checkout", "list"])])
+        repairs=[repair(["bcore", "checkout", "list"])])
 
 
 def validate_layout(identity):

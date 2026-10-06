@@ -56,7 +56,7 @@ def build_checks(ctx, scope, remote_required=False):
         "ios-gclient-target", PASS if ok else BLOCKER,
         "target_os includes ios." if ok else "This checkout is not configured for iOS (target_os: %s)." % (
             ", ".join(targets) if targets else "missing or unreadable"), scope, affects=AFFECTS,
-        repairs=[] if ok else [repair(["bdev", "sync", "ios", "--checkout", str(identity.core)],
+        repairs=[] if ok else [repair(["bcore", "sync", "ios", "--checkout", str(identity.core)],
                                       note="Adds ios to the checkout's target_os and syncs; changes the checkout.")],
         target_os=targets)]
     project = ios.project_path(identity)

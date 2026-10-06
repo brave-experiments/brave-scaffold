@@ -99,7 +99,7 @@ def require_base(repo, base):
     if run_capture(["git", "-C", str(repo.path), "rev-parse", "--verify", "-q", base + "^{commit}"], str(repo.path),
                    None, repo.log, timeout=30).returncode != 0:
         raise ScaffoldError("INVALID_INPUT", "The base ref %r does not exist in this checkout." % base,
-                            details={"example": "bdev test --base origin/master"},
+                            details={"example": "bcore test --base origin/master"},
                             repairs=[repair(["git", "-C", str(repo.path), "branch", "-a"], note="Lists refs.")])
 
 
@@ -320,7 +320,7 @@ def map_file(repo, path, base, scope, groups, phases, unmapped):
         wrapped = _wrapped(path)
         for part, name in (("/android/", "Android"), ("/ios/", "iOS")):
             if part in wrapped:
-                unmapped.append((path, "%s native tests are not available through bdev" % name))
+                unmapped.append((path, "%s native tests are not available through bcore" % name))
                 return
         fixtures = sorted({m.group("fixture") for m in CPP_TEST_CASE_RE.finditer(content_of(repo, path, scope))})
         if not fixtures:

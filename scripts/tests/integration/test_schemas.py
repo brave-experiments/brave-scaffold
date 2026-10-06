@@ -67,25 +67,25 @@ class MachineCommandTests(SchemaCase, SandboxTest):
     def test_setup_registration_context_and_environment_commands(self):
         core = self.sandbox.make_checkout("main")
         config = str(self.sandbox.config)
-        self.check(self.sandbox.bdev_json("capabilities")[1])
-        self.check(self.sandbox.bdev_json("setup", "--config", config)[1])
-        self.check(self.sandbox.bdev_json("checkout", "add", "main", str(core), "--config", config)[1])
-        self.check(self.sandbox.bdev_json("checkout", "list", "--config", config)[1])
-        self.check(self.sandbox.bdev_json("env", "init", "--checkout", "main", "--config", config)[1])
-        self.check(self.sandbox.bdev_json("env", "export", "--checkout", "main", "--config", config)[1])
+        self.check(self.sandbox.bcore_json("capabilities")[1])
+        self.check(self.sandbox.bcore_json("setup", "--config", config)[1])
+        self.check(self.sandbox.bcore_json("checkout", "add", "main", str(core), "--config", config)[1])
+        self.check(self.sandbox.bcore_json("checkout", "list", "--config", config)[1])
+        self.check(self.sandbox.bcore_json("env", "init", "--checkout", "main", "--config", config)[1])
+        self.check(self.sandbox.bcore_json("env", "export", "--checkout", "main", "--config", config)[1])
         self.sandbox.approve("main")
-        self.check(self.sandbox.bdev_json("env", "check", "--checkout", "main", "--config", config)[1])
-        self.check(self.sandbox.bdev_json("context", "--config", config)[1], "without a checkout")
-        self.check(self.sandbox.bdev_json("context", "--checkout", "main", "--config", config)[1])
-        self.check(self.sandbox.bdev_json("doctor", "mac", "--checkout", "main", "--config", config)[1], "doctor")
+        self.check(self.sandbox.bcore_json("env", "check", "--checkout", "main", "--config", config)[1])
+        self.check(self.sandbox.bcore_json("context", "--config", config)[1], "without a checkout")
+        self.check(self.sandbox.bcore_json("context", "--checkout", "main", "--config", config)[1])
+        self.check(self.sandbox.bcore_json("doctor", "mac", "--checkout", "main", "--config", config)[1], "doctor")
         write_executable(self.sandbox.bin / "true-shell", "#!/bin/sh\nexit 0\n")
         env = self.sandbox.env(SHELL=str(self.sandbox.bin / "true-shell"))
-        result = self.sandbox.bdev("--json", "shell", "--checkout", "main", "--config", config, env=env)
+        result = self.sandbox.bcore("--json", "shell", "--checkout", "main", "--config", config, env=env)
         self.check(json.loads(result.stdout))
 
     def test_errors_and_parse_failures_conform(self):
         for args in (["nonsense"], ["env", "check"], ["doctor", "unknown"], ["context", "--bogus"]):
-            result, document = self.sandbox.bdev_json(*args)
+            result, document = self.sandbox.bcore_json(*args)
             self.check(document, "error")
             self.assertEqual(document["status"], "error")
 
@@ -115,7 +115,7 @@ class MacResultTests(SchemaCase, BuildTestCase):
         self.check(self.document("clean", "--execute")[1], "execute")
         self.sandbox.mark_stale("main")
         self.check(self.document("tools", "setup")[1])
-        self.check(self.sandbox.bdev_json("doctor", "mac", "--checkout", "main", "--config", self.config,
+        self.check(self.sandbox.bcore_json("doctor", "mac", "--checkout", "main", "--config", self.config,
                                           env=self.env())[1], "doctor")
 
     def test_plans_conform(self):
@@ -127,13 +127,13 @@ class MacResultTests(SchemaCase, BuildTestCase):
                 self.assertTrue(document["data"]["plan"]["steps"])
 
     def test_direct_tools_conform(self):
-        result = self.sandbox.bdev("--json", "--config", self.config, "--checkout", "main", "run", "x", tool="bpm",
+        result = self.sandbox.bcore("--json", "--config", self.config, "--checkout", "main", "run", "x", tool="bpm",
                                    env=self.env())
         self.check(json.loads(result.stdout))
-        result = self.sandbox.bdev("--json", "--config", self.config, "--checkout", "main", "run", "x", tool="bpm",
+        result = self.sandbox.bcore("--json", "--config", self.config, "--checkout", "main", "run", "x", tool="bpm",
                                    env=self.env(FAKE_EXIT="3"))
         self.check(json.loads(result.stdout), "child failure")
-        result = self.sandbox.bdev("--json", "vpython3", "--config", self.config, "--checkout", "main", "--", "x.py",
+        result = self.sandbox.bcore("--json", "vpython3", "--config", self.config, "--checkout", "main", "--", "x.py",
                                    env=self.env())
         self.check(json.loads(result.stdout))
 
@@ -148,7 +148,7 @@ class MacResultTests(SchemaCase, BuildTestCase):
 
     def test_a_cancelled_operation_conforms(self):
         process = subprocess.Popen(
-            [str(SCRIPTS / "bdev"), "--json", "--config", self.config, "--checkout", "main", "build"],
+            [str(SCRIPTS / "bcore"), "--json", "--config", self.config, "--checkout", "main", "build"],
             env=self.env(FAKE_SLEEP="60"), stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         deadline = time.time() + 30
         while not self.node_calls() and time.time() < deadline:
@@ -172,9 +172,9 @@ class AndroidResultTests(SchemaCase, AndroidTestCase):
         env = self.env(FAKE_ADB_DEVICES="emulator-5554,device")
         for args in (["deploy", "android"], ["build-run", "android"], ["run", "android", "--plan"],
                      ["build-run", "android", "--plan"]):
-            result = self.sandbox.bdev("--json", "--config", self.config, "--checkout", "main", *args, env=env)
+            result = self.sandbox.bcore("--json", "--config", self.config, "--checkout", "main", *args, env=env)
             self.check(json.loads(result.stdout), " ".join(args))
-        result = self.sandbox.bdev("--json", "--config", self.config, "--checkout", "main", "deploy", "android",
+        result = self.sandbox.bcore("--json", "--config", self.config, "--checkout", "main", "deploy", "android",
                                    env=self.env(FAKE_ADB_DEVICES="a,device;b,device"))
         self.check(json.loads(result.stdout), "ambiguous device")
 

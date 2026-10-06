@@ -47,7 +47,7 @@ with open(os.environ["FAKE_ENV_DUMP"], "a") as stream:
     stream.write(json.dumps([argv[2], os.environ.get("SCAFFOLD_SHARED_VALUE")]) + "\\n")
 """ + Path(self.hook).read_text().split("\n", 1)[1])
         dump = self.sandbox.root / "env-dump.jsonl"
-        result = self.sandbox.bdev("--json", "--config", self.config, "--checkout", "main", "sync-build",
+        result = self.sandbox.bcore("--json", "--config", self.config, "--checkout", "main", "sync-build",
                                    env=self.sandbox.env(FAKE_HOOK=hook, FAKE_ENV_DUMP=str(dump),
                                                         SCAFFOLD_SHARED_VALUE="from-the-caller"))
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -60,7 +60,7 @@ with open(os.environ["FAKE_ENV_DUMP"], "a") as stream:
 if "sync" in argv:
     open(os.path.join(os.environ["BRAVE_CORE_DIR"], "third_party", "node", "node-mac-arm64", "bin", "version"), "w").write("v22.1.0")
 """ + Path(self.hook).read_text().split("\n", 1)[1])
-        result = self.sandbox.bdev("--json", "--config", self.config, "--checkout", "main", "sync-build",
+        result = self.sandbox.bcore("--json", "--config", self.config, "--checkout", "main", "sync-build",
                                    env=self.sandbox.env(FAKE_HOOK=hook))
         document = json.loads(result.stdout)
         self.assertEqual((result.returncode, document["error"]["code"]), (3, "LOCAL_TOOL_MISSING"))
@@ -76,7 +76,7 @@ class AndroidEnvironmentTests(AndroidTestCase):
 
     def android(self, command, *args, **extra):
         env = self.env(FAKE_ADB_DEVICES="emulator-5554,device", **extra)
-        result = self.sandbox.bdev("--json", "--config", self.config, "--checkout", "main", command, "android",
+        result = self.sandbox.bcore("--json", "--config", self.config, "--checkout", "main", command, "android",
                                    *args, env=env)
         return result, json.loads(result.stdout)
 
@@ -107,7 +107,7 @@ import json
 open(os.environ["FAKE_ENV_DUMP"], "w").write(json.dumps({key: os.environ.get(key) for key in ("SISO_LIMITS", "JAVA_OPTS")}))
 """)
         dump = self.sandbox.root / "env-dump.json"
-        result = self.sandbox.bdev("--json", "--config", self.config, "--checkout", "main", "build", "android",
+        result = self.sandbox.bcore("--json", "--config", self.config, "--checkout", "main", "build", "android",
                                    env=self.sandbox.env(FAKE_HOOK=hook, FAKE_ENV_DUMP=str(dump)))
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(json.loads(dump.read_text()), {"SISO_LIMITS": "local=3", "JAVA_OPTS": "-Xmx2G"})

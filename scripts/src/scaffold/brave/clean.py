@@ -350,7 +350,7 @@ def clean_result(ctx, identity, entries, out_dir, targets, configs, arch, execut
     lines.append("Platforms: %s (%s)" % (", ".join(targets), source_label))
     lines.append("Configurations: %s; architecture: %s" % (", ".join(configs), arch or "all"))
     if target_source != "explicit":
-        lines.append("Other platforms are not checked. To preview every platform, run 'bdev clean all'.")
+        lines.append("Other platforms are not checked. To preview every platform, run 'bcore clean all'.")
     for entry in entries:
         lines.append("  %-8s %10s  %s%s" % (entry.outcome, format_kib(entry.size_kib), entry.path,
                                           "  (%s)" % entry.detail if entry.detail else ""))
@@ -375,4 +375,4 @@ SPEC = CommandSpec(
              Opt("--no-size", "no_size", takes_value=False, help="Skip size calculation.")),
     side_effects="Preview writes nothing. --execute deletes matching directories directly under the "
                  "selected checkout's src/out. Stop builds first; one operator per checkout.",
-    examples=("bdev clean", "bdev clean android --configuration debug --arch arm64", "bdev clean all --execute"))
+    examples=("bcore clean", "bcore clean android --configuration debug --arch arm64", "bcore clean all --execute"))

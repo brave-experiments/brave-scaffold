@@ -17,7 +17,7 @@ from unittest.mock import patch
 import tests.support
 from scaffold.common import revision
 from scaffold.common.procs import CommandLog
-from scaffold.brave import bdev
+from scaffold.brave import bcore
 from scaffold.brave.records import Operation
 
 
@@ -40,7 +40,7 @@ class RevisionTests(unittest.TestCase):
                 self.assertFalse(clean["dirty"])
                 output = io.StringIO()
                 with patch("scaffold.brave.app.config_module.load_config", side_effect=AssertionError("config read")):
-                    self.assertEqual(bdev.main(["--version"], stdout=output), 0)
+                    self.assertEqual(bcore.main(["--version"], stdout=output), 0)
                 self.assertEqual(output.getvalue(), "brave-scaffold %s (%s)\n" %
                                  (sha[:12], clean["commit_date"][:10]))
                 (root / "source").write_text("changed")
@@ -73,5 +73,5 @@ class RevisionTests(unittest.TestCase):
                         revision.subprocess, "run", side_effect=error):
                     self.assertEqual(revision.read_revision(), {"sha": None, "commit_date": None, "dirty": None})
                     output = io.StringIO()
-                    self.assertEqual(bdev.main(["--version"], stdout=output), 0)
+                    self.assertEqual(bcore.main(["--version"], stdout=output), 0)
                     self.assertEqual(output.getvalue(), "brave-scaffold unknown\n")

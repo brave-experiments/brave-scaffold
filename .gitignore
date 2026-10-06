@@ -10,7 +10,7 @@ __pycache__/
 # Machine configuration and generated state
 /brave-scaffold.toml
 /environments/
-/.bdev/
+/.bcore/
 /.cache/
 /.worktrees/
 /.claude/settings.local.json

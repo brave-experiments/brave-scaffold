@@ -16,7 +16,7 @@ from tests.support import SandboxTest, SCRIPTS, write_executable
 
 
 def context(sandbox, *args, cwd=None, env=None):
-    result, document = sandbox.bdev_json("context", "--config", str(sandbox.config), *args, cwd=cwd, env=env)
+    result, document = sandbox.bcore_json("context", "--config", str(sandbox.config), *args, cwd=cwd, env=env)
     return result, document
 
 
@@ -26,11 +26,11 @@ class SelectionTests(SandboxTest):
         other = self.sandbox.make_checkout("other")
         self.sandbox.write_config([("main", main, None), ("alt-1", other, None)])
         for alias, expected in [("main", main), ("alt-1", other)]:
-            result = self.sandbox.bdev("cd", alias, "--config", str(self.sandbox.config))
+            result = self.sandbox.bcore("cd", alias, "--config", str(self.sandbox.config))
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(result.stdout, str(expected) + "\n")
             self.assertEqual(result.stderr, "")
-        result, document = self.sandbox.bdev_json("cd", "missing", "--config", str(self.sandbox.config))
+        result, document = self.sandbox.bcore_json("cd", "missing", "--config", str(self.sandbox.config))
         self.assertEqual(result.returncode, 2)
         self.assertEqual(document["error"]["code"], "CHECKOUT_NOT_FOUND")
 
@@ -40,15 +40,15 @@ class SelectionTests(SandboxTest):
         # Use the real launcher with an isolated config; no user shell startup files.
         env = self.sandbox.env()
         env["PATH"] = str(SCRIPTS) + os.pathsep + env["PATH"]
-        env["BDEV_TEST_CONFIG"] = str(self.sandbox.config)
-        script = 'source "$1"; bdev cd main || exit; pwd -P; if bdev cd missing >/dev/null 2>&1; then exit 1; fi; pwd -P'
+        env["BCORE_TEST_CONFIG"] = str(self.sandbox.config)
+        script = 'source "$1"; bcore cd main || exit; pwd -P; if bcore cd missing >/dev/null 2>&1; then exit 1; fi; pwd -P'
         # The launcher reads its default config; a tiny PATH wrapper selects this fixture.
         wrapper = self.sandbox.root / "bin"
         wrapper.mkdir(exist_ok=True)
-        write_executable(wrapper / "bdev", '#!/bin/sh\nexec ' + shlex.quote(str(SCRIPTS / "bdev")) + ' --config "$BDEV_TEST_CONFIG" "$@"\n')
+        write_executable(wrapper / "bcore", '#!/bin/sh\nexec ' + shlex.quote(str(SCRIPTS / "bcore")) + ' --config "$BCORE_TEST_CONFIG" "$@"\n')
         env["PATH"] = str(wrapper) + os.pathsep + env["PATH"]
         for shell in ("bash", "zsh"):
-            result = subprocess.run([shell, "-f", "-c", script, shell, str(SCRIPTS / "bdev-shell.sh")],
+            result = subprocess.run([shell, "-f", "-c", script, shell, str(SCRIPTS / "bcore-shell.sh")],
                                     cwd=self.sandbox.root, env=env, capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(result.stdout.splitlines(), [str(main), str(main)])
@@ -58,16 +58,16 @@ class SelectionTests(SandboxTest):
         main = self.sandbox.make_checkout("main")
         self.sandbox.write_config([("main", main, None)])
         env = self.sandbox.env()
-        env["BDEV_TEST_CONFIG"] = str(self.sandbox.config)
+        env["BCORE_TEST_CONFIG"] = str(self.sandbox.config)
         wrapper = self.sandbox.root / "bin"
         wrapper.mkdir(exist_ok=True)
-        write_executable(wrapper / "bdev", '#!/bin/sh\nexec ' + shlex.quote(str(SCRIPTS / "bdev")) + ' --config "$BDEV_TEST_CONFIG" "$@"\n')
+        write_executable(wrapper / "bcore", '#!/bin/sh\nexec ' + shlex.quote(str(SCRIPTS / "bcore")) + ' --config "$BCORE_TEST_CONFIG" "$@"\n')
         env["PATH"] = str(wrapper) + os.pathsep + env["PATH"]
         for shell in ("bash", "zsh"):
             for arguments in ("main --notify=never", "--notify main", "--notify=major main --notify=major"):
                 with self.subTest(shell=shell, arguments=arguments):
-                    script = 'source "$1"; bdev cd %s || exit; pwd -P' % arguments
-                    result = subprocess.run([shell, "-f", "-c", script, shell, str(SCRIPTS / "bdev-shell.sh")],
+                    script = 'source "$1"; bcore cd %s || exit; pwd -P' % arguments
+                    result = subprocess.run([shell, "-f", "-c", script, shell, str(SCRIPTS / "bcore-shell.sh")],
                                             cwd=self.sandbox.root, env=env, capture_output=True, text=True)
                     self.assertEqual(result.returncode, 0, result.stderr)
                     self.assertEqual(result.stdout.splitlines(), [str(main)])
@@ -122,7 +122,7 @@ class SelectionTests(SandboxTest):
     def test_outside_a_checkout_requires_an_explicit_selection(self):
         main = self.sandbox.make_checkout("main")
         self.sandbox.write_config([("main", main, None)])
-        result, document = self.sandbox.bdev_json("env", "check", "--config", str(self.sandbox.config))
+        result, document = self.sandbox.bcore_json("env", "check", "--config", str(self.sandbox.config))
         self.assertEqual(document["error"]["code"], "CHECKOUT_REQUIRED")
         self.assertEqual(document["error"]["details"]["candidates"], ["main"])
         self.assertEqual(result.returncode, 2)
@@ -175,10 +175,10 @@ class LinkedWorktreeTests(SandboxTest):
                 self.make_linked(pick(core))
                 self.fake_direnv()
                 for tool, args in (("bpm", ["--checkout", "wt", "run"]),
-                                   ("bdev", ["vpython3", "--checkout", "wt", "--", "x.py"]),
-                                   ("bdev", ["env", "init", "--checkout", "wt"]),
-                                   ("bdev", ["tools", "setup", "--checkout", "wt"])):
-                    result, document = sandbox.bdev_json("--config", str(sandbox.config), *args, tool=tool)
+                                   ("bcore", ["vpython3", "--checkout", "wt", "--", "x.py"]),
+                                   ("bcore", ["env", "init", "--checkout", "wt"]),
+                                   ("bcore", ["tools", "setup", "--checkout", "wt"])):
+                    result, document = sandbox.bcore_json("--config", str(sandbox.config), *args, tool=tool)
                     self.assertEqual(document["error"]["code"], "UNSUPPORTED_CAPABILITY", (tool, args))
                     self.assertIn(role, [item["role"] for item in document["error"]["details"]["worktrees"]])
                 self.assertFalse((sandbox.root / "direnv-used").exists())
@@ -190,7 +190,7 @@ class LinkedWorktreeTests(SandboxTest):
         (outer / ".git").mkdir()
         self.make_linked(outer)
         self.sandbox.write_config([("outer", core, "environments/outer")])
-        result, document = self.sandbox.bdev_json("--config", str(self.sandbox.config), "env", "init",
+        result, document = self.sandbox.bcore_json("--config", str(self.sandbox.config), "env", "init",
                                                   "--checkout", "outer")
         self.assertEqual(document["error"]["code"], "UNSUPPORTED_CAPABILITY")
 

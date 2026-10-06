@@ -2,18 +2,18 @@
 
 `brave-scaffold.toml` is the project-level configuration for Brave Scaffold. It
 is machine-local and ignored by Git. [`brave-scaffold.example.toml`](../brave-scaffold.example.toml)
-is the checked-in template; copy it, or let `bdev setup` and `bdev checkout add`
+is the checked-in template; copy it, or let `bcore setup` and `bcore checkout add`
 create the file. Keep machine paths out of the tracked example.
 
 ## Integration stays outside Core
 
 Scaffold configuration, environment files, and records live in the scaffold
-repository (`brave-scaffold.toml`, `environments/`, `.bdev/`). Setup, `env init`,
+repository (`brave-scaffold.toml`, `environments/`, `.bcore/`). Setup, `env init`,
 `doctor`, `context`, and `env check` write nothing inside Brave Core: no `.envrc`,
 tracked or untracked file, Git configuration, hook, or local exclusion.
 
 This is different from the normal checkout writes of work you request. Commands
-such as `bdev tools setup` (and, when they ship, builds and syncs) change the
+such as `bcore tools setup` (and, when they ship, builds and syncs) change the
 checkout as their purpose; each command's help states its side effects.
 
 ## Console output
@@ -66,7 +66,7 @@ directories are rejected with the offending field and a valid example.
 
 `--config <file>` wins. Otherwise the tools use the `brave-scaffold.toml` of the
 installation being run. Generated environments call their installation by
-absolute path and pass their configuration explicitly, so another `bdev` earlier
+absolute path and pass their configuration explicitly, so another `bcore` earlier
 on `PATH` cannot redirect them. A missing default file does not stop `--help`,
 `capabilities`, or path-based discovery.
 
@@ -84,7 +84,7 @@ If an outer checkout holds several source workspaces, name the Core directory.
 Symlinks are resolved, so an alias and a symlinked path give one identity.
 
 An alias is optional. Running commands still needs a record that pairs the Core
-path with an approved environment; `bdev checkout add` and `bdev env init` update
+path with an approved environment; `bcore checkout add` and `bcore env init` update
 the same record.
 
 ## Two or more checkouts
@@ -108,15 +108,15 @@ direnv_dir = "environments/review"
 Git linked worktrees are not supported as browser checkouts. Chromium's size,
 materialized patches, dependencies, and build outputs make a worktree an
 unsuitable substitute for an independent source tree. Selecting one fails with
-`UNSUPPORTED_CAPABILITY` before any environment loads; `bdev context` and
-`bdev doctor` still describe the layout. Shared Git object caches are fine; shared
+`UNSUPPORTED_CAPABILITY` before any environment loads; `bcore context` and
+`bcore doctor` still describe the layout. Shared Git object caches are fine; shared
 working files are not. Nothing is moved, converted, or deleted for you.
 
 ## Environments
 
-Each checkout has a scaffold-owned directory containing an `.envrc`. `bdev env
+Each checkout has a scaffold-owned directory containing an `.envrc`. `bcore env
 init --checkout <name>` creates it from a template that calls
-`bdev env export`, which prints the checkout's exports: the source directories,
+`bcore env export`, which prints the checkout's exports: the source directories,
 the checkout-local `depot_tools` on `PATH`, and `VPYTHON3`. Activation performs no
 clone, install, sync, or build. `PYTHONPATH` is added only with
 `--with-pythonpath`. Checkout-specific Node and package managers are never put on
@@ -155,7 +155,7 @@ exports.
 
 ### Optional shell use
 
-`bdev shell --checkout <name>` starts a child shell in Core with the environment
+`bcore shell --checkout <name>` starts a child shell in Core with the environment
 loaded; exiting restores your shell unchanged. An interactive direnv hook and an
 `.envrc` in the outer checkout directory are optional conveniences you may add
 yourself. If you do, do not use `source_env` to pull in the mapped environment:
@@ -163,7 +163,7 @@ it skips the approval check. Never put such a file inside Core.
 
 ## Workspace activation (optional)
 
-To type `bdev` and `bpm` without a path while working in the scaffold repository,
+To type `bcore` and `bpm` without a path while working in the scaffold repository,
 add a workspace `.envrc` at its root that only extends `PATH`:
 
 ```sh
@@ -198,10 +198,10 @@ achieved: `error.details.completed_phases` lists them (for example a finished sy
 verified build) and `artifacts` holds the verified output, so a caller does not need the
 record to see that a build finished before its launch failed.
 Records, per-output build history, patch receipts, and
-the shared Android support cache live in `.bdev/` next to `brave-scaffold.toml`
+the shared Android support cache live in `.bcore/` next to `brave-scaffold.toml`
 (ignored by Git), never in Core. The newest 100 completed operation records are
 kept; incomplete records and any record an output still refers to are never
-pruned, and build outputs are never touched by pruning. `bdev context` lists
+pruned, and build outputs are never touched by pruning. `bcore context` lists
 operations that never finished.
 
 ## Python runtime
@@ -223,7 +223,7 @@ Package commands use the Node, package manager, and `vpython3` inside the
 checkout. There is no fallback to global tools. Inspection (`doctor`, `context`,
 `env check`) is read-only and never installs or updates anything. If a payload is
 missing or stale, the command stops and names the explicit repair,
-`bdev tools setup --checkout <name>`, which runs the checkout's own payload
+`bcore tools setup --checkout <name>`, which runs the checkout's own payload
 installer. Run it only when you intend the checkout to change.
 
 ### Supported tool layout
@@ -239,7 +239,7 @@ missing or unverifiable:
 | pnpm | `third_party/node/node_modules/pnpm`; only pnpm checkouts need it. |
 | `vpython3` | `vendor/depot_tools` in Core, else `third_party/depot_tools` in Chromium. Core's sync installs it. |
 | Verification | The checkout's own `tools/cr/extra_deps.py` says whether each required payload entry is deployed at its pinned version. Without it, or without the entry, the payload counts as unverified: a compatible version alone is not proof. |
-| Repair | `bdev tools setup` runs `tools/cr/tarball_installer.py` for exactly the entries the declared manager needs (Node for npm; Node and pnpm for pnpm), then inspects the same set again. It does not install `vpython3` or Android tools. |
+| Repair | `bcore tools setup` runs `tools/cr/tarball_installer.py` for exactly the entries the declared manager needs (Node for npm; Node and pnpm for pnpm), then inspects the same set again. It does not install `vpython3` or Android tools. |
 
 Declaration-absent npm checkouts also support the versioned archive layout:
 `third_party/node/mac_arm64/node-v<version>-darwin-arm64` (x64 uses
@@ -265,13 +265,13 @@ checkout itself: Node and the package manager inside Core, `vpython3` inside Chr
 root. The comparison is against the checkout's frozen canonical path, so moving a whole payload
 directory (`third_party/node`, `vendor/depot_tools`) outside and linking it back does not make
 its contents local, while links that stay inside the checkout are fine. If the checkout has no
-local `vpython3`, an approved environment cannot provide one: `bdev vpython3` and package
-commands stop with `LOCAL_TOOL_MISSING`, and `bdev tools setup` refuses to install through a
+local `vpython3`, an approved environment cannot provide one: `bcore vpython3` and package
+commands stop with `LOCAL_TOOL_MISSING`, and `bcore tools setup` refuses to install through a
 `third_party/node` that leaves the checkout. It also has to be verifiable: the checkout's payload metadata must report the pinned
 Node (and, for pnpm checkouts, pnpm) as deployed. Without that evidence, or with a
 compatible version but no pin to compare it to, the command stops.
 
 `android_support_path` is optional. It selects the shared Android-on-Mac support
 checkout, with paths relative to this configuration file or absolute. Its default
-is `brave-android-mac-support` beside the file. Only explicit `bdev android setup`
+is `brave-android-mac-support` beside the file. Only explicit `bcore android setup`
 on macOS creates it. See [Android support](android.md#android-on-mac-support-repository).

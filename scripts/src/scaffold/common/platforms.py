@@ -50,7 +50,7 @@ def effective_target(explicit, config):
             "UNSUPPORTED_CAPABILITY",
             "This host (%s) has no supported default target; name one explicitly." % sys.platform,
             details={"supported_targets": list(INITIAL_TARGETS)},
-            repairs=[repair(["bdev", "capabilities"])])
+            repairs=[repair(["bcore", "capabilities"])])
     return target, source
 
 

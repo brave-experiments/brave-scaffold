@@ -274,12 +274,12 @@ def select_apk(ctx, identity, configuration, arch):
     if not candidates:
         raise ScaffoldError(
             "ARTIFACT_MISSING", "No android %s %s APK was found for this checkout." % (configuration, arch),
-            repairs=[repair(["bdev", "build", "android", "--checkout", str(identity.core)]),
-                     repair(["bdev", "build-run", "android", "--checkout", str(identity.core)])])
+            repairs=[repair(["bcore", "build", "android", "--checkout", str(identity.core)]),
+                     repair(["bcore", "build-run", "android", "--checkout", str(identity.core)])])
     if len(candidates) > 1:
         raise ScaffoldError("ARTIFACT_AMBIGUOUS", "More than one APK matches; choose one with --artifact.",
                             details={"candidates": [item["path"] for item in candidates]},
-                            repairs=[repair(["bdev", "run", "android", "--artifact", candidates[0]["path"]],
+                            repairs=[repair(["bcore", "run", "android", "--artifact", candidates[0]["path"]],
                                             note="Example only; choose the APK you intend to install.")])
     return candidates[0]
 
@@ -290,9 +290,9 @@ def restart_apk(ctx, identity, artifact, result, device=None, op=None):
         raise ScaffoldError(
             "ARTIFACT_UNRESOLVED", "Nothing was installed or restarted: %s." % UNPROVEN_PACKAGE,
             details={"artifact": artifact["path"]},
-            repairs=[repair(["bdev", "build", "android", "--checkout", str(identity.core)], requires_user_action=False,
+            repairs=[repair(["bcore", "build", "android", "--checkout", str(identity.core)], requires_user_action=False,
                             note="aapt2 comes from the Android support resources, which the build prepares before "
-                                 "compiling; this builds too. It is not part of 'bdev tools setup'.")])
+                                 "compiling; this builds too. It is not part of 'bcore tools setup'.")])
     choice = device or preflight_deployment(ctx)
     if isinstance(choice, DeviceGroup):
         return restart_all_devices(ctx, identity, artifact, result, choice, op)

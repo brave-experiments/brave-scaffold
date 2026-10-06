@@ -12,13 +12,13 @@ is supported; permission and I/O errors are reported.
 ## Sync sources
 
 ```sh
-bdev sync                       # macOS
-bdev sync android --plan        # show the command; runs nothing
-bdev sync mac,android --force   # extra arguments go to the sync script
-bdev sync ios                   # adds ios to target_os; Core's hooks bootstrap the project
+bcore sync                       # macOS
+bcore sync android --plan        # show the command; runs nothing
+bcore sync mac,android --force   # extra arguments go to the sync script
+bcore sync ios                   # adds ios to target_os; Core's hooks bootstrap the project
 ```
 
-`bdev sync [<targets>]` runs Core's `sync` script with the checkout-local tools.
+`bcore sync [<targets>]` runs Core's `sync` script with the checkout-local tools.
 Extra arguments go to that script only (in `sync-build`, only to the build phase).
 Standalone `sync` reads `-C` as the script's own option, never as an output
 directory. Mobile targets build `--target_os` from the union of the checkout's
@@ -51,11 +51,11 @@ Sync writes inside the checkout are the requested browser operation; scaffold
 setup remains external and optional. Core's supported standalone workflow stays
 available without scaffold.
 
-iOS additions: `bdev sync ios` requires Core's hooks, so `--nohooks` is refused. After the
+iOS additions: `bcore sync ios` requires Core's hooks, so `--nohooks` is refused. After the
 sync it checks the files Core's `bootstrap_ios` hook creates ([iOS](ios.md#sync-and-bootstrap)) and
 stops with `PREPARATION_CONFLICT` and a repair suggestion when they are missing.
 
-Android additions: `bdev sync android` requires nothing beyond the existing
+Android additions: `bcore sync android` requires nothing beyond the existing
 `.gclient`; the mobile union is described above. The Android support working copy
 and its refresh are described in [Android](android.md#android-on-mac-support-repository);
 a refresh that would overwrite local Chromium edits stops with `PREPARATION_CONFLICT`
@@ -80,7 +80,7 @@ files its earlier metadata recorded. Staged changes block preparation independen
 of working-file content. Otherwise, a file is safe when it still holds content the
 metadata or the scaffold's receipt recorded for it. Otherwise it may hold local work,
 and the command stops with `PREPARATION_CONFLICT`, lists the files, and suggests
-`bdev drift --diff`. That covers a file that differs from its metadata and from the
+`bcore drift --diff`. That covers a file that differs from its metadata and from the
 receipt, a file with no earlier record, and a target a patch gained that has staged
 changes, unstaged edits, a deletion, a rename, or an untracked file at its path. A
 target nothing claims and Git shows as unchanged does not block. If Git cannot answer,
@@ -92,15 +92,15 @@ The same checks cover Core's version update: `chrome/VERSION` and
 `chrome/VERSION.chromium`. An existing untracked version or sidecar needs a matching
 generated-content receipt, including when Git ignores it. Plans list both files.
 
-Resolve a conflict yourself: keep wanted edits with `bdev patches update` or
+Resolve a conflict yourself: keep wanted edits with `bcore patches update` or
 restore the files, then run `bpm run apply_patches` if you want stale files
-replaced. The receipts live beside your configuration in `.bdev/`, never in Core.
+replaced. The receipts live beside your configuration in `.bcore/`, never in Core.
 
 ## Inspect drift
 
 ```sh
-bdev drift          # which patched Chromium files differ from their metadata
-bdev drift --diff   # include each file's Git diff
+bcore drift          # which patched Chromium files differ from their metadata
+bcore drift --diff   # include each file's Git diff
 ```
 
 Read-only. Reasons are `source changed after patch applied`, `source file missing`,
@@ -113,7 +113,7 @@ instead of reporting a clean tree.
 ## Update patches
 
 ```sh
-bdev patches update
+bcore patches update
 ```
 
 Runs `bpm run update_patches` to regenerate patch files from local Chromium edits,
@@ -126,10 +126,10 @@ Prerequisites: a registered or enclosing checkout. Stop any build first; only on
 operator may use a checkout at a time and the scaffold does not lock it.
 
 ```sh
-bdev clean                                   # preview for the default target
-bdev clean android --configuration debug     # preview one target and configuration
-bdev clean mac --arch arm64 --execute        # delete the previewed directories
-bdev clean all --execute                     # explicitly mac, android, and ios
+bcore clean                                   # preview for the default target
+bcore clean android --configuration debug     # preview one target and configuration
+bcore clean mac --arch arm64 --execute        # delete the previewed directories
+bcore clean all --execute                     # explicitly mac, android, and ios
 ```
 
 - The target is `mac`, `android`, `ios`, or `all`. Omitting it selects the default
@@ -153,7 +153,7 @@ Preview writes nothing:
 Preview (nothing is deleted) in /work/browser/_bad_scm/workspace/src/out
 Platforms: mac (host default only)
 Configurations: debug, release; architecture: all
-Other platforms are not checked. To preview every platform, run 'bdev clean all'.
+Other platforms are not checked. To preview every platform, run 'bcore clean all'.
   planned      12.3 GiB  /work/browser/_bad_scm/workspace/src/out/Debug_arm64
   planned       9.8 GiB  /work/browser/_bad_scm/workspace/src/out/Release_arm64
 Run again with --execute to delete the directories marked 'planned'.
@@ -181,14 +181,14 @@ If `src/out` itself is a symlink or resolves elsewhere, nothing is deleted
 Interrupting cleanup (Ctrl-C or SIGTERM), or a failure part way, can leave a directory partly
 removed. Nothing is restored and nothing resumes by itself. Before it moves a directory
 aside, cleanup saves its private name and identity in the operation record (step `delete`,
-in `.bdev/operations/`), so the record still names the remainder if the process dies. A
+in `.bcore/operations/`), so the record still names the remainder if the process dies. A
 cancelled run reports the directory as `interrupted` with its private name, and records
 what remains under `details.remaining`. Failed and interrupted deletions keep their
 ownership record while the private directory exists, even after later operations
 exceed log retention. Once the remainder is gone, normal pruning can remove that
 record.
 
-The next `bdev clean` finds the remainder. A directory with a `.scaffold-deleting-*` name
+The next `bcore clean` finds the remainder. A directory with a `.scaffold-deleting-*` name
 counts as a remainder only when a record from this checkout names it and it is still the
 directory that record identified (same device and inode). It is listed as `planned` with
 "unfinished deletion of <output> (operation <id>)", for the targets you select, and

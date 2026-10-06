@@ -72,7 +72,7 @@ class AndroidTestCase(BuildTestCase):
         self.support = make_support_repo(self.sandbox.root, {"v154": 154, "v155": 155}, overlay=self.support_overlay)
 
     def setup_support(self, ref="v155", source=None, checkout="main"):
-        return self.sandbox.bdev("--json", "--config", self.config, "--checkout", checkout, "android", "setup",
+        return self.sandbox.bcore("--json", "--config", self.config, "--checkout", checkout, "android", "setup",
                                  "--source", str(source or self.support), "--ref", ref, env=self.env())
 
     def wc(self, name="main"):
@@ -107,7 +107,7 @@ class AndroidBuildTests(AndroidTestCase):
     def test_build_needs_a_support_working_copy_and_says_how_to_create_it(self):
         result, document = self.document("build", "android")
         self.assertEqual((result.returncode, document["error"]["code"]), (3, "DEPENDENCY_INCOMPATIBLE"))
-        self.assertEqual(document["error"]["repairs"][0]["argv"][:3], ["bdev", "android", "setup"])
+        self.assertEqual(document["error"]["repairs"][0]["argv"][:3], ["bcore", "android", "setup"])
         self.assertEqual([r for r in self.node_calls() if "build" in r["argv"]], [])
 
     def test_build_prepares_support_once_then_compiles_and_verifies_the_apk(self):
@@ -208,7 +208,7 @@ class AndroidBuildTests(AndroidTestCase):
         result, document = self.document("build", "android")
         self.assertEqual(document["error"]["code"], "READINESS_BLOCKED")
         repairs = [step["argv"][:3] for step in document["error"]["repairs"]]
-        self.assertIn(["bdev", "sync", "android"], repairs)
+        self.assertIn(["bcore", "sync", "android"], repairs)
 
     def test_ninja_directory_build_does_not_install_an_existing_default_apk(self):
         self.assertEqual(self.setup_support().returncode, 0)
@@ -229,7 +229,7 @@ class AndroidBuildTests(AndroidTestCase):
 
 class SupportPatchedFileTests(AndroidTestCase):
     def build_android(self):
-        result = self.sandbox.bdev("--json", "--config", self.config, "--checkout", "main", "build", "android",
+        result = self.sandbox.bcore("--json", "--config", self.config, "--checkout", "main", "build", "android",
                                    env=self.env())
         return result, json.loads(result.stdout)
 
@@ -238,7 +238,7 @@ class SupportPatchedFileTests(AndroidTestCase):
         result, document = self.build_android()
         self.assertEqual(document["status"], "ok", result.stderr)
         self.assertIn("support edit", (self.src / "base" / "BUILD.gn").read_text())
-        plan = json.loads(self.sandbox.bdev("--json", "--config", self.config, "--checkout", "main", "build",
+        plan = json.loads(self.sandbox.bcore("--json", "--config", self.config, "--checkout", "main", "build",
                                             "android", "--plan", env=self.env()).stdout)
         steps = {step["name"]: step for step in plan["data"]["plan"]["steps"]}
         self.assertEqual(steps["patch-preparation"]["status"], "current")
@@ -269,7 +269,7 @@ class SupportWorkingCopyTests(AndroidTestCase):
         self.assertEqual(self.setup_support("v155", checkout="other").returncode, 0)
         self.assertTrue(self.wc("main").is_symlink())
         self.assertEqual(self.wc("main").resolve(), self.wc("other").resolve())
-        self.assertFalse((Path(self.config).parent / ".bdev/cache/android-support.git").exists())
+        self.assertFalse((Path(self.config).parent / ".bcore/cache/android-support.git").exists())
         result = self.setup_support("v154", checkout="other")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.head(self.wc("main")), self.head(self.wc("other")))
@@ -287,7 +287,7 @@ class SupportWorkingCopyTests(AndroidTestCase):
         self.wc().symlink_to(self.support)
         result, document = self.document("build", "android")
         self.assertEqual(document["error"]["code"], "DEPENDENCY_INCOMPATIBLE")
-        self.assertEqual(document["error"]["repairs"][0]["argv"][:3], ["bdev", "android", "setup"])
+        self.assertEqual(document["error"]["repairs"][0]["argv"][:3], ["bcore", "android", "setup"])
         self.assertFalse(any("build" in record["argv"] for record in self.node_calls()))
 
     def test_custom_shared_location_is_relative_to_configuration(self):
@@ -352,7 +352,7 @@ class SupportWorkingCopyTests(AndroidTestCase):
         branch = subprocess.run(["git", "-C", str(wc), "branch", "--show-current"], capture_output=True, text=True)
         self.assertEqual(branch.stdout.strip(), "my-work")
         # Without --ref the existing working copy is used as it is.
-        result = self.sandbox.bdev("--json", "--config", self.config, "--checkout", "main", "android", "setup",
+        result = self.sandbox.bcore("--json", "--config", self.config, "--checkout", "main", "android", "setup",
                                    "--source", str(self.support), env=self.env())
         self.assertEqual(json.loads(result.stdout)["status"], "ok")
         self.assertEqual(self.head(wc), head)
@@ -382,7 +382,7 @@ class DeviceTests(AndroidTestCase):
 
     def run_android(self, *args, devices=DEVICES_TWO, command="run", **extra):
         env = self.env(FAKE_ADB_DEVICES=devices, **extra)
-        result = self.sandbox.bdev("--json", "--config", self.config, "--checkout", "main", command, *args, env=env)
+        result = self.sandbox.bcore("--json", "--config", self.config, "--checkout", "main", command, *args, env=env)
         document = json.loads(result.stdout)
         self.assertEqual(Validator().problems(document), [], result.stdout)
         return result, document
@@ -420,7 +420,7 @@ class DeviceTests(AndroidTestCase):
         master, slave = pty.openpty()
         process = None
         try:
-            process = subprocess.Popen([str(self.sandbox.scripts / 'bdev'), '--config', str(self.config),
+            process = subprocess.Popen([str(self.sandbox.scripts / 'bcore'), '--config', str(self.config),
                                         '--checkout', 'main', 'run', 'android'], cwd=self.sandbox.root,
                                        env=self.env(FAKE_ADB_DEVICES=DEVICES_TWO),
                                        stdin=slave, stderr=slave, stdout=subprocess.PIPE, text=True)
@@ -487,7 +487,7 @@ class DeviceTests(AndroidTestCase):
     def test_failed_install_records_only_the_attempted_child_phase(self):
         result, document = self.run_android("android", "--device", "emulator-5554", FAKE_ADB_INSTALL_FAIL="7")
         self.assertEqual(result.returncode, 5, result.stderr)
-        record = json.loads((self.sandbox.config.parent / ".bdev/operations" /
+        record = json.loads((self.sandbox.config.parent / ".bcore/operations" /
                              (document["operation_id"] + ".json")).read_text())
         phases = [step for step in record["steps"] if step["name"] in
                   ("install-apk", "stop-package", "launch-package")]
@@ -559,7 +559,7 @@ class DeviceTests(AndroidTestCase):
                          [('emulator-5554', 'error'), ('R58M1234', 'ok')])
         self.assertFalse([call for call in self.adb_calls() if call[:2] == ['-s', 'emulator-5554']
                           and 'force-stop' in call])
-        record = json.loads((self.sandbox.config.parent / '.bdev/operations' /
+        record = json.loads((self.sandbox.config.parent / '.bcore/operations' /
                              (document['operation_id'] + '.json')).read_text())
         self.assertEqual(record['details']['device_results'], document['data']['run']['devices'])
 
@@ -688,7 +688,7 @@ class PackageIdentityTests(AndroidTestCase):
     def combined(self, command="build-run", **extra):
         self.sandbox.record.unlink(missing_ok=True)
         env = self.env(FAKE_ADB_DEVICES="emulator-5554,device", **extra)
-        result = self.sandbox.bdev("--json", "--config", self.config, "--checkout", "main", command, "android",
+        result = self.sandbox.bcore("--json", "--config", self.config, "--checkout", "main", command, "android",
                                    "--device", "emulator-5554", env=env)
         return result, json.loads(result.stdout)
 
@@ -732,15 +732,15 @@ class PackageIdentityTests(AndroidTestCase):
         self.assertEqual(result.returncode, 5, result.stderr)
         self.assertEqual(self.device_changes(), [])
         commands = [step["argv"][:3] for step in document["error"]["repairs"]]
-        self.assertNotIn(["bdev", "tools", "setup"], commands, "tools setup cannot provide aapt2")
-        self.assertIn(["bdev", "build", "android"], commands, "support preparation copies aapt2")
+        self.assertNotIn(["bcore", "tools", "setup"], commands, "tools setup cannot provide aapt2")
+        self.assertIn(["bcore", "build", "android"], commands, "support preparation copies aapt2")
 
     def test_a_failed_stop_is_not_reported_as_a_restart(self):
         result, document = self.combined(FAKE_ADB_FORCE_STOP_FAIL="1")
         self.assertEqual((result.returncode, document["error"]["code"]), (5, "LAUNCH_FAILED"))
         self.assertIn("stop", document["error"]["message"].lower())
         self.assertFalse([call for call in self.adb_calls() if "monkey" in call])
-        record = json.loads((self.sandbox.config.parent / ".bdev/operations" /
+        record = json.loads((self.sandbox.config.parent / ".bcore/operations" /
                              (document["operation_id"] + ".json")).read_text())
         phases = {step["name"]: step for step in record["steps"]}
         self.assertEqual(phases["install-apk"]["outcome"]["exit"], 0)
@@ -754,7 +754,7 @@ class AndroidDoctorTests(AndroidTestCase):
         env = self.env()
         if path:
             env["PATH"] = path
-        result = self.sandbox.bdev("--json", "--config", self.config, "doctor", *args, env=env)
+        result = self.sandbox.bcore("--json", "--config", self.config, "doctor", *args, env=env)
         return result, json.loads(result.stdout)
 
     def test_a_missing_adb_does_not_block_macos_readiness(self):

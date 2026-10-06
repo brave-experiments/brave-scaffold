@@ -1,10 +1,15 @@
 # Development
 
+`bcore` handles Brave Core checkout operations: readiness checks, sync, build,
+test, run, and related inspection. It is not the general entry point for Brave
+developer tooling. A feature belongs here because it operates on a Core checkout,
+not merely because Core developers use it.
+
 ## Layout
 
 ```text
 scripts/
-  bdev, bpm, sync-support-repos  launchers (POSIX sh); resolve their own installation
+  bcore, bpm, sync-support-repos  launchers (POSIX sh); resolve their own installation
   pyproject.toml            project metadata; no dependencies
   .venv/                    scaffold runtime (ignored)
   schemas/                  versioned JSON schemas for results
@@ -28,7 +33,7 @@ Tooling code, launchers, and tests live under `scripts/`; there is no root
 | `common/env.py` | Pure export derivation, direnv approval, explicit loading, identity checks |
 | `common/tools.py` | Checkout-local Node/package-manager/Python inspection and argv construction |
 | `common/procs.py` | Subprocess execution, command logs, redaction, cancellation |
-| `common/notify.py` | Notification policy, operation classification, message text, the macOS and terminal-bell delivery backends (`BDEV_NOTIFY_BACKEND=none` disables both; tests set it) |
+| `common/notify.py` | Notification policy, operation classification, message text, the macOS and terminal-bell delivery backends (`BCORE_NOTIFY_BACKEND=none` disables both; tests set it) |
 | `common/cli.py` | Option parsing, forwarding rules, help rendering |
 | `common/checks.py` | Check records and readiness aggregation |
 | `common/platforms.py` | Targets and the capability table |
@@ -38,7 +43,7 @@ Tooling code, launchers, and tests live under `scripts/`; there is no root
 | `brave/cmd_build.py`, `brave/cmd_patches.py`, `brave/cmd_tools.py`, `brave/cmd_setup.py`, `brave/clean.py`, `brave/android.py`, `brave/doctor.py` | Command handlers and their platform code |
 | `brave/sync.py` | Sync arguments, the target list kept across syncs, and dispatch to Core's sync command |
 | `brave/packages.py` | The one place a package command is turned into a child process (bpm and every phase use it) |
-| `brave/branch_tests.py`, `brave/cmd_test.py` | Changed-test and named-file discovery, mapping to suites and filters (read-only Git), and the multi-suite runner behind `bdev test` |
+| `brave/branch_tests.py`, `brave/cmd_test.py` | Changed-test and named-file discovery, mapping to suites and filters (read-only Git), and the multi-suite runner behind `bcore test` |
 | `brave/android_tests.py` | Android test suites, the required support branch, the Core test overlay, device arguments, and result checks |
 | `brave/patches.py`, `brave/android_deps.py`, `brave/freshness.py` | Patch preparation, Android support preparation, and freshness evidence |
 | `brave/support_scripts.py`, `brave/support_script_contracts.json` | Reviewed shell identities and complete support write manifests |

@@ -58,7 +58,7 @@ def build_checks(ctx, scope, remote_required=False):
                            scope, affects=("android build",), repairs=error.repairs, **error.details)]
     targets = sync_module.gclient_targets(identity)
     ok = targets is not None and "android" in targets
-    sync = repair(["bdev", "sync", "android", "--checkout", str(identity.core)],
+    sync = repair(["bcore", "sync", "android", "--checkout", str(identity.core)],
                   note="Adds android to the checkout's target_os and syncs; changes the checkout.")
     checks = [make_check("android-gclient-target", PASS if ok else BLOCKER,
                          "target_os includes android." if ok else
@@ -83,7 +83,7 @@ def support_checks(ctx, scope):
                            affects=("android build",), repairs=error.repairs, **error.details)]
     wc = android_deps.working_copy(identity)
     facts = android_deps.inspect_working_copy(wc, ctx.log)
-    setup = repair(["bdev", "android", "setup", "--checkout", str(identity.core)],
+    setup = repair(["bcore", "android", "setup", "--checkout", str(identity.core)],
                    note="Explicit preparation; clones the support repository (network) and links this workspace to the shared checkout.")
     if facts is None:
         return [make_check("android-support-working-copy", BLOCKER, "No support working copy at %s." % wc, scope,
@@ -102,7 +102,7 @@ def support_checks(ctx, scope):
             "%d large file(s) are still pointers, so resources cannot be copied (for example %s)." % (
                 len(pointers), pointers[0]), scope, affects=("android build",), pointers=pointers[:20],
             repairs=[] if not pointers else [repair(
-                ["bdev", "android", "setup", "--checkout", str(identity.core)],
+                ["bcore", "android", "setup", "--checkout", str(identity.core)],
                 note="Explicit preparation: fetches the missing large files (network).")]))
     except ScaffoldError as error:
         checks.append(make_check("android-support-lfs", BLOCKER, error.message, scope, affects=("android build",),

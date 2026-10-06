@@ -92,7 +92,7 @@ class CommandLog:
             self.phase("Timings: " + "; ".join(parts))
 
     def open(self, root):
-        directory = Path(root) / ".bdev" / "logs"
+        directory = Path(root) / ".bcore" / "logs"
         directory.mkdir(parents=True, exist_ok=True)
         fd, self.path = tempfile.mkstemp(prefix=time.strftime("%Y%m%dT%H%M%S-"), suffix=".log", dir=directory)
         self.diagnostic = os.fdopen(fd, "w", encoding="utf-8")

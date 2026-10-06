@@ -317,6 +317,6 @@ def conflict_error(plan, identity):
         "PREPARATION_CONFLICT",
         "%s %d file(s) need your review before patches can be applied." % (plan.reason, len(plan.conflicts)),
         details={"files": plan.conflicts[:50], "total": len(plan.conflicts), "checkout": str(identity.core)},
-        repairs=[repair(["bdev", "drift", "--diff", "--checkout", str(identity.core)],
-                        note="Review the differences. Save wanted edits with 'bdev patches update' or restore the "
+        repairs=[repair(["bcore", "drift", "--diff", "--checkout", str(identity.core)],
+                        note="Review the differences. Save wanted edits with 'bcore patches update' or restore the "
                              "files, then run 'bpm run apply_patches' yourself if you want stale files replaced.")])

@@ -30,7 +30,7 @@ class CleanTests(SandboxTest):
         self.config = str(self.sandbox.config)
 
     def clean(self, *args):
-        return self.sandbox.bdev_json("clean", "--checkout", "main", "--config", self.config, *args)
+        return self.sandbox.bcore_json("clean", "--checkout", "main", "--config", self.config, *args)
 
     def remaining(self):
         return sorted(p.name for p in self.out.iterdir())
@@ -60,7 +60,7 @@ class CleanTests(SandboxTest):
                  (("all",), "explicit", ["mac", "android", "ios"], "explicit selection"))
         for args, source, targets, label in cases:
             with self.subTest(args=args):
-                result = self.sandbox.bdev("clean", "--checkout", "main", "--config", self.config, *args)
+                result = self.sandbox.bcore("clean", "--checkout", "main", "--config", self.config, *args)
                 self.assertEqual(result.returncode, 0, result.stderr)
                 scope = "Platforms: %s (%s)" % (", ".join(targets), label)
                 self.assertIn(scope, result.stdout)
@@ -79,11 +79,11 @@ class CleanTests(SandboxTest):
         for name in NAMES:
             if name.startswith("android_"):
                 shutil.rmtree(self.out / name)
-        result = self.sandbox.bdev("clean", "--config", self.config, "--checkout", "main")
+        result = self.sandbox.bcore("clean", "--config", self.config, "--checkout", "main")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("Platforms: android (configured default only)", result.stdout)
         self.assertIn("Other platforms are not checked", result.stdout)
-        self.assertIn("bdev clean all", result.stdout)
+        self.assertIn("bcore clean all", result.stdout)
         self.assertIn("No matching build output directories", result.stdout)
         _, document = self.clean()
         self.assertEqual(document["data"]["target_source"], "configured")
@@ -283,9 +283,9 @@ class InterruptedCleanupTests(SandboxTest):
         import io
         import json
         from unittest import mock
-        from scaffold.brave import app, bdev
-        spec, tokens = bdev.resolve_command(["--json", "clean", "--checkout", "main", "--config", self.config, *args])
-        parsed = bdev.parse_command(spec, tokens)
+        from scaffold.brave import app, bcore
+        spec, tokens = bcore.resolve_command(["--json", "clean", "--checkout", "main", "--config", self.config, *args])
+        parsed = bcore.parse_command(spec, tokens)
         stdout = io.StringIO()
         with contextlib.ExitStack() as stack:
             if patched:
@@ -296,7 +296,7 @@ class InterruptedCleanupTests(SandboxTest):
 
     def record(self):
         import json
-        (path,) = (self.sandbox.config.parent / ".bdev" / "operations").glob("*.json")
+        (path,) = (self.sandbox.config.parent / ".bcore" / "operations").glob("*.json")
         return json.loads(path.read_text())
 
     def interrupt_after_rename(self, partial):
@@ -317,7 +317,7 @@ class InterruptedCleanupTests(SandboxTest):
                 (self.out / "Debug_arm64" / "obj").mkdir(parents=True)
                 (self.out / "Debug_arm64" / "obj" / "x.o").write_text("approved")
                 (self.out / "Debug_arm64" / "args.gn").write_text("approved")
-                shutil.rmtree(self.sandbox.config.parent / ".bdev", ignore_errors=True)
+                shutil.rmtree(self.sandbox.config.parent / ".bcore", ignore_errors=True)
                 self.interrupt_after_rename(partial)
                 (remainder,) = [p for p in self.out.iterdir() if p.name.startswith(".scaffold-deleting-Debug_arm64-")]
                 record = self.record()
@@ -382,7 +382,7 @@ class InterruptedCleanupTests(SandboxTest):
         self.assert_resumed_repository_is_preserved(git_file=True)
 
     def prune_after_later_operations(self):
-        directory = self.sandbox.config.parent / ".bdev/operations"
+        directory = self.sandbox.config.parent / ".bcore/operations"
         (original,) = directory.glob("*.json")
         oldest = directory / "000000-old-cleanup.json"
         original.rename(oldest)

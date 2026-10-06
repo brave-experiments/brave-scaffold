@@ -21,7 +21,7 @@ from pathlib import Path
 
 SCRIPTS = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SCRIPTS / "src"))
-os.environ["BDEV_NOTIFY_BACKEND"] = "none"
+os.environ["BCORE_NOTIFY_BACKEND"] = "none"
 
 PYTHON = sys.executable
 FAKE_NODE = """#!%(python)s
@@ -376,7 +376,7 @@ class Sandbox:
         core = self.checkouts[name]
         self.write_config([(name if alias else None, core, "environments/" + name)])
 
-    def bdev(self, *args, cwd=None, env=None, tool="bdev"):
+    def bcore(self, *args, cwd=None, env=None, tool="bcore"):
         return subprocess.run([str(self.scripts / tool), *args], cwd=str(cwd or self.root),
                               env=env or self.env(), capture_output=True, text=True)
 
@@ -387,15 +387,15 @@ class Sandbox:
         """
         self.scripts = self.root / "tooling" / "scripts"
         shutil.copytree(SCRIPTS / "src", self.scripts / "src", ignore=shutil.ignore_patterns("__pycache__"))
-        for name in ("bdev", "bpm", "git-sign-with-1password"):
+        for name in ("bcore", "bpm", "git-sign-with-1password"):
             shutil.copy2(SCRIPTS / name, self.scripts / name)
         (self.scripts / ".venv").symlink_to(SCRIPTS / ".venv", target_is_directory=True)
         manifest = self.scripts / "src" / "scaffold" / "brave" / "support_script_contracts.json"
         known = json.loads(manifest.read_text())
         manifest.write_text(json.dumps({**known, **contracts}))
 
-    def bdev_json(self, *args, **kwargs):
-        result = self.bdev("--json", *args, **kwargs)
+    def bcore_json(self, *args, **kwargs):
+        result = self.bcore("--json", *args, **kwargs)
         document = json.loads(result.stdout)
         return result, document
 
@@ -407,7 +407,7 @@ class Sandbox:
         """Register the checkout, generate its environment, and (in this disposable
         sandbox only) approve it."""
         self.register(name)
-        result = self.bdev("env", "init", "--checkout", name, "--config", str(self.config))
+        result = self.bcore("env", "init", "--checkout", name, "--config", str(self.config))
         assert result.returncode == 0, result.stderr
         if approve:
             self.approve(name)

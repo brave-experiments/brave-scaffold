@@ -22,7 +22,7 @@ prompts.
 
 Output is plain text. Use `--quiet` to hide progress and child output, or
 `--verbose` to show Git probes. Commands save redacted diagnostics in
-`.bdev/logs/` and print the log path.
+`.bcore/logs/` and print the log path.
 
 ## Local work
 
@@ -47,9 +47,9 @@ exit 4, and failed Git operations exit 5. Completed operations are printed as
 they finish. Failures and interruptions do not undo earlier operations or remove
 partial clones; inspect the affected repository before retrying.
 
-The command uses the scaffold's Python runtime and is separate from `bdev`.
+The command uses the scaffold's Python runtime and is separate from `bcore`.
 Brave Scaffold is optional and requires no changes to Core's standalone workflow.
 This command does not install skills or write Core integration files, hooks, Git
-settings, or exclusions. `bdev android setup` separately manages each browser
+settings, or exclusions. `bcore android setup` separately manages each browser
 checkout's Android support working copy; syncing this collection does not update
 those working copies.

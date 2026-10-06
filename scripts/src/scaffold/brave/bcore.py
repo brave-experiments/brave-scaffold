@@ -2,7 +2,7 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this file,
 # You can obtain one at https://mozilla.org/MPL/2.0/.
-"""The `bdev` command line."""
+"""The `bcore` command line."""
 
 from __future__ import annotations
 
@@ -39,20 +39,20 @@ def _pop_word(tokens):
 
 
 def top_help():
-    lines = ["Usage: bdev [options] <command> [arguments]", "",
-             "Build, test, run, and inspect Brave checkouts. Brave Scaffold is supplementary to Brave Core:",
-             "using it is optional and requires no changes to Core.", "", "Commands:"]
+    lines = ["Usage: bcore [options] <command> [arguments]", "",
+             "Sync, build, test, run, and inspect Brave Core checkouts.",
+             "Brave Scaffold is optional and requires no integration changes inside Core.", "", "Commands:"]
     seen = set()
     for name, spec in REGISTRY.items():
         if spec.name in seen:
             continue
         seen.add(spec.name)
         lines.append("  %-16s %s" % (spec.name, spec.summary))
-    lines += ["", "Use bdev --version to show the scaffold Git revision."]
+    lines += ["", "Use bcore --version to show the scaffold Git revision."]
     lines += ["", "Options (before or after the command, up to '--'):"]
     lines += ["  %-28s %s" % ((o.name + ("[=%s]" if o.optional_value else " %s") % o.metavar) if o.takes_value else o.name,
                            o.help) for o in COMMON_OPTIONS]
-    lines += ["", "Run 'bdev <command> --help' for a command's arguments, defaults, and side effects.",
+    lines += ["", "Run 'bcore <command> --help' for a command's arguments, defaults, and side effects.",
               "Use one operator per checkout at a time; the scaffold does not lock checkouts."]
     return "\n".join(lines) + "\n"
 
@@ -66,7 +66,7 @@ def resolve_command(argv):
         sub, remaining = _pop_word(rest)
         if sub is None or sub not in GROUPS[word]:
             raise ScaffoldError("INVALID_INPUT", "%s needs a subcommand: %s." % (word, ", ".join(GROUPS[word])),
-                                details={"usage": "bdev %s <%s>" % (word, "|".join(GROUPS[word]))})
+                                details={"usage": "bcore %s <%s>" % (word, "|".join(GROUPS[word]))})
         return REGISTRY["%s %s" % (word, sub)], remaining
     spec = REGISTRY.get(word)
     if spec is None:
@@ -113,7 +113,7 @@ def main(argv, stdout=None, stderr=None, notifier=None, bell=None):
             if _wants_help(argv) or not argv:
                 stdout.write(top_help())
                 return 0 if argv else 2
-            raise ScaffoldError("INVALID_INPUT", "No command was given.", details={"usage": "bdev <command>"})
+            raise ScaffoldError("INVALID_INPUT", "No command was given.", details={"usage": "bcore <command>"})
         if help_requested(spec, tokens):
             stdout.write(render_help(spec))
             return 0
@@ -123,7 +123,7 @@ def main(argv, stdout=None, stderr=None, notifier=None, bell=None):
 
         def raise_error(_context):
             raise error
-        command = " ".join(argv[:1]) if argv and not argv[0].startswith("-") else "bdev"
+        command = " ".join(argv[:1]) if argv and not argv[0].startswith("-") else "bcore"
         return run_command(command, failure, raise_error, needs_config=False, stdout=stdout, stderr=stderr,
                            notify=False)
     return run_command(spec.name, parsed, spec.handler,

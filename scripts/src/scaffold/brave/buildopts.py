@@ -195,20 +195,20 @@ def resolve_effective(src, forwarded_tokens, target, configuration, explicit_tar
         if os_name is None:
             raise ScaffoldError("UNSUPPORTED_CAPABILITY", "--target_os=%s is not supported here." % fwd.target_os)
         if explicit_target and os_name != explicit_target:
-            raise conflict("The target", explicit_target, os_name, "bdev build %s" % os_name)
+            raise conflict("The target", explicit_target, os_name, "bcore build %s" % os_name)
         effective_target, sources["target"] = os_name, "forwarded"
     effective_configuration = configuration
     if fwd.build_config is not None:
         forwarded_config = fwd.build_config.lower()
         if explicit_configuration and forwarded_config != explicit_configuration.lower():
             raise conflict("The configuration", explicit_configuration, fwd.build_config,
-                           "bdev build --configuration %s" % forwarded_config)
+                           "bcore build --configuration %s" % forwarded_config)
         effective_configuration, sources["configuration"] = fwd.build_config, "forwarded"
     arch = default_arch
     if fwd.target_arch is not None:
         arch, sources["arch"] = normalize_arch(fwd.target_arch), "forwarded"
     if explicit_offline and (fwd.remoteexec is True):
-        raise conflict("Compilation mode", "--offline", "--use_remoteexec=true", "bdev build --offline")
+        raise conflict("Compilation mode", "--offline", "--use_remoteexec=true", "bcore build --offline")
     generated = []
     if fwd.target_os is None:
         generated.append("--target_os=%s" % effective_target)
@@ -238,7 +238,7 @@ def resolve_effective(src, forwarded_tokens, target, configuration, explicit_tar
                                      ("target_cpu", arch, normalize_arch)):
         if key in fwd.gn_values and normalize(fwd.gn_values[key]) != expected:
             if key == "target_os" and explicit_target:
-                raise conflict("The target", explicit_target, fwd.gn_values[key], "bdev build %s" % explicit_target)
+                raise conflict("The target", explicit_target, fwd.gn_values[key], "bcore build %s" % explicit_target)
             unresolved.append("--gn %s:%s overrides the %s this build is recorded under (%s)" % (
                 key, fwd.gn_values[key], key, expected))
     if fwd.info_only:

@@ -3,11 +3,11 @@
 Existing-checkout workflows for Brave macOS on an arm64 Mac: Debug builds, test
 suites, and restarting the browser. Each command delegates to Core's own package
 scripts through the checkout-local Node and package manager; nothing here changes
-how Core builds. Verified support is listed by `bdev capabilities`; other
+how Core builds. Verified support is listed by `bcore capabilities`; other
 configurations and architectures are accepted but only `limited` or `unverified`.
 
 Prerequisites: a registered checkout with an approved environment
-([getting started](getting-started.md)), `bdev doctor mac --checkout <name>`
+([getting started](getting-started.md)), `bcore doctor mac --checkout <name>`
 passing, and, for the default remote compilation, RBE/Siso configuration (see
 [readiness](#readiness-and-rbesiso-prerequisites)). Use one operator per checkout;
 stop other builds first.
@@ -15,13 +15,13 @@ stop other builds first.
 ## Build
 
 ```sh
-bdev build                      # Debug arm64 with RBE/Siso
-bdev build --offline            # compile locally instead
-bdev build --plan               # show the steps; runs nothing
-bdev build -C Custom            # forwarded: output goes to <src>/out/Custom
+bcore build                      # Debug arm64 with RBE/Siso
+bcore build --offline            # compile locally instead
+bcore build --plan               # show the steps; runs nothing
+bcore build -C Custom            # forwarded: output goes to <src>/out/Custom
 ```
 
-`bdev build` checks readiness, applies Core patches only when they are out of date
+`bcore build` checks readiness, applies Core patches only when they are out of date
 and no local edits are at risk ([source and cleanup](source-and-cleanup.md)), runs
 `bpm run build` with generated arguments, then verifies the application bundle in
 the resolved output directory and records it. It never cleans, installs, or
@@ -32,7 +32,7 @@ Debug`, then `--use_remoteexec=true` (or `--offline`), plus `--channel=release` 
 Release and `--force_gn_gen` after `--force-gn` or a patch application. Everything
 else on the command line is forwarded unchanged after them, so new options of the
 package command work without any change here; use `--` to forward a token that is
-also a scaffold option (`bdev build -- --json`).
+also a scaffold option (`bcore build -- --json`).
 
 Forwarded options that decide what is built are also read for planning, output
 selection, and records: `--target_os`, `--target_arch`, `-C`, a `Debug`/`Release`
@@ -70,14 +70,14 @@ its output directory and record describe; against an explicit target argument it
 ## Test
 
 ```sh
-bdev test brave_unit_tests
-bdev test mac brave_browser_tests --filter 'Example.*'
-bdev test brave_browser_tests -- --gtest_repeat=2
-bdev test mac --plan
-bdev test --file components/example/example_unittest.cc
+bcore test brave_unit_tests
+bcore test mac brave_browser_tests --filter 'Example.*'
+bcore test brave_browser_tests -- --gtest_repeat=2
+bcore test mac --plan
+bcore test --file components/example/example_unittest.cc
 ```
 
-`bdev test` with no suite runs the changed macOS tests, and `--file` runs one
+`bcore test` with no suite runs the changed macOS tests, and `--file` runs one
 file's tests; see [test](commands.md#test). To run a suite, name it. The suite comes first; `mac` is optional and only recognized
 before the suite. `--filter` narrows tests inside the suite and never supplies a
 missing suite. Both `--filter 'Example.*'` and `--filter='Example.*'` pass the
@@ -87,7 +87,7 @@ suite. Core's test command builds the selected suite before running it.
 Tests use the selected checkout's approved environment and checkout-local tools.
 They default to Debug arm64 with remote execution requested. `--configuration`,
 `--offline`, and forwarded output options such as `-C` select the effective build
-just as they do for `bdev build`. Build and test output streams live to the console
+just as they do for `bcore build`. Build and test output streams live to the console
 and the diagnostic log. A failed package command returns scaffold exit 5 and saves
 the child's status as `child_exit_code` in JSON and the operation record.
 Other arguments go to `bpm run test` after the generated ones.
@@ -95,15 +95,15 @@ Android tests are covered in [Android](android.md#tests). The effective target
 decides whether `test` runs the macOS or the Android path: an Android default
 platform or forwarded `--target_os=android` selects Android, forwarding
 `--target_os=mac` overrides an Android default, and
-`bdev test mac <suite> --target_os=android` is a `SELECTOR_CONFLICT`. `--device`
+`bcore test mac <suite> --target_os=android` is a `SELECTOR_CONFLICT`. `--device`
 applies to Android only.
 
 ## Run and restart
 
 ```sh
-bdev run                        # restart with the default Debug output
-bdev run --artifact ./out/Custom/'Brave Browser Development.app'
-bdev build-run                  # build, then run exactly what was built (alias: br)
+bcore run                        # restart with the default Debug output
+bcore run --artifact ./out/Custom/'Brave Browser Development.app'
+bcore build-run                  # build, then run exactly what was built (alias: br)
 ```
 
 `run` never builds. It selects the application by checkout, target, configuration,
@@ -135,11 +135,11 @@ checkout-local tools, a Debug build through RBE/Siso (the output was already up 
 date, so no compilation ran), one browser test, restart of the application including
 quitting a running instance, and drift inspection. Not yet verified on a real
 checkout: sync, patch update, cleanup, compiling after source changes, and offline
-builds. `bdev capabilities` reflects this.
+builds. `bcore capabilities` reflects this.
 
 ## Readiness and RBE/Siso prerequisites
 
-`bdev doctor mac` and `bdev doctor rbe` report these checks without changing
+`bcore doctor mac` and `bcore doctor rbe` report these checks without changing
 anything. Nothing is installed, repaired, synced, or approved, and nothing is
 written to the checkout.
 

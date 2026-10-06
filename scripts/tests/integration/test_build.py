@@ -58,12 +58,12 @@ class BuildTestCase(SandboxTest):
     def env(self, **extra):
         return self.sandbox.env(FAKE_HOOK=self.hook, **extra)
 
-    def bdev(self, *args, env=None, cwd=None):
-        return self.sandbox.bdev("--json", "--config", self.config, "--checkout", "main", *args,
+    def bcore(self, *args, env=None, cwd=None):
+        return self.sandbox.bcore("--json", "--config", self.config, "--checkout", "main", *args,
                                  env=env or self.env(), cwd=cwd)
 
     def document(self, *args, **kwargs):
-        result = self.bdev(*args, **kwargs)
+        result = self.bcore(*args, **kwargs)
         return result, json.loads(result.stdout)
 
     def node_calls(self):
@@ -109,7 +109,7 @@ class BuildTests(BuildTestCase):
                 self.assertIn(detail, saved)
                 self.assertIn("make field public in brave/Class", saved)
 
-        direct = self.sandbox.bdev("--config", self.config, "--checkout", "main", "run", "build",
+        direct = self.sandbox.bcore("--config", self.config, "--checkout", "main", "run", "build",
                                    tool="bpm", env=self.env())
         self.assertEqual(direct.returncode, 0, direct.stderr)
         self.assertIn(detail, direct.stdout)
@@ -260,11 +260,11 @@ class BuildTests(BuildTestCase):
 
     def test_operations_are_recorded_outside_core_and_complete(self):
         result, document = self.document("build")
-        record = json.loads((self.sandbox.config.parent / ".bdev" / "operations" /
+        record = json.loads((self.sandbox.config.parent / ".bcore" / "operations" /
                              (document["operation_id"] + ".json")).read_text())
         self.assertEqual((record["state"], record["status"]), ("complete", "ok"))
         self.assertEqual(record["checkout"], str(self.core))
-        self.assertFalse(list(self.core.glob(".bdev*")))
+        self.assertFalse(list(self.core.glob(".bcore*")))
 
 
 
@@ -278,7 +278,7 @@ class NinjaOutputTests(BuildTestCase):
             'out = os.environ["FAKE_NINJA_OUTPUT"]'))
 
     def test_ninja_directory_options_keep_the_default_receipt_unchanged(self):
-        (receipt,) = (self.sandbox.config.parent / ".bdev/outputs").glob("*/*.json")
+        (receipt,) = (self.sandbox.config.parent / ".bcore/outputs").glob("*/*.json")
         before = receipt.read_bytes()
         binary = self.output_app() / "Contents/MacOS/Brave Browser Development"
         stamp = binary.stat().st_mtime_ns
@@ -301,7 +301,7 @@ class NinjaOutputTests(BuildTestCase):
                                           env=self.env(FAKE_NINJA_OUTPUT=str(self.alternate)))
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(document["data"]["build"]["artifact_status"], "unresolved")
-        (receipt,) = (self.sandbox.config.parent / ".bdev/outputs").glob("*/*.json")
+        (receipt,) = (self.sandbox.config.parent / ".bcore/outputs").glob("*/*.json")
         self.assertTrue(json.loads(receipt.read_text())["needs_revalidation"])
 
     def test_a_combined_plan_reports_unresolved_output_without_a_default_launch(self):
@@ -358,7 +358,7 @@ class NonCompilingModeTests(BuildTestCase):
              ["--ninja=n"], ["--offline", "--ninja", "n:"])
 
     def output_states(self):
-        directory = self.sandbox.config.parent / ".bdev" / "outputs"
+        directory = self.sandbox.config.parent / ".bcore" / "outputs"
         return [json.loads(path.read_text()) for path in sorted(directory.glob("*/*.json"))]
 
     def build_once(self):

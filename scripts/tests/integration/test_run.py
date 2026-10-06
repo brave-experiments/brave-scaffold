@@ -52,7 +52,7 @@ class RunTests(BuildTestCase):
         result, document = self.run_app()
         self.assertEqual((result.returncode, document["error"]["code"]), (5, "ARTIFACT_MISSING"))
         commands = [step["argv"][:2] for step in document["error"]["repairs"]]
-        self.assertIn(["bdev", "build"], commands)
+        self.assertIn(["bcore", "build"], commands)
         self.assertEqual(self.node_calls(), [])
 
     def test_run_with_nothing_running_launches_the_selected_bundle(self):
@@ -208,7 +208,7 @@ class RunTests(BuildTestCase):
     def test_cancelled_build_keeps_the_marker_and_finishes_its_record(self):
         self.build()
         process = subprocess.Popen(
-            [str(SCRIPTS / "bdev"), "--json", "--config", str(self.sandbox.config), "--checkout", "main", "build"],
+            [str(SCRIPTS / "bcore"), "--json", "--config", str(self.sandbox.config), "--checkout", "main", "build"],
             env=self.env(FAKE_SLEEP="60"), stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         deadline = time.time() + 30
         while len([r for r in self.node_calls() if "build" in r["argv"]]) < 2 and time.time() < deadline:
@@ -230,7 +230,7 @@ subprocess.Popen([sys.executable, "-c", "import os,signal,sys,time\\n"
 time.sleep(120)
 """)
         process = subprocess.Popen(
-            [str(SCRIPTS / "bdev"), "--json", "--config", str(self.sandbox.config), "--checkout", "main", "build"],
+            [str(SCRIPTS / "bcore"), "--json", "--config", str(self.sandbox.config), "--checkout", "main", "build"],
             env=self.sandbox.env(FAKE_HOOK=hook, FAKE_DESCENDANT_PID=str(pidfile)),
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         deadline = time.time() + 30
@@ -248,7 +248,7 @@ time.sleep(120)
     def test_interrupted_operation_without_cleanup_is_reported_as_uncertain_later(self):
         self.build()
         process = subprocess.Popen(
-            [str(SCRIPTS / "bdev"), "--json", "--config", str(self.sandbox.config), "--checkout", "main", "build"],
+            [str(SCRIPTS / "bcore"), "--json", "--config", str(self.sandbox.config), "--checkout", "main", "build"],
             env=self.env(FAKE_SLEEP="60"), stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         deadline = time.time() + 30
         while len([r for r in self.node_calls() if "build" in r["argv"]]) < 2 and time.time() < deadline:

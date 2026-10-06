@@ -16,64 +16,64 @@ from tests.support import SandboxTest
 
 ROOT = Path(__file__).resolve().parents[3]
 FENCE = re.compile(r"```(?:sh|bash|shell)\n(.*?)```", re.S)
-COMMAND = re.compile(r"^(?:scripts/)?(bdev|bpm)\b")
+COMMAND = re.compile(r"^(?:scripts/)?(bcore|bpm)\b")
 
 # Examples that show syntax or need something a disposable fixture cannot provide.
 NOT_RUN = {
     "bpm [--checkout <name-or-path>] [--config <file>] [--json] <package arguments...>": "syntax reference",
-    "bdev vpython3 [--checkout <name-or-path>] [--cwd <directory>] [--] <arguments...>": "syntax reference",
-    "bdev android setup": "clones the default support repository from the network",
-    "bdev sync ios": "needs Core's iOS bootstrap hook; covered by tests/integration/test_ios.py",
-    "bdev sync ios,android": "needs Core's iOS bootstrap hook; covered by tests/integration/test_ios.py",
-    'bdev build ios': 'needs an iOS checkout and Xcode; covered by tests/integration/test_ios.py',
-    'bdev build ios --device "iPhone 16"': 'needs an iOS checkout and Xcode; covered by tests/integration/test_ios.py',
-    'bdev build ios --plan': 'needs an iOS checkout and Xcode; covered by tests/integration/test_ios.py',
-    'bdev build ios -jobs 4 CODE_SIGNING_ALLOWED=NO': 'needs an iOS checkout and Xcode; covered by tests/integration/test_ios.py',
-    'bdev build-run ios': 'needs an iOS checkout and Xcode; covered by tests/integration/test_ios.py',
-    'bdev run ios': 'needs an iOS checkout and Xcode; covered by tests/integration/test_ios.py',
-    'bdev run ios --device "iPhone 16 Pro"': 'needs an iOS checkout and Xcode; covered by tests/integration/test_ios.py',
-    'bdev sync-build ios': 'needs an iOS checkout and Xcode; covered by tests/integration/test_ios.py',
-    "bdev android setup --ref <tag-or-sha>": "clones the default support repository from the network",
-    'bdev test mac --plan': "needs a Core branch with a base ref; covered by tests.integration.test_test_changed",
-    'bdev test mac': "needs modified Core test files; covered by tests.integration.test_test_changed",
-    'bdev test android': "needs modified Core test files and Android support; covered by tests.integration.test_test_changed",
-    'bdev test android --plan': "needs a Core branch with a base ref; covered by tests.integration.test_test_changed",
-    'bdev test android --device=emulator-5554': "needs a Core branch with a base ref; covered by tests.integration.test_test_changed",
-    'bdev test --file components/example/example_unittest.cc': "needs a Core branch with a base ref; covered by tests.integration.test_test_changed",
-    "bdev test android brave_junit_tests --filter='*BraveCommandLineInitUtilTest*'":
+    "bcore vpython3 [--checkout <name-or-path>] [--cwd <directory>] [--] <arguments...>": "syntax reference",
+    "bcore android setup": "clones the default support repository from the network",
+    "bcore sync ios": "needs Core's iOS bootstrap hook; covered by tests/integration/test_ios.py",
+    "bcore sync ios,android": "needs Core's iOS bootstrap hook; covered by tests/integration/test_ios.py",
+    'bcore build ios': 'needs an iOS checkout and Xcode; covered by tests/integration/test_ios.py',
+    'bcore build ios --device "iPhone 16"': 'needs an iOS checkout and Xcode; covered by tests/integration/test_ios.py',
+    'bcore build ios --plan': 'needs an iOS checkout and Xcode; covered by tests/integration/test_ios.py',
+    'bcore build ios -jobs 4 CODE_SIGNING_ALLOWED=NO': 'needs an iOS checkout and Xcode; covered by tests/integration/test_ios.py',
+    'bcore build-run ios': 'needs an iOS checkout and Xcode; covered by tests/integration/test_ios.py',
+    'bcore run ios': 'needs an iOS checkout and Xcode; covered by tests/integration/test_ios.py',
+    'bcore run ios --device "iPhone 16 Pro"': 'needs an iOS checkout and Xcode; covered by tests/integration/test_ios.py',
+    'bcore sync-build ios': 'needs an iOS checkout and Xcode; covered by tests/integration/test_ios.py',
+    "bcore android setup --ref <tag-or-sha>": "clones the default support repository from the network",
+    'bcore test mac --plan': "needs a Core branch with a base ref; covered by tests.integration.test_test_changed",
+    'bcore test mac': "needs modified Core test files; covered by tests.integration.test_test_changed",
+    'bcore test android': "needs modified Core test files and Android support; covered by tests.integration.test_test_changed",
+    'bcore test android --plan': "needs a Core branch with a base ref; covered by tests.integration.test_test_changed",
+    'bcore test android --device=emulator-5554': "needs a Core branch with a base ref; covered by tests.integration.test_test_changed",
+    'bcore test --file components/example/example_unittest.cc': "needs a Core branch with a base ref; covered by tests.integration.test_test_changed",
+    "bcore test android brave_junit_tests --filter='*BraveCommandLineInitUtilTest*'":
         "needs the Android test support fixtures; run by tests.integration.test_android_tests",
-    "bdev test android brave_java_unit_tests --filter='BraveAppearancePreferencesTest.*' --device=emulator-5554":
+    "bcore test android brave_java_unit_tests --filter='BraveAppearancePreferencesTest.*' --device=emulator-5554":
         "needs the Android test support fixtures; run by tests.integration.test_android_tests",
 }
 
 # Fixture state an example assumes, and the exit codes that show it behaved as documented.
 BUILT, BUILT_CUSTOM, ANDROID, ANDROID_BUILT = "built", "built-custom", "android", "android-built"
 MAC_EXAMPLES = {
-    "bdev build": (None, {0}), "bdev build --offline": (None, {0}), "bdev build --plan": (None, {0}),
-    "bdev build -C Custom": (None, {0}), "bdev test brave_unit_tests": (None, {0}),
-    "bdev test mac brave_browser_tests --filter 'Example.*'": (None, {0}),
-    "bdev test brave_browser_tests -- --gtest_repeat=2": (None, {0}),
-    "bdev run": (BUILT, {0}),
-    "bdev run --artifact ./out/Custom/'Brave Browser Development.app'": (BUILT_CUSTOM, {0}),
-    "bdev build-run": (None, {0}),
-    "bdev sync": (None, {0}), "bdev sync android --plan": (None, {0}), "bdev sync mac,android --force": (None, {0}),
-    "bdev drift": (None, {0}), "bdev drift --diff": (None, {0}), "bdev patches update": (None, {0}),
-    "bdev clean": (BUILT, {0}), "bdev clean android --configuration debug": (None, {0}),
-    "bdev clean mac --arch arm64 --execute": (BUILT, {0}), "bdev clean all --execute": (BUILT, {0}),
-    "scripts/bdev doctor signing": (None, {0, 3}),
+    "bcore build": (None, {0}), "bcore build --offline": (None, {0}), "bcore build --plan": (None, {0}),
+    "bcore build -C Custom": (None, {0}), "bcore test brave_unit_tests": (None, {0}),
+    "bcore test mac brave_browser_tests --filter 'Example.*'": (None, {0}),
+    "bcore test brave_browser_tests -- --gtest_repeat=2": (None, {0}),
+    "bcore run": (BUILT, {0}),
+    "bcore run --artifact ./out/Custom/'Brave Browser Development.app'": (BUILT_CUSTOM, {0}),
+    "bcore build-run": (None, {0}),
+    "bcore sync": (None, {0}), "bcore sync android --plan": (None, {0}), "bcore sync mac,android --force": (None, {0}),
+    "bcore drift": (None, {0}), "bcore drift --diff": (None, {0}), "bcore patches update": (None, {0}),
+    "bcore clean": (BUILT, {0}), "bcore clean android --configuration debug": (None, {0}),
+    "bcore clean mac --arch arm64 --execute": (BUILT, {0}), "bcore clean all --execute": (BUILT, {0}),
+    "scripts/bcore doctor signing": (None, {0, 3}),
 }
 ANDROID_EXAMPLES = {
-    "bdev android setup --source <url-or-path>": (None, {0}),
-    "bdev build android": (ANDROID, {0}), "bdev build android --offline": (ANDROID, {0}),
-    "bdev build android -C Custom": (ANDROID, {0}),
-    "bdev run android --device <id>": (ANDROID_BUILT, {0}), "bdev deploy android": (ANDROID_BUILT, {0}),
-    "bdev build-run android --device <id>": (ANDROID, {0}),
-    "bdev build-run android --all-devices": (ANDROID, {0}),
-    "bdev run android --all-devices": (ANDROID_BUILT, {0}),
+    "bcore android setup --source <url-or-path>": (None, {0}),
+    "bcore build android": (ANDROID, {0}), "bcore build android --offline": (ANDROID, {0}),
+    "bcore build android -C Custom": (ANDROID, {0}),
+    "bcore run android --device <id>": (ANDROID_BUILT, {0}), "bcore deploy android": (ANDROID_BUILT, {0}),
+    "bcore build-run android --device <id>": (ANDROID, {0}),
+    "bcore build-run android --all-devices": (ANDROID, {0}),
+    "bcore run android --all-devices": (ANDROID_BUILT, {0}),
 }
-GETTING_STARTED = ["scripts/bdev setup", "scripts/bdev checkout add main /work/browser/_bad_scm/workspace/src/brave",
-                   "scripts/bdev env init --checkout main", "scripts/bdev doctor mac --checkout main",
-                   "scripts/bdev context --checkout main", "scripts/bpm --checkout main run --help"]
+GETTING_STARTED = ["scripts/bcore setup", "scripts/bcore checkout add main /work/browser/_bad_scm/workspace/src/brave",
+                   "scripts/bcore env init --checkout main", "scripts/bcore doctor mac --checkout main",
+                   "scripts/bcore context --checkout main", "scripts/bpm --checkout main run --help"]
 
 
 def documented_examples():
@@ -114,7 +114,7 @@ def run_example(test, command, expected, substitutions=None, cwd=None):
     for placeholder, value in (substitutions or {}).items():
         command = command.replace(placeholder, value)
     tool, arguments = with_selectors(command, test.config)
-    result = test.sandbox.bdev(*arguments, tool=tool, cwd=cwd, env=test.env())
+    result = test.sandbox.bcore(*arguments, tool=tool, cwd=cwd, env=test.env())
     test.assertIn(result.returncode, expected, "%s\n%s\n%s" % (command, result.stdout[-600:], result.stderr[-1200:]))
     return result
 
@@ -132,14 +132,14 @@ def _mac_test(command, state, expected):
         calls = len(self.node_calls())
         result = run_example(self, command, expected, cwd=self.src)
         new_calls = [call["argv"][1:] for call in self.node_calls()[calls:]]
-        if command in ("bdev build --plan", "bdev sync android --plan"):
+        if command in ("bcore build --plan", "bcore sync android --plan"):
             self.assertIn("nothing was run", result.stdout)
             self.assertEqual(new_calls, [], "a plan runs nothing")
-        elif command == "bdev build":
+        elif command == "bcore build":
             self.assertTrue(self.output_app().is_dir())
-        elif command == "bdev build -C Custom":
+        elif command == "bcore build -C Custom":
             self.assertTrue(self.output_app("Custom").is_dir())
-        elif command.startswith("bdev test"):
+        elif command.startswith("bcore test"):
             words = shlex.split(command)
             suite = next(word for word in words if word.endswith("_tests"))
             self.assertEqual(new_calls[-1][:3], ["run", "test", suite])
@@ -147,11 +147,11 @@ def _mac_test(command, state, expected):
                 self.assertIn("--filter=" + words[words.index("--filter") + 1], new_calls[-1])
             if "--gtest_repeat=2" in words:
                 self.assertEqual(new_calls[-1][-1], "--gtest_repeat=2")
-        elif command.startswith("bdev run"):
+        elif command.startswith("bcore run"):
             self.assertTrue([r for r in self.sandbox.records() if r["tool"] == "open"], "the application was launched")
-        elif command in ("bdev clean mac --arch arm64 --execute", "bdev clean all --execute"):
+        elif command in ("bcore clean mac --arch arm64 --execute", "bcore clean all --execute"):
             self.assertFalse(self.output_app().parent.exists(), "the previewed output was deleted")
-        elif command == "bdev clean":
+        elif command == "bcore clean":
             self.assertTrue(self.output_app().is_dir(), "a preview deletes nothing")
     return test
 
@@ -203,8 +203,8 @@ class GettingStartedExamples(SandboxTest):
             with self.subTest(command=command):
                 command = command.replace("/work/browser/_bad_scm/workspace/src/brave", str(core))
                 tool, arguments = with_selectors(command, config, checkout=False)
-                result = self.sandbox.bdev(*arguments, tool=tool)
-                if command.startswith("scripts/bdev env init"):
+                result = self.sandbox.bcore(*arguments, tool=tool)
+                if command.startswith("scripts/bcore env init"):
                     self.sandbox.approve("main")
                 self.assertEqual(result.returncode, 0, "%s\n%s%s" % (command, result.stdout[-400:], result.stderr[-800:]))
         self.assertTrue(Path(config).is_file())
