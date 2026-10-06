@@ -33,14 +33,32 @@ the command shown in the launcher's error message.
 `scripts/bcore setup` prepares `brave-scaffold.toml` when it is missing and lists
 the next steps. It changes nothing inside Brave Core.
 
-To type `bcore` and `bpm` without a path, put `scripts/` on your `PATH`. That is
-optional; every example works with `scripts/bcore`.
+To type `bcore` and `bpm` without a path and enable checkout switching, add these
+lines to your Bash or Zsh startup file, replacing `/path/to/brave-scaffold` with
+the absolute path to this repository. Reload the file or open a new shell:
+
+```sh
+export PATH="/path/to/brave-scaffold/scripts:$PATH"
+source "/path/to/brave-scaffold/scripts/bcore-shell.sh"
+```
+
+This is optional; you can use `scripts/bcore` directly from the scaffold root.
 
 To change directories with `bcore cd main` or `bcore cd alt-1`, also source
 `scripts/bcore-shell.sh` in your Bash or Zsh startup file. These commands enter
 the selected checkout's `src/brave` directory. A separate process cannot change
 your shell's directory, so running `scripts/bcore cd main` directly prints the
 path instead.
+
+Scaffold and your checkouts do not need a shared parent directory. You can keep
+Scaffold in its own folder, with checkouts elsewhere or on different volumes.
+You can also use Scaffold as your development folder and nest checkouts inside
+it; keep those directories ignored by Scaffold's Git configuration. Setup must
+not add exclusions inside Core.
+
+Configuration lives beside the Scaffold installation you run, regardless of
+your current directory, unless you pass `--config`. Each registered checkout
+needs its own approved external environment.
 
 ## Register a checkout
 
@@ -87,3 +105,6 @@ If a command fails, its error names the problem and a next step. See
 [troubleshooting](troubleshooting.md) and [commands](commands.md).
 
 Use one operator per checkout at a time. The scaffold does not lock checkouts.
+
+For optional commit signing with 1Password, run `scripts/bcore doctor signing`
+and follow the [commit signing guide](signing.md).
