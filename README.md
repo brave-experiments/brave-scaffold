@@ -74,6 +74,67 @@ The scaffold can help you set up commit signing with 1Password. Run
 `scripts/bcore doctor signing` to check your setup, and see
 [commit signing](docs/signing.md) for configuration steps.
 
+## Where Scaffold and checkouts can live
+
+Scaffold and your browser checkouts do not need a shared parent directory.
+Add the Scaffold installation's `scripts` directory to `PATH` as shown above,
+and register each checkout's `src/brave` path in `brave-scaffold.toml`.
+Each checkout also needs its own approved external environment.
+
+### Nested layout: Scaffold is your development folder
+
+You can use the Scaffold repository itself as a `dev` folder and keep browser
+checkouts inside it:
+
+```text
+/Users/you/dev/                 Scaffold repository
+|-- README.md
+|-- brave-scaffold.toml
+|-- scripts/                   Add this directory to PATH
+|   `-- bcore
+|-- environments/
+|   |-- bb-1/.envrc
+|   `-- bb-2/.envrc
+|-- brave-browser-1/
+|   `-- src/brave/             Registered as bb-1
+`-- brave-browser-2/
+    `-- src/brave/             Registered as bb-2
+```
+
+The registered Core paths are `/Users/you/dev/brave-browser-1/src/brave` and
+`/Users/you/dev/brave-browser-2/src/brave`. Keep nested browser checkouts ignored
+by the Scaffold repository's Git configuration.
+
+### Non-nested layout: Scaffold has its own folder
+
+You can keep Scaffold separate, with no central `dev` folder:
+
+```text
+/Volumes/Work/
+|-- brave-scaffold/            Scaffold repository
+|   |-- brave-scaffold.toml
+|   |-- scripts/              Add this directory to PATH
+|   |   `-- bcore
+|   `-- environments/
+|       |-- bb-1/.envrc
+|       `-- bb-2/.envrc
+|-- bb-1/
+|   `-- src/brave/             Registered as bb-1
+`-- bb-2/
+    `-- src/brave/             Registered as bb-2
+```
+
+The registered Core paths are `/Volumes/Work/bb-1/src/brave` and
+`/Volumes/Work/bb-2/src/brave`. The checkouts could also live on different volumes;
+these sibling folders are just one example. These examples use macOS paths
+because native Windows hosts are not currently supported.
+
+In either layout, `bcore` selects the checkout containing your current directory.
+From elsewhere, pass `--checkout bb-1` or `--checkout bb-2`. It reads the
+configuration beside the Scaffold installation you run, regardless of your
+current directory, unless you pass `--config`. The optional shell helper also
+lets `bcore cd bb-1` enter that checkout's `src/brave` directory.
+
 ## Build and run the tests you changed
 
 After editing tests, run `bcore test mac` or `bcore test android`. It finds modified
