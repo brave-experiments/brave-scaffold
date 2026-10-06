@@ -158,6 +158,43 @@ For manual setup, prerequisites, and shell configuration, follow
 one-time steps per installation/checkout, with renewed approval when an
 environment file changes.
 
+## Where Scaffold and checkouts can live
+
+Keep your existing checkout locations. Scaffold can live in a separate folder,
+with checkouts beside it, elsewhere, or on another volume:
+
+```text
+work/
+├── brave-scaffold/          Scaffold repository
+│   ├── scripts/
+│   └── brave-scaffold.toml  Registers checkout paths and aliases
+├── brave-browser-main/
+│   └── src/brave/           Registered as main
+└── brave-browser-fix/
+    └── src/brave/           Registered as fix
+```
+
+Or use Scaffold itself as your development folder and nest checkouts inside it:
+
+```text
+dev/                        Scaffold repository
+├── scripts/
+├── brave-scaffold.toml
+├── brave-browser-main/
+│   └── src/brave/           Registered as main
+└── brave-browser-fix/
+    └── src/brave/           Registered as fix
+```
+
+For the nested layout, keep browser checkout directories ignored by Scaffold's
+Git configuration. No exclusions or integration files are needed inside Core.
+
+In either layout, put Scaffold's `scripts/` directory on `PATH` and register each
+checkout. With the shell helper loaded, `bcore cd main` enters that checkout's
+`src/brave`. Commands select the checkout from your current directory; elsewhere,
+pass `--checkout main`. Configuration and approved environments stay with
+Scaffold by default. See [Getting started](docs/getting-started.md) for setup.
+
 ## Platform support
 
 The main workflows cover macOS Debug arm64, Android arm64 APK builds and
