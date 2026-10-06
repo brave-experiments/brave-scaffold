@@ -1,72 +1,165 @@
 # Brave development scaffold
 
-Local tools for building, testing, running, and inspecting Brave checkouts.
-Browser checkouts may live anywhere and are selected through local configuration.
-Shared support repositories live in this scaffold's `support/` folder.
+A small command-line API for the sync, build, run, and test commands you use in
+Brave Core development. `bdev` brings checkout selection, platform options,
+readiness checks, and results into one tool, replacing the scripts and aliases
+you would otherwise maintain for each workflow.
 
-Brave Scaffold (`brave-scaffold`) is entirely supplementary to Brave Core
-(`brave-core`). Using it is optional. Adopting or using the scaffold requires no
-changes to Brave Core's source, configuration, or development workflow. Brave
-Core's own supported commands remain usable without the scaffold.
-`bdev sync` runs Core's sync script with its normal effects, including resets,
-patches, and hooks. Core controls which local files it updates or overwrites.
+Brave Scaffold is optional tooling around `brave-core`. Adoption requires no
+changes to Core: setup writes no integration files, hooks, Git configuration, or
+exclusions inside your checkouts. Core's own commands and standalone workflow
+remain available. Requested syncs, builds, and tests still make their normal
+checkout writes.
 
-Scaffold configuration and integration files stay outside Brave Core. Explicitly
-requested builds, syncs, and source preparation still perform their normal
-checkout writes; those are the requested work, not scaffold installation changes.
+## Build and run the tests you changed
 
-## What works today
+After editing tests, run `bdev test mac` or `bdev test android`. It finds modified
+test files in Core, chooses the suites, derives their filters, and compiles and
+runs them. You do not need to look up each suite or assemble its filter yourself.
 
-`bdev` and `bpm` live under `scripts/`:
+For example, suppose you changed a `*_unittest.cc` file containing the fixture
+`ExampleTest` and a `*_browsertest.cc` file containing `ExampleBrowserTest`:
 
-- `bdev` inspects checkouts, generates and checks their external direnv
-  environments, reports readiness, syncs sources, builds, tests, runs, and cleans
-  Brave macOS (Debug arm64), inspects patch drift, and runs the checkout-local
-  Python.
-- `bpm` runs the checkout's own package manager with its own Node.js, never a
-  global one.
+```sh
+bdev test mac --plan   # inspect the selected suites and filters; run nothing
+bdev test mac          # compile and run the selection
+```
 
-`bdev status` shows local Git state, prior build/test outcomes, output warnings,
-and free disk space. Saved results are labeled as history, not current verification.
+The selection is:
 
-`scripts/sync-support-repos` separately clones, updates, inspects, and prunes
-shared support repositories ([guide](docs/support-repositories.md)).
+```text
+Modified test files
+├── *_unittest.cc    → brave_unit_tests     → ExampleTest.*
+└── *_browsertest.cc → brave_browser_tests  → ExampleBrowserTest.*
+```
 
-Android builds an arm64 APK and installs and restarts it on a selected device,
-or on every compatible connected device with `--all-devices`.
-iOS builds the Debug app for an iOS Simulator with `xcodebuild` and Core's Xcode
-project, then installs and launches it ([guide](docs/ios.md)).
-`bdev capabilities` lists what is supported and what has been verified on a
-real checkout.
+One command handles both suites, with filtered runs instead of running every
+test in each suite. Compilation still builds the required test targets. A test
+failure in one suite does not prevent the other from running; a setup error
+stops the remaining work.
 
-Normal output shows phases, primary commands, and live build output. Use `--quiet`
-for less console output or `--verbose` to include internal probes. Commands save a diagnostic log
-and print its path; pure environment exports remain silent. See [output controls](docs/commands.md#common-behavior).
-`bdev --version` shows the scaffold Git SHA and commit date, with `dirty` for local
-changes. Each logged operation also prints its revision after the elapsed time,
-so pasted terminal output identifies the scaffold used. Diagnostic logs and
-operation records include the full SHA, commit date,
-and dirty state for troubleshooting. If Git metadata is unavailable, the revision
-is unknown and commands still work.
+Discovery includes branch commits since divergence from `origin/master`, plus
+staged, unstaged, and untracked files. Use `--base REF` for another base.
+Selection comes from modified **test files**, not production-code changes, and
+C++ filters cover each fixture in the file, not just edited test cases.
+Unsupported or unmapped files are reported. If nothing is selected, nothing runs.
 
-Optional macOS completion notifications are configured with `[notifications]` or
-`--notify` ([details](docs/commands.md#completion-notifications)).
+The same workflow handles Android Java tests:
 
-The initial platform scope is macOS arm64 hosts with existing Brave macOS and
-Android checkouts, plus iOS Simulator Debug builds. Fresh checkout creation and
-guarded push are not part of it.
+```sh
+bdev test android --plan
+bdev test android
+```
 
-## Quick start
+JUnit files map to host-side `brave_junit_tests`; device Java tests map to
+`brave_java_unit_tests`. Android tests need the
+[Android test support setup](docs/android.md#tests), and device suites need a
+compatible device. Desktop WebUI tests can also map to their C++ browser-test
+harness. See [test selection](docs/commands.md#test) for supported file patterns,
+`--file`, explicit suites, and filters.
 
-1. Create the tooling runtime (Python 3.14 or newer, no packages):
-   `python3.14 -m venv --without-pip scripts/.venv`
-2. Register a checkout: `scripts/bdev checkout add main /path/to/src/brave`
-3. Generate its environment: `scripts/bdev env init --checkout main`
-4. Review the printed file, then approve it yourself with `direnv allow <dir>`.
-5. Check readiness: `scripts/bdev doctor mac --checkout main`
-6. Build and run: `scripts/bdev build-run --checkout main` ([macOS](docs/macos.md))
+## Check setup before starting work
 
-Nothing requires a `PATH` change, a shell hook, or an edit inside Brave Core.
+`bdev doctor mac` checks the selected checkout's environment and required tools,
+including checkout-local Node and the package manager, Xcode/SDK readiness, and
+local Siso/RBE configuration. `bdev doctor rbe` focuses on remote-build setup:
+RBE settings, native Siso mode, TLS file availability and certificate expiry,
+cache configuration, and generated sync files.
+
+Doctor reports blockers, warnings, and suggested next steps. It never installs,
+repairs, or approves anything. RBE checks inspect local configuration; they do
+not test VPN or service connectivity. Use `bdev doctor android` or
+`bdev doctor ios` for platform checks. Outside a checkout, doctor inspects all
+registered checkouts; `--checkout main` limits it to one.
+
+## Keep the daily commands short
+
+Once configured, these commands use the checkout containing your current
+directory. Add `--checkout main` to select a registered checkout from elsewhere.
+
+| Command | What it saves you |
+| --- | --- |
+| `bdev cd main` | Enter a registered checkout's `src/brave` without remembering its path. Requires the Bash/Zsh helper described below. |
+| `bdev status` | See Core's branch and local changes, prior build/test outcomes for the current branch, output revalidation warnings, and a warning when free disk space falls below 200 GB. Saved outcomes are history, not proof that current code passes. |
+| `bdev sync` | Run Core's sync through the selected checkout's own Node and package manager. |
+| `bdev build mac` | Check readiness, prepare sources, build, and verify the output. Use `android` or `ios` for those targets. |
+| `bdev run mac` | Restart the browser from an existing output without rebuilding. Android installs and restarts the APK; iOS installs and launches in a Simulator. |
+| `bdev sbr mac` | Sync, build, and restart in order (`sync-build-run`). A failed phase stops the workflow; launch requires a verified output from this build. |
+| `bpm run <script>` | Use a Core package script directly with that checkout's Node and package manager. |
+
+`bdev br` means build then run; `bdev sb` means sync then build. Extra arguments
+on combined commands go to the build phase. Add `--plan` to preview sync, build,
+run, or combined operations without executing them.
+
+Sync uses Core's normal resets, patches, and hooks, which can overwrite local
+changes. Save wanted work before syncing, including through `bdev sbr`.
+
+### Know when a command finishes
+
+You can leave a build or test running and get its final outcome without watching
+the terminal. By default, major operations such as sync, build, and test send a
+macOS desktop notification with the checkout, elapsed time, exit code, and log
+path. Combined commands send one notification for the final outcome, including
+a failure to launch after a successful build.
+
+Use `--notify=never` to silence a command or `--notify` to notify for an inspection
+such as doctor. Configure the default policy in `brave-scaffold.toml`; delivery
+can be a desktop notification, a terminal bell, or both. Desktop delivery depends
+on macOS notification permissions; bell behavior depends on terminal settings.
+See [completion notifications](docs/commands.md#completion-notifications).
+
+## Try it with an existing checkout
+
+The current host is **macOS arm64**. You need Python 3.14 or newer, Git, direnv,
+and an existing full Brave checkout. Browser checkouts may live anywhere;
+Git linked worktrees are not supported.
+
+From this repository's root:
+
+```sh
+python3.14 -m venv --without-pip scripts/.venv
+scripts/bdev setup
+```
+
+Register your checkout with
+`scripts/bdev checkout add main /path/to/src/brave`, then generate its external
+environment:
+
+```sh
+scripts/bdev env init --checkout main
+```
+
+Review the printed environment file and run the printed `direnv allow` command
+yourself. Then check readiness:
+
+```sh
+scripts/bdev doctor mac --checkout main
+```
+
+To use the short commands in this README, add this repository's `scripts/`
+directory to `PATH`. For `bdev cd`, also source `scripts/bdev-shell.sh` in Bash
+or Zsh, using its absolute path in your shell startup file. Without the helper,
+`bdev cd main` prints the path instead of changing directories.
+
+You can also invoke `scripts/bdev` directly from this repository, with no `PATH`
+change or shell hook. The tooling runtime needs no Python packages or activation.
+Configuration and generated environments stay outside Core. See
+[getting started](docs/getting-started.md) for the full setup.
+
+## Platform scope and diagnostics
+
+The current workflows cover macOS Debug arm64, Android arm64 APK builds and
+deployment, and iOS Debug Simulator builds and launch. Android test commands
+exist but are marked unverified on a real checkout; iOS tests are not available.
+Native Linux and Windows hosts and fresh checkout creation are not supported.
+`bdev capabilities` lists support and real-checkout validation by operation,
+configuration, and architecture.
+
+Commands show phases, effective primary commands, and live child output, and
+save a redacted diagnostic log with the exact commands and working directories.
+Use `--quiet` for less console output or `--verbose` to include probes.
+`bdev --version` identifies the scaffold revision; logged operations also report
+it so shared output can be traced to the version used.
 
 ## Guides
 
@@ -74,7 +167,7 @@ Nothing requires a `PATH` change, a shell hook, or an edit inside Brave Core.
 | --- | --- |
 | Install and run a first command | [Getting started](docs/getting-started.md) |
 | Build, test, and run on macOS | [macOS](docs/macos.md) |
-| Build and install on Android | [Android](docs/android.md) |
+| Build, test, and install on Android | [Android](docs/android.md) |
 | Build and run on an iOS Simulator | [iOS](docs/ios.md) |
 | Sync sources, patches, and cleanup | [Source and cleanup](docs/source-and-cleanup.md) |
 | Configure checkouts and environments | [Configuration and environments](docs/configuration-and-environments.md) |

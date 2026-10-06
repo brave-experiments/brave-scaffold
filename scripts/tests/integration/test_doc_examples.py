@@ -35,6 +35,8 @@ NOT_RUN = {
     'bdev sync-build ios': 'needs an iOS checkout and Xcode; covered by tests/integration/test_ios.py',
     "bdev android setup --ref <tag-or-sha>": "clones the default support repository from the network",
     'bdev test mac --plan': "needs a Core branch with a base ref; covered by tests.integration.test_test_changed",
+    'bdev test mac': "needs modified Core test files; covered by tests.integration.test_test_changed",
+    'bdev test android': "needs modified Core test files and Android support; covered by tests.integration.test_test_changed",
     'bdev test android --plan': "needs a Core branch with a base ref; covered by tests.integration.test_test_changed",
     'bdev test android --device=emulator-5554': "needs a Core branch with a base ref; covered by tests.integration.test_test_changed",
     'bdev test --file components/example/example_unittest.cc': "needs a Core branch with a base ref; covered by tests.integration.test_test_changed",
