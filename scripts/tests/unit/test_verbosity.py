@@ -159,6 +159,7 @@ class VerbosityTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             log = procs.CommandLog(verbosity='quiet', stream=io.StringIO())
             log.open(directory)
+            header_size = len(Path(log.path).read_text())
             output = procs._StreamOutput(log, [], {'API_TOKEN': 'sensitive-value'}, 'stdout', False)
             output.receive('stdout', b'sensitive-')
             self.assertNotIn('sensitive-', Path(log.path).read_text())
@@ -173,7 +174,7 @@ class VerbosityTests(unittest.TestCase):
             self.assertNotIn('password', saved)
             self.assertIn('omitted', saved)
             self.assertTrue(saved.endswith('last line'))
-            self.assertLess(len(saved), 200)
+            self.assertLess(len(saved) - header_size, 200)
 
     def test_metal_reuses_only_the_latest_execution_check(self):
         from types import SimpleNamespace

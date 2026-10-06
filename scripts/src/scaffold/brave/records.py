@@ -17,10 +17,10 @@ from pathlib import Path
 from ..common.config import atomic_write, scaffold_root
 from ..common.procs import run_capture
 from ..common.redaction import redact_report
+from ..common.revision import read_revision
 from ..common.results import Cancelled, ScaffoldError
 from . import freshness
 
-CLI_VERSION = "0.1.0"
 KEEP_OPERATIONS = 100
 
 
@@ -60,7 +60,7 @@ class Operation:
         self.id = time.strftime("%Y%m%dT%H%M%S") + "-" + secrets.token_hex(3)
         self.path = self.root / "operations" / (self.id + ".json")
         self.data = {
-            "operation_id": self.id, "cli_version": CLI_VERSION, "command": command, "state": "incomplete",
+            "operation_id": self.id, "scaffold_revision": read_revision(), "command": command, "state": "incomplete",
             "started": now(), "finished": None, "checkout": str(identity.core),
             "chromium_src": str(identity.src), "details": details, "steps": [], "commands": [],
             "artifacts": [], "status": None, "exit_code": None, "child_exit_code": None, "error": None,

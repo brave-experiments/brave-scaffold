@@ -42,6 +42,11 @@ real checkout.
 Normal output shows phases, primary commands, and live build output. Use `--quiet`
 for less console output or `--verbose` to include internal probes. Commands save a diagnostic log
 and print its path; pure environment exports remain silent. See [output controls](docs/commands.md#common-behavior).
+`bdev --version` shows the scaffold Git SHA and commit date, with `dirty` for local
+changes. Diagnostic logs and operation records include the full SHA, commit date,
+and dirty state for troubleshooting. If Git metadata is unavailable, the revision
+is unknown and commands still work.
+
 Optional macOS completion notifications are configured with `[notifications]` or
 `--notify` ([details](docs/commands.md#completion-notifications)).
 

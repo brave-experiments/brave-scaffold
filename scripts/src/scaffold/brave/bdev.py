@@ -11,6 +11,7 @@ import sys
 
 from ..common.cli import (COMMON_OPTIONS, Parsed, check_positionals, detect_json, help_requested, parse_leading,
                           parse_tokens, render_help)
+from ..common.revision import format_revision, read_revision
 from ..common.results import ScaffoldError
 from ..common.procs import install_signal_handlers
 from .app import run_command
@@ -47,6 +48,7 @@ def top_help():
             continue
         seen.add(spec.name)
         lines.append("  %-16s %s" % (spec.name, spec.summary))
+    lines += ["", "Use bdev --version to show the scaffold Git revision."]
     lines += ["", "Options (before or after the command, up to '--'):"]
     lines += ["  %-28s %s" % ((o.name + ("[=%s]" if o.optional_value else " %s") % o.metavar) if o.takes_value else o.name,
                            o.help) for o in COMMON_OPTIONS]
@@ -100,6 +102,9 @@ def _wants_help(tokens):
 def main(argv, stdout=None, stderr=None, notifier=None, bell=None):
     stdout = stdout or sys.stdout
     stderr = stderr or sys.stderr
+    if argv == ["--version"]:
+        stdout.write(format_revision(read_revision()) + "\n")
+        return 0
     install_signal_handlers()
     json_mode = detect_json(argv)
     try:

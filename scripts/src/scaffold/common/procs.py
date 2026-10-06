@@ -9,6 +9,7 @@ from __future__ import annotations
 import codecs
 import contextlib
 import errno
+import json
 import os
 import pty
 import re
@@ -25,6 +26,7 @@ from pathlib import Path
 
 from .redaction import SECRET_NAME, URL_CREDENTIALS, redact_argv, redact_url_credentials
 from .results import Cancelled
+from .revision import read_revision
 
 TERMINATE_GRACE_SECONDS = 10
 KILL_WAIT_SECONDS = 3
@@ -93,6 +95,7 @@ class CommandLog:
         directory.mkdir(parents=True, exist_ok=True)
         fd, self.path = tempfile.mkstemp(prefix=time.strftime("%Y%m%dT%H%M%S-"), suffix=".log", dir=directory)
         self.diagnostic = os.fdopen(fd, "w", encoding="utf-8")
+        self.save("Scaffold revision: " + json.dumps(read_revision()) + "\n")
 
     def save(self, text):
         if self.diagnostic:
