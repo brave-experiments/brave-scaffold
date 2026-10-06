@@ -198,11 +198,49 @@ Scaffold by default. See [Getting started](docs/getting-started.md) for setup.
 
 ## Platform support
 
-The main workflows cover macOS Debug arm64, Android arm64 APK builds and
-deployment, and iOS Debug Simulator builds and launch. Android tests remain
-unverified on a real checkout; iOS tests are unavailable. Native Linux and Windows
-hosts and fresh checkout creation are not supported. `bcore capabilities` lists
-support and real-checkout validation by operation, configuration, and architecture.
+Rows show the machine running Scaffold; columns show the `brave-core` target.
+✅ means the listed operations have run on a real checkout, using Debug
+arm64 builds.
+
+<table>
+  <thead>
+    <tr>
+      <th scope="col">Host</th>
+      <th scope="col">macOS</th>
+      <th scope="col">Android</th>
+      <th scope="col">iOS</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th scope="row">macOS arm64</th>
+      <td>✅ Sync, build, test, run</td>
+      <td>✅ Build, run, deploy (APK)<br>Sync and tests unverified</td>
+      <td>✅ Sync, build, run (Simulator only)<br>Tests unavailable</td>
+    </tr>
+    <tr>
+      <th scope="row">Windows</th>
+      <td>Untested</td>
+      <td>Untested</td>
+      <td>Untested</td>
+    </tr>
+    <tr>
+      <th scope="row">Linux</th>
+      <td>Untested</td>
+      <td>Untested</td>
+      <td>Untested</td>
+    </tr>
+  </tbody>
+</table>
+
+**Windows and Linux host support PRs are welcome.** These hosts are untested and
+not currently supported by Scaffold; the table does not imply that every target
+can be built on them. The CLI currently accepts macOS, Android, and iOS targets,
+not Windows or Linux targets.
+
+Fresh checkout creation is not supported. `bcore capabilities` lists the full
+status by operation, configuration, and architecture, including combinations
+that are implemented but unverified.
 
 ## Guides
 
