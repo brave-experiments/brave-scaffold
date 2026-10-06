@@ -71,6 +71,7 @@ class CommandLog:
     verbosity: str = "verbose"
     diagnostic: object = None
     path: str | None = None
+    revision: dict | None = None
     progress_at: float = 0
     progress_line: bool = False
     timings: list = field(default_factory=list)
@@ -95,7 +96,8 @@ class CommandLog:
         directory.mkdir(parents=True, exist_ok=True)
         fd, self.path = tempfile.mkstemp(prefix=time.strftime("%Y%m%dT%H%M%S-"), suffix=".log", dir=directory)
         self.diagnostic = os.fdopen(fd, "w", encoding="utf-8")
-        self.save("Scaffold revision: " + json.dumps(read_revision()) + "\n")
+        self.revision = read_revision()
+        self.save("Scaffold revision: " + json.dumps(self.revision) + "\n")
 
     def save(self, text):
         if self.diagnostic:

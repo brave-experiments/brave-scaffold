@@ -17,6 +17,7 @@ from ..common import config as config_module
 from ..common import identity as identity_module
 from ..common import notify as notify_module
 from ..common.procs import CommandLog, format_duration
+from ..common.revision import format_revision
 from ..common.results import (Cancelled, EXIT_INTERNAL, Result, ScaffoldError, emit, error_result)
 
 
@@ -116,7 +117,8 @@ def run_command(command, parsed, handler, argv_environ=None, needs_config=True, 
         result.add_warning("LOG_WRITE_FAILED", "The diagnostic log could not be completed: %s" % error)
     emit(result, json_mode, stdout=stdout, stderr=stderr)
     if log.path:
-        log.message("⏱️  Elapsed: %s\nLog: %s" % (format_duration(elapsed), log.path))
+        log.message("⏱️  Elapsed: %s\n%s\nLog: %s" % (
+            format_duration(elapsed), format_revision(log.revision), log.path))
     if notify and (context.config is not None or not needs_config):
         _notify(context, command, result, elapsed, notifier, bell)
     return result.exit_code

@@ -6,6 +6,7 @@
 
 import contextlib
 import io
+import json
 import os
 import sys
 import tempfile
@@ -14,6 +15,7 @@ from pathlib import Path
 
 import tests.support
 from scaffold.common import cli, config, procs
+from scaffold.common.revision import format_revision
 from scaffold.brave.app import run_command
 from scaffold.common.results import Result, ScaffoldError
 
@@ -55,6 +57,10 @@ class VerbosityTests(unittest.TestCase):
         files = list((root / '.bdev' / 'logs').glob('*.log'))
         self.assertEqual(len(files), 1)
         self.assertEqual(files[0].stat().st_mode & 0o777, 0o600)
+        saved_revision = json.loads(files[0].read_text().splitlines()[0].split(': ', 1)[1])
+        version_line = format_revision(saved_revision)
+        self.assertIn('\n' + version_line + '\nLog:', err.getvalue())
+        self.assertNotIn(version_line, out.getvalue())
         return rc, out.getvalue(), err.getvalue(), files[0].read_text()
 
     def test_normal_shows_child_but_hides_probes_and_saves_commands(self):
