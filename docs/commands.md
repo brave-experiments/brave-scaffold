@@ -109,7 +109,7 @@ without selecting a browser checkout. See [support repositories](support-reposit
 | `bdev build [target]` | Prepare, compile, and verify the output ([macOS](macos.md), [iOS](ios.md)); iOS runs `xcodebuild` | Writes build output; may apply patches |
 | `bdev test [target]` | Run the tests changed on this branch or in the working tree ([details](#test)) | Reads Git state; effects of each suite it runs |
 | `bdev test [target] --file PATH` | Run the tests in one file, changed or not ([details](#test)) | Same |
-| `bdev test [target] <suite>` | Compile if needed and run one suite ([macOS](macos.md), [Android](android.md#tests)); `--device` or `--all-devices` for Android device suites | Writes build output; runs tests; Android also applies the support test overlay to Core's `build/commands` |
+| `bdev test [target] <suite>` | Compile if needed and run one suite ([macOS](macos.md), [Android](android.md#tests)); `--device` or `--all-devices` for Android device suites | Writes build output; runs tests; Android temporarily applies the support test overlay to Core's `build/commands`; preserves an existing overlay |
 | `bdev run [target]` | Restart the browser with an existing output; never builds | Quits and relaunches the application |
 | `bdev build-run` (`br`), `sync-build` (`sb`), `sync-build-run` (`sbr`) | Combined workflows; extras go to the build phase | Effects of each phase |
 | `bdev deploy android` | Install the APK and launch it; same as `run android`; `--all-devices` selects all compatible devices ([Android](android.md)) | Installs over the existing app and restarts the package on selected devices |

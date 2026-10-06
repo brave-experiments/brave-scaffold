@@ -139,7 +139,7 @@ def build_registry():
                                                             "Runs the tests, which may launch test browsers.")
                     + " Reads Git state only to choose tests. Android: also requires the support working copy on the "
                       "android-testing-prototype branch (never switched), applies the support repository's test overlay "
-                      "to Core's build/commands and leaves it applied, builds in out/android_tests_<configuration>_arm64, "
+                      "to Core's build/commands and reverses it afterwards if newly applied, builds in out/android_tests_<configuration>_arm64, "
                       "and brave_java_unit_tests runs on the selected devices.",
                     notes="Without a suite or --file, finds test files changed on this branch (committed against --base, "
                           "pushed or not, plus staged, unstaged, and untracked) for the configured platform, otherwise "

@@ -13,6 +13,7 @@ from pathlib import Path
 
 from ..common.procs import run_capture, run_streaming
 from ..common.results import ScaffoldError, repair
+from ..common.platforms import host_platform
 from . import android_deps, steps as step_module, support_scripts, sync_scope
 from .patchformat import UnknownPatchFormat, parse_patch_targets
 
@@ -110,6 +111,11 @@ def require_support_branch(identity, log=None):
 # --- Core test overlay --------------------------------------------------------------------------
 
 
+def require_overlay_host():
+    if host_platform() != "mac":
+        raise ScaffoldError("UNSUPPORTED_CAPABILITY", "The Android test overlay is available on macOS hosts only.")
+
+
 def overlay_scope(identity, wc):
     """Source-relative files the overlay may write: the reviewed list, which its patch must stay within."""
     declared = support_scripts.require_contract(wc, OVERLAY_SCRIPT)["direct"]
@@ -141,13 +147,13 @@ def overlay_step(identity, wc, state, writes):
               "absent": "Core does not have the Android test overlay yet.",
               "conflict": "Core has a partial or conflicting overlay; nothing will be changed."}[state]
     return step_module.Step(
-        OVERLAY_STEP, "Apply the support repository's Android test overlay to Core; it stays applied afterwards.", status,
+        OVERLAY_STEP, "Apply the support repository's Android test overlay to Core for this test run.", status,
         reads=[str(Path(wc) / OVERLAY_PATCH)], writes=[str(identity.src / name) for name in writes] if state == "absent" else [],
         argv=["bash", "./" + OVERLAY_SCRIPT, "--src-root", str(identity.src), "--apply"] if state == "absent" else None,
         cwd=str(wc) if state == "absent" else None, needs=["android-support"],
         on_failure="Stops before the build; a conflicting overlay is never forced.",
-        cleanup="None; reverse it yourself with '%s --src-root %s --reverse' from the support working copy."
-                % (OVERLAY_SCRIPT, identity.src), detail=detail)
+        cleanup="Reverse the overlay after the run only if this command applied it; preserve a pre-existing overlay.",
+        detail=detail)
 
 
 def overlay_plan_step(ctx, identity):
@@ -161,8 +167,36 @@ def overlay_plan_step(ctx, identity):
                                 needs=["android-support"], detail=error.message)
 
 
+def remove_overlay(ctx, execution, op):
+    """Reverse an overlay owned by this run, refusing conflicting local edits."""
+    require_overlay_host()
+    identity = execution.identity
+    wc = android_deps.working_copy(identity)
+    name = "android-test-overlay-cleanup"
+    op.start(name)
+    ctx.log.phase("Starting to remove the temporary Android test overlay...")
+    for path in overlay_scope(identity, wc):
+        ctx.log.phase("  " + path.removeprefix("brave/"))
+    if overlay_state(identity, wc, execution.environ, ctx.log) != "applied":
+        op.fail(name, code="PREPARATION_CONFLICT")
+        ctx.log.phase("Overlay cleanup stopped: conflicting edits remain in Core; review the files above.")
+        raise ScaffoldError("PREPARATION_CONFLICT",
+                            "The Android test overlay changed during the run; cleanup left it in place. "
+                            "Review the Core files before reversing it.")
+    argv = ["bash", "./" + OVERLAY_SCRIPT, "--src-root", str(identity.src), "--reverse"]
+    code = run_streaming(argv, str(wc), execution.environ, ctx.log, json_mode=ctx.json_mode)
+    if code != 0 or overlay_state(identity, wc, execution.environ, ctx.log) != "absent":
+        op.fail(name, exit=code)
+        ctx.log.phase("Overlay cleanup failed: inspect the Core files above before retrying.")
+        raise ScaffoldError("PREPARATION_CONFLICT", "Android test overlay cleanup failed; inspect the Core files.",
+                            details={"argv": argv, "cwd": str(wc)}, child_exit_code=code)
+    op.succeed(name, exit=0)
+    ctx.log.phase("Done - temporary Android test overlay removed; added files removed and patched files restored.")
+
+
 def prepare_overlay(ctx, execution, op):
     """Apply the Core test overlay when absent. Returns True when Core was changed."""
+    require_overlay_host()
     identity = execution.identity
     ctx = execution.context(ctx)
     wc = android_deps.working_copy(identity)
@@ -178,8 +212,14 @@ def prepare_overlay(ctx, execution, op):
             repairs=[repair(["git", "-C", str(identity.core), "status", "--short"],
                             note="Review the local changes; the scaffold does not force the overlay over them.")])
     if state == "applied":
+        ctx.log.phase("Android test overlay is already applied; it will stay in place after this run.")
         return False
     op.start(OVERLAY_STEP, **described.record())
+    ctx.log.phase("Starting to apply the Android test overlay from local support branch %s "
+                  "(remote branch: origin/%s)..." % (TEST_SUPPORT_BRANCH, TEST_SUPPORT_BRANCH))
+    ctx.log.phase("Core files:")
+    for path in writes:
+        ctx.log.phase("  " + path.removeprefix("brave/"))
     scope = sync_scope.sync_repositories(identity)
     before = sync_scope.snapshot(identity, scope, ctx.log, include_core=True)
     argv = ["bash", "./" + OVERLAY_SCRIPT, "--src-root", str(identity.src), "--apply"]
@@ -200,6 +240,7 @@ def prepare_overlay(ctx, execution, op):
                      "checkout": str(identity.core)},
             repairs=[repair(["git", "-C", str(identity.src), "status", "--short"], note="Nothing was reverted.")])
     op.succeed(OVERLAY_STEP, exit=0)
+    ctx.log.phase("Done - Android test overlay applied. These changes will be cleaned up when this run finishes.")
     return True
 
 

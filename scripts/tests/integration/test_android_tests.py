@@ -45,6 +45,13 @@ if os.environ.get("SCAFFOLD_ANDROID_TEST_DEVICES"):
     options = os.environ["NODE_OPTIONS"].split("--import=", 1)[1]
     raise SystemExit(subprocess.run([os.environ["FAKE_ADAPTER_NODE"], "--import=" + options, config["script"]],
                                    env={**os.environ, "FAKE_TEST_OUTPUT": out}).returncode)
+if os.environ.get("FAKE_CANCEL_TEST"):
+    import signal, time
+    os.kill(os.getppid(), signal.SIGINT)
+    time.sleep(30)
+if os.environ.get("FAKE_OVERLAY_EDIT"):
+    with open(os.path.join(core, "build", "commands", "lib", "androidTestMacHost.ts"), "w") as stream:
+        stream.write("local work\\n")
 mode = os.environ.get("FAKE_RESULTS", "pass")
 targets = [a.split("=", 1)[1] for a in argv if a.startswith("--json-results-file=")]
 tests = {"pass": {"a.B#one": [{"status": "SUCCESS"}], "a.B#two": [{"status": "SUCCESS"}, {"status": "SUCCESS"}],
@@ -108,12 +115,33 @@ class HostSuiteTests(AndroidTestsTestCase):
         for absent in ("--device", "--adb-path", "--manual_android_test_device"):
             self.assertNotIn(absent, argv)
         self.assertEqual(self.adb_calls(), [], "a host-side suite never touches adb")
-        self.assertTrue(self.overlay_file.exists(), "the support overlay was applied to Core")
+        self.assertFalse(self.overlay_file.exists(), "the temporary overlay was removed after testing")
         self.assertEqual(document["data"]["runs_on"], "host")
         self.assertIsNone(document["data"]["device"])
         self.assertEqual({key: document["data"]["results"][key] for key in ("passed", "failed", "skipped", "ran")},
                          {"passed": 2, "failed": 0, "skipped": 1, "ran": 2})
         self.assertEqual(self.runner_calls()[-1]["cwd"], str(self.core))
+
+    def test_overlay_messages_show_source_files_and_cleanup_in_console_and_log(self):
+        self.on_test_branch()
+        result, document = self.run_tests("brave_junit_tests")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        saved = Path(result.stderr.rsplit("Log: ", 1)[1].strip()).read_text()
+        for output in (result.stderr, saved):
+            start = output.index("Starting to apply the Android test overlay")
+            applied = output.index("Done - Android test overlay applied.")
+            cleanup = output.index("Starting to remove the temporary Android test overlay")
+            removed = output.index("Done - temporary Android test overlay removed")
+            self.assertLess(start, applied)
+            self.assertLess(applied, cleanup)
+            self.assertLess(cleanup, removed)
+            self.assertIn("origin/android-testing-prototype", output[start:applied])
+            self.assertIn("local support branch android-testing-prototype", output[start:applied])
+            self.assertIn("will be cleaned up when this run finishes", output[applied:cleanup])
+            for path in OVERLAY_FILES:
+                name = path.removeprefix("brave/")
+                self.assertIn(name, output[start:applied])
+                self.assertIn(name, output[cleanup:removed])
 
     def test_junit_rejects_a_device_before_anything_runs(self):
         self.on_test_branch()
@@ -134,15 +162,41 @@ class HostSuiteTests(AndroidTestsTestCase):
         argv = self.last_argv()
         self.assertEqual(argv[argv.index("--device") + 1], "emulator-5554", "a device suite keeps the configured default")
 
-    def test_the_overlay_is_applied_once_and_left_in_place(self):
-        self.on_test_branch()
-        self.run_tests("brave_junit_tests")
-        before = self.overlay_file.read_text()
-        result, document = self.run_tests("brave_junit_tests")
+    def test_a_preexisting_overlay_is_left_in_place(self):
+        wc = self.on_test_branch()
+        subprocess.run(["bash", "./applyBraveCoreTestSupport.sh", "--src-root", str(self.src), "--apply"],
+                       cwd=wc, check=True, capture_output=True)
+        before = self.overlay_file.read_bytes()
+        result, _ = self.run_tests("brave_junit_tests")
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(self.overlay_file.read_text(), before)
-        self.assertEqual(len(self.runner_calls()), 2)
+        self.assertEqual(self.overlay_file.read_bytes(), before)
+        result, _ = self.run_tests("brave_junit_tests")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.overlay_file.read_bytes(), before)
         self.assertNotIn("--force_gn_gen", self.last_argv(), "current support and overlay do not regenerate GN")
+
+    def test_temporary_overlay_is_removed_after_child_and_result_failures(self):
+        self.on_test_branch()
+        for env in ({"FAKE_EXIT": "3"}, {"FAKE_RESULTS": "fail"}):
+            with self.subTest(env=env):
+                result, _ = self.run_tests("brave_junit_tests", **env)
+                self.assertNotEqual(result.returncode, 0)
+                for relative in OVERLAY_FILES:
+                    self.assertFalse((self.src / relative).exists())
+
+    def test_temporary_overlay_is_removed_after_a_handled_interrupt(self):
+        self.on_test_branch()
+        result, document = self.run_tests("brave_junit_tests", FAKE_CANCEL_TEST="1")
+        self.assertEqual(result.returncode, 130, result.stderr)
+        for relative in OVERLAY_FILES:
+            self.assertFalse((self.src / relative).exists())
+
+    def test_cleanup_preserves_conflicting_edits_and_the_original_failure(self):
+        self.on_test_branch()
+        result, document = self.run_tests("brave_junit_tests", FAKE_OVERLAY_EDIT="1", FAKE_EXIT="3")
+        self.assertEqual(document["error"]["code"], "CHILD_FAILED")
+        self.assertEqual(document["error"]["details"]["overlay_cleanup"]["code"], "PREPARATION_CONFLICT")
+        self.assertEqual(self.overlay_file.read_text(), "local work\n")
 
     def test_offline_and_custom_output_reach_the_runner(self):
         self.on_test_branch()

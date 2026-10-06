@@ -206,15 +206,18 @@ built. Another branch or a detached HEAD fails with `DEPENDENCY_INCOMPATIBLE`. T
 scaffold never switches the repository; run `git -C <working copy> switch
 android-testing-prototype` yourself.
 
-**Core overlay.** Running an Android test is an explicit request that changes Core:
+**Core overlay (macOS hosts only).** Running an Android test is an explicit request that changes Core:
 the support repository's `applyBraveCoreTestSupport.sh` applies its test overlay to
 three files under Core's `build/commands` (`lib/androidTestMacHost.ts`,
 `lib/androidTestMacHost.test.ts`, `scripts/test.ts`). The script's identity and write
 list are reviewed, and a patch that writes elsewhere is refused. An overlay that is
 already applied is left alone; a partial or conflicting one is a
-`PREPARATION_CONFLICT` and is never forced. The overlay stays applied afterwards.
+`PREPARATION_CONFLICT` and is never forced. If the command applied the overlay,
+it reverses it after the run, including a failed run or a handled interruption.
+An overlay present before the command stays applied.
+Cleanup refuses conflicting edits made during the run and reports the failure.
 Nothing else in Core changes, and `bdev setup` and `env init` never apply it. To
-remove it, run `./applyBraveCoreTestSupport.sh --src-root <src> --reverse` from the
+remove a pre-existing overlay, run `./applyBraveCoreTestSupport.sh --src-root <src> --reverse` from the
 support working copy. A sync checks for local work and may stop on the applied
 overlay, so reverse it first if it does.
 

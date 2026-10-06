@@ -10,6 +10,7 @@ from unittest import mock
 
 import tests.support  # noqa: F401
 from scaffold.common import platforms
+from scaffold.brave import android_tests
 from scaffold.common.results import ScaffoldError
 
 
@@ -65,3 +66,18 @@ class CapabilityTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AndroidOverlayHostTests(unittest.TestCase):
+    def test_non_mac_hosts_cannot_apply_or_remove_the_overlay(self):
+        for host in ("linux", "win32"):
+            for operation in (android_tests.prepare_overlay, android_tests.remove_overlay):
+                with self.subTest(host=host, operation=operation.__name__), \
+                        mock.patch.object(platforms.sys, "platform", host), \
+                        mock.patch.object(android_tests, "run_capture") as capture, \
+                        mock.patch.object(android_tests, "run_streaming") as streaming:
+                    with self.assertRaises(ScaffoldError) as caught:
+                        operation(None, None, None)
+                    self.assertEqual(caught.exception.code, "UNSUPPORTED_CAPABILITY")
+                    capture.assert_not_called()
+                    streaming.assert_not_called()

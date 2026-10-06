@@ -732,8 +732,31 @@ def run_android_test(ctx, execution, effective, op, known, tail, suite, results,
         refreshed = android.prepare_support(ctx, execution, op, effective)
         if refreshed:
             patches.record_extra_expected(identity, ctx.state_root)
-        android_tests.prepare_overlay(ctx, execution, op)
-    arguments = build_arguments(effective, "test", known, changed or refreshed, tail)
+        applied = android_tests.prepare_overlay(ctx, execution, op)
+    failure = None
+    try:
+        return run_android_test_with_overlay(ctx, execution, effective, op, known, tail, suite, results,
+                                             extra_env, report, changed or refreshed)
+    except (ScaffoldError, Cancelled) as error:
+        failure = error
+        raise
+    finally:
+        if applied:
+            try:
+                android_tests.remove_overlay(ctx, execution, op)
+            except ScaffoldError as error:
+                if failure is None:
+                    raise
+                if isinstance(failure, Cancelled):
+                    failure.cleanup_incomplete = True
+                else:
+                    failure.details["overlay_cleanup"] = {"code": error.code, "message": error.message}
+
+
+def run_android_test_with_overlay(ctx, execution, effective, op, known, tail, suite, results,
+                                  extra_env, report, source_changed):
+    identity = execution.identity
+    arguments = build_arguments(effective, "test", known, source_changed, tail)
     described = step_module.gn_step(effective, effective.preparation_dir / "args.gn", effective.chosen_gn_keys)
     op.start(described.name, **described.record())
     op.detail(effective={"target": effective.target, "configuration": effective.configuration,
