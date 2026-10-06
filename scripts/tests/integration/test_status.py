@@ -26,15 +26,15 @@ class StatusTests(SandboxTest):
     def record(self, name, **overrides):
         data = {'operation_id': name, 'command': 'test', 'checkout': str(self.core),
                 'state': 'complete', 'status': 'ok', 'finished': '2026-10-06T10:00:00+1000',
-                'source': {'core_head': self.head, 'core_uncommitted_files': 1},
+                'source': {'core_branch': self.git('branch', '--show-current').strip(), 'core_head': self.head, 'core_uncommitted_files': 1},
                 'details': {'target': 'mac', 'suite': 'brave_unit_tests'}}
         data.update(overrides)
         path = self.sandbox.config.parent / '.bdev' / 'operations' / (name + '.json')
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(data))
 
-    def status(self):
-        result, document = self.sandbox.bdev_json('status', '--config', str(self.sandbox.config), cwd=self.core)
+    def status(self, *args):
+        result, document = self.sandbox.bdev_json('status', *args, '--config', str(self.sandbox.config), cwd=self.core)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(Validator().problems(document), [])
         return document['data']
@@ -60,7 +60,9 @@ class StatusTests(SandboxTest):
         (self.core / 'changed.cc').write_text('a')
         data = self.status()
         self.assertEqual(data['branch'], 'different-branch')
-        self.assertTrue(data['history'][0]['same_head'])
+        self.assertEqual(data['history'], [])
+        self.assertTrue(self.status('--all-branches')['history'][0]['same_head'])
+        self.record('current')
         self.assertEqual(data['current_test_verification'], 'unknown')
         (self.core / 'changed.cc').write_text('b')
         self.sandbox.commit_all('main')
@@ -69,6 +71,8 @@ class StatusTests(SandboxTest):
         self.assertEqual(data['history'][0]['verification'], 'unknown')
         self.git('checkout', '--detach', self.head)
         self.assertIsNone(self.status()['branch'])
+        self.assertEqual(self.status()['history'], [])
+        self.assertEqual(len(self.status('--all-branches')['history']), 2)
 
     def test_latest_failure_offsets_checkout_isolation_and_unfinished(self):
         self.record('a-success')
@@ -87,3 +91,12 @@ class StatusTests(SandboxTest):
         self.assertIn('failed', result.stdout)
         self.assertIn('history, not current verification', result.stdout)
         self.assertIn('process state unknown', result.stdout)
+
+    def test_unknown_branch_is_only_shown_with_all_branches(self):
+        self.record('legacy', source={'core_head': self.head})
+        self.record('current')
+        self.assertEqual([r['operation_id'] for r in self.status()['history']], ['current'])
+        history = self.status('--all-branches')['history']
+        self.assertEqual({r['operation_id'] for r in history}, {'legacy', 'current'})
+        result = self.sandbox.bdev('status', '--all-branches', '--config', str(self.sandbox.config), cwd=self.core)
+        self.assertIn('branch unknown', result.stdout)

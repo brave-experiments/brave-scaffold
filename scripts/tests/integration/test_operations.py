@@ -48,6 +48,8 @@ class RecordLifecycleTests(RecordCase, BuildTestCase):
         result, document = self.document("test", "brave_unit_tests", env=self.env(FAKE_EXIT="2"))
         self.assertEqual(document["error"]["code"], "CHILD_FAILED")
         record = self.only_record("test")
+        branch = subprocess.check_output(["git", "-C", str(self.core), "branch", "--show-current"], text=True).strip()
+        self.assertEqual(record["source"]["core_branch"], branch)
         self.assertEqual(document["operation_id"], record["operation_id"])
         self.assertEqual((record["state"], record["status"], record["exit_code"], record["child_exit_code"]),
                          ("complete", "error", 5, 2))

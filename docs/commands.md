@@ -457,6 +457,14 @@ without fetching and does not load direnv, run doctor, or change checkout files.
 It reports Core's branch, HEAD, upstream, staged/unstaged/untracked changes, and
 ahead/behind counts against local `origin/master` when available.
 
+By default, operation history includes only runs recorded on the current branch.
+Use `bdev status --all-branches` to include other branches and older records whose
+branch is unknown. The latest outcome is shown per branch, platform, and suite.
+Branches are recorded when operations start; commit ancestry is not used to guess
+missing branch names. Detached HEAD has no current-branch history; use
+`--all-branches` to inspect saved runs. Output revalidation warnings remain visible
+across branches because output directories are shared.
+
 Saved build and test outcomes are history, not proof that the current code passed.
 Each entry shows its recorded revision and whether it matches HEAD. Switching
 branches can change that comparison; even matching HEAD does not prove matching

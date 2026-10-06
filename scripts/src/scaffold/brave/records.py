@@ -163,7 +163,11 @@ def describe_start(ctx, identity, validated=False):
                                                "BRAVE_SRC_ROOT": str(identity.src)}}
     status = run_capture(["git", "-C", str(identity.core), "status", "--porcelain"], str(identity.core), None, ctx.log,
                          timeout=120)
+    branch = run_capture(["git", "-C", str(identity.core), "symbolic-ref", "--quiet", "--short", "HEAD"],
+                         str(identity.core), None, ctx.log, timeout=30)
     evidence["source"] = {
+        "core_branch": branch.stdout.strip() if branch.returncode == 0 and not branch.truncated
+        and not branch.timed_out else None,
         "core_head": freshness.resolve_head(identity.core, ctx.log),
         "chromium_head": freshness.resolve_head(identity.src, ctx.log),
         "core_uncommitted_files": len(status.stdout.splitlines()) if status.returncode == 0 and not status.truncated

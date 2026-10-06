@@ -1428,6 +1428,7 @@
         "current_test_verification"
       ],
       "properties": {
+        "history_scope": {"enum": ["current-branch", "all-branches"]},
         "branch": {
           "type": [
             "string",
