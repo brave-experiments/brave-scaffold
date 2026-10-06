@@ -136,6 +136,7 @@ def run_status(ctx):
         r["command"], r["operation_id"], str(r["started"]) + "; branch: " + (r["branch"] or "unknown")) for r in incomplete]
     if attention:
         lines += ["", "Needs attention", *attention]
-    lines += ["", "Disk", "  %.1f GB free" % (free / 1e9) if free is not None else "  Free space unavailable",
-              "", "Saved timestamps include their UTC offset. No build freshness or process checks were run."]
+    if free is not None and free < 200_000_000_000:
+        lines += ["", "Disk", "  %.1f GB free" % (free / 1e9)]
+    lines += ["", "Saved timestamps include their UTC offset. No build freshness or process checks were run."]
     return Result(command="status", data=data, text="\n".join(lines))

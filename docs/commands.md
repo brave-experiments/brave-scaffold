@@ -473,6 +473,7 @@ unknown. Historical failures remain visible, and a newer failure replaces an old
 success for the same platform and suite. Results from other checkouts are excluded.
 
 Status also shows outputs marked as needing revalidation, unfinished operation
-records, and free disk space. An unfinished record does not prove a process is
+records, and free disk space when less than 200 GB remains. JSON output always
+includes the free-space value (or null if unavailable). An unfinished record does not prove a process is
 running. Status does not inspect processes or verify build freshness. Like other
 inspection commands, it saves its diagnostic log outside Core.
