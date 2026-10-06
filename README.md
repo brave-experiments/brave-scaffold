@@ -13,6 +13,68 @@ exclusions inside your checkouts. Core's own commands and standalone workflow
 remain available. Requested syncs, builds, and tests still make their normal
 checkout writes.
 
+## Installation
+
+Use **macOS arm64**, Python 3.14 or newer, Git, and direnv. Git and direnv must
+be on `PATH`; direnv's shell hook is optional. You also need an existing full
+Brave checkout. It may live anywhere; Git linked worktrees are not supported.
+
+From this repository's root, create the tooling runtime and local configuration:
+
+```sh
+python3.14 -m venv --without-pip scripts/.venv
+scripts/bcore setup
+```
+
+The runtime needs no Python packages or activation. Setup creates
+`brave-scaffold.toml` if it is missing and leaves Brave Core untouched.
+
+Register your checkout with
+`scripts/bcore checkout add main /path/to/src/brave`, replacing the path with
+your Core directory. `main` is a local alias, not a Git branch selection.
+Then generate its external environment:
+
+```sh
+scripts/bcore env init --checkout main
+```
+
+**Review the printed environment file, then run the printed `direnv allow`
+command yourself.** Approval is required before checkout operations can load the
+environment. If the file changes later, review and approve it again; otherwise
+commands stop with `ENVIRONMENT_UNAPPROVED`. Nothing approves it automatically.
+
+Check readiness after approval:
+
+```sh
+scripts/bcore doctor mac --checkout main
+```
+
+Use the `android` or `ios` doctor scope for those platforms. Doctor reports
+missing setup and suggested next steps; it does not install or repair tools.
+
+To use `bcore` and `bpm` from any directory, add the following to your Bash or Zsh
+startup file, replacing `/path/to/brave-scaffold` with this repository's absolute
+path, then reload that file or open a new shell:
+
+```sh
+export PATH="/path/to/brave-scaffold/scripts:$PATH"
+source "/path/to/brave-scaffold/scripts/bcore-shell.sh"
+```
+
+The shell helper makes `bcore cd main` change your current directory to the
+checkout's `src/brave`. Without it, the command only prints the path. Other
+commands work without the helper. You can also use `scripts/bcore` directly from
+this repository without changing `PATH`.
+
+Inside a registered checkout, commands select it from the current directory.
+Elsewhere, pass `--checkout main`. Configuration and generated environments stay
+outside Core. See [getting started](docs/getting-started.md) for more detail.
+
+To sign commits with 1Password, configure Git's SSH signing settings manually,
+including `gpg.ssh.program` pointing to this installation's
+`scripts/git-sign-with-1password`. Setup does not configure Git for you. See
+[commit signing](docs/signing.md) for the commands and required settings.
+
 ## Build and run the tests you changed
 
 After editing tests, run `bcore test mac` or `bcore test android`. It finds modified
@@ -81,7 +143,7 @@ directory. Add `--checkout main` to select a registered checkout from elsewhere.
 
 | Command | What it saves you |
 | --- | --- |
-| `bcore cd main` | Enter a registered checkout's `src/brave` without remembering its path. Requires the Bash/Zsh helper described below. |
+| `bcore cd main` | Enter a registered checkout's `src/brave` without remembering its path. Requires the Bash/Zsh helper in [Installation](#installation). |
 | `bcore status` | See Core's branch and local changes, prior build/test outcomes for the current branch, output revalidation warnings, and a warning when free disk space falls below 200 GB. Saved outcomes are history, not proof that current code passes. |
 | `bcore sync` | Run Core's sync through the selected checkout's own Node and package manager. |
 | `bcore build mac` | Check readiness, prepare sources, build, and verify the output. Use `android` or `ios` for those targets. |
@@ -109,44 +171,6 @@ such as doctor. Configure the default policy in `brave-scaffold.toml`; delivery
 can be a desktop notification, a terminal bell, or both. Desktop delivery depends
 on macOS notification permissions; bell behavior depends on terminal settings.
 See [completion notifications](docs/commands.md#completion-notifications).
-
-## Try it with an existing checkout
-
-The current host is **macOS arm64**. You need Python 3.14 or newer, Git, direnv,
-and an existing full Brave checkout. Browser checkouts may live anywhere;
-Git linked worktrees are not supported.
-
-From this repository's root:
-
-```sh
-python3.14 -m venv --without-pip scripts/.venv
-scripts/bcore setup
-```
-
-Register your checkout with
-`scripts/bcore checkout add main /path/to/src/brave`, then generate its external
-environment:
-
-```sh
-scripts/bcore env init --checkout main
-```
-
-Review the printed environment file and run the printed `direnv allow` command
-yourself. Then check readiness:
-
-```sh
-scripts/bcore doctor mac --checkout main
-```
-
-To use the short commands in this README, add this repository's `scripts/`
-directory to `PATH`. For `bcore cd`, also source `scripts/bcore-shell.sh` in Bash
-or Zsh, using its absolute path in your shell startup file. Without the helper,
-`bcore cd main` prints the path instead of changing directories.
-
-You can also invoke `scripts/bcore` directly from this repository, with no `PATH`
-change or shell hook. The tooling runtime needs no Python packages or activation.
-Configuration and generated environments stay outside Core. See
-[getting started](docs/getting-started.md) for the full setup.
 
 ## Platform scope and diagnostics
 
