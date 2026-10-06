@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 from ..common.cli import CommandSpec, Opt, Positional
-from . import android, clean, cmd_build, cmd_patches, cmd_setup, cmd_status, cmd_test, cmd_tools, doctor
+from . import android, android_tests, clean, cmd_build, cmd_patches, cmd_setup, cmd_status, cmd_test, cmd_tools, doctor
 
 WITH_PYTHONPATH = Opt("--with-pythonpath", "with_pythonpath", takes_value=False,
                       help="Also export PYTHONPATH for Core's script directory.")
@@ -138,7 +138,7 @@ def build_registry():
                     side_effects=BUILD_SIDE_EFFECTS.replace("Never cleans, installs, or launches anything.",
                                                             "Runs the tests, which may launch test browsers.")
                     + " Reads Git state only to choose tests. Android: also requires the support working copy on the "
-                      "android-testing-prototype branch (never switched), applies the support repository's test overlay "
+                    + f"{android_tests.TEST_SUPPORT_BRANCH} branch (never switched), applies the support repository's test overlay "
                       "to Core's build/commands and reverses it afterwards if newly applied, builds in out/android_tests_<configuration>_arm64, "
                       "and brave_java_unit_tests runs on the selected devices.",
                     notes="Without a suite or --file, finds test files changed on this branch (committed against --base, "

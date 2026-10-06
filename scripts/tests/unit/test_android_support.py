@@ -9,7 +9,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import tests.support  # noqa: F401
-from scaffold.brave import android, android_checks
+from scaffold.brave import android, android_checks, android_tests, registry
 from scaffold.common.results import ScaffoldError
 
 
@@ -26,3 +26,19 @@ class PlatformTests(unittest.TestCase):
                 with self.assertRaises(ScaffoldError) as failure:
                     android.cmd_android_setup(ctx)
                 self.assertEqual(failure.exception.code, "UNSUPPORTED_CAPABILITY")
+
+
+class TestBranchTests(unittest.TestCase):
+    def test_renamed_branch_updates_validation_repair_and_help(self):
+        with patch.object(android_tests, "TEST_SUPPORT_BRANCH", "android-test-support"), \
+                patch.object(android_tests.android_deps, "working_copy", return_value="/support"), \
+                patch.object(android_tests.android_deps, "inspect_working_copy",
+                             return_value={"branch": "old-branch", "head": "123"}):
+            with self.assertRaises(ScaffoldError) as caught:
+                android_tests.require_support_branch(SimpleNamespace(core="/core"))
+            error = caught.exception
+            self.assertEqual(error.details["required_branch"], "android-test-support")
+            self.assertIn("android-test-support", error.message)
+            self.assertIn("android-test-support", str(error.repairs))
+            test = registry.build_registry()["test"]
+            self.assertIn("android-test-support branch", test.side_effects)

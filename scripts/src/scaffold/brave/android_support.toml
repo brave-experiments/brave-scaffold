@@ -8,5 +8,6 @@
 # repository's own version gates (copyMacRes.sh -v) run against that checkout.
 [support]
 url = "https://github.com/brave-experiments/brave-android-mac-support.git"
-# Used only when a new working copy is created without --ref.
+# Default for new working copies without --ref, and the required Android test branch.
+# Test checks, repair commands, help, and overlay messages use this branch name.
 default_ref = "android-testing-prototype"

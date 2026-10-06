@@ -9,6 +9,7 @@ import subprocess
 from pathlib import Path
 
 from tests.support import write_executable
+from scaffold.brave import android_deps
 
 GIT = ["git", "-c", "user.name=Test", "-c", "user.email=t@example.com", "-c", "commit.gpgsign=false"]
 
@@ -220,7 +221,7 @@ def make_support_repo(root: Path, versions: dict, realistic: bool = False, lfs: 
         subprocess.run([*GIT, "-C", str(repo), "add", "-A"], check=True)
         subprocess.run([*GIT, "-C", str(repo), "commit", "-q", "-m", tag], check=True)
         subprocess.run([*GIT, "-C", str(repo), "tag", tag], check=True)
-    subprocess.run([*GIT, "-C", str(repo), "branch", "android-testing-prototype"], check=True)
+    subprocess.run([*GIT, "-C", str(repo), "branch", android_deps.metadata()["default_ref"]], check=True)
     return repo
 
 

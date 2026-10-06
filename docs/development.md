@@ -134,6 +134,15 @@ Regression tests exercise dispatch with local changes, changed Core scripts,
 forwarded options, and child failures. Use isolated fake package commands to
 verify that Scaffold passes control to Core without editing the checkout first.
 
+## Android support branch
+
+`scripts/src/scaffold/brave/android_support.toml` defines the support branch in
+`support.default_ref`. Setup, Android test checks, repair commands, help, and
+overlay messages use that value. Change it there when the branch is renamed;
+update the branch examples in the Android guide, troubleshooting guide, and
+project skills at the same time. Existing support working copies are never
+switched automatically.
+
 ## Evidence for support claims
 
 A combination is `supported` in the capability table only after it has run on a

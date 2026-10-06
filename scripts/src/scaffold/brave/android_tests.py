@@ -17,7 +17,7 @@ from ..common.platforms import host_platform
 from . import android_deps, steps as step_module, support_scripts, sync_scope
 from .patchformat import UnknownPatchFormat, parse_patch_targets
 
-TEST_SUPPORT_BRANCH = "android-testing-prototype"
+TEST_SUPPORT_BRANCH = android_deps.metadata()["default_ref"]
 OVERLAY_SCRIPT = "applyBraveCoreTestSupport.sh"
 OVERLAY_PATCH = "patches/brave-core-android-tests-on-mac.patch"
 OVERLAY_STEP = "android-test-overlay"

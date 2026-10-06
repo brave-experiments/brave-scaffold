@@ -17,11 +17,12 @@ import unittest
 from pathlib import Path
 
 from tests.android_fixtures import GIT, OVERLAY_FILES
+from scaffold.brave import android_deps
 from tests.android_test_device_fixtures import SCRIPT, UTIL
 from tests.integration.test_android import ANDROID_HOOK, DEVICES_TWO, AndroidTestCase
 from tests.integration.test_build import SKIP
 
-BRANCH = "android-testing-prototype"
+BRANCH = android_deps.metadata()["default_ref"]
 ONE_DEVICE = "emulator-5554,device"
 
 TEST_HOOK = """
@@ -135,8 +136,8 @@ class HostSuiteTests(AndroidTestsTestCase):
             self.assertLess(start, applied)
             self.assertLess(applied, cleanup)
             self.assertLess(cleanup, removed)
-            self.assertIn("origin/android-testing-prototype", output[start:applied])
-            self.assertIn("local support branch android-testing-prototype", output[start:applied])
+            self.assertIn("origin/" + BRANCH, output[start:applied])
+            self.assertIn("local support branch " + BRANCH, output[start:applied])
             self.assertIn("will be cleaned up when this run finishes", output[applied:cleanup])
             for path in OVERLAY_FILES:
                 name = path.removeprefix("brave/")

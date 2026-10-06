@@ -91,7 +91,7 @@ def capability_table():
         add("android", operation, "debug", "arm64", SUPPORTED, "Debug arm64 APK." if operation == "build" else "")
     add("android", "build", "release", "arm64", LIMITED, "Not part of the validated workflow.")
     add("android", "test", "debug", "arm64", SUPPORTED,
-        "brave_junit_tests (host) and brave_java_unit_tests (device); needs the android-testing-prototype support branch.")
+        "brave_junit_tests (host) and brave_java_unit_tests (device); needs the required Android test support branch.")
     add("ios", "sync", "debug", "arm64", SUPPORTED, "Adds ios to target_os; Core's hooks bootstrap the project.")
     for operation in ("build", "run", "clean"):
         add("ios", operation, "debug", "arm64", SUPPORTED, "iOS Simulator only.")
