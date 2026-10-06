@@ -70,10 +70,9 @@ Inside a registered checkout, commands select it from the current directory.
 Elsewhere, pass `--checkout main`. Configuration and generated environments stay
 outside Core. See [getting started](docs/getting-started.md) for more detail.
 
-To sign commits with 1Password, configure Git's SSH signing settings manually,
-including `gpg.ssh.program` pointing to this installation's
-`scripts/git-sign-with-1password`. Setup does not configure Git for you. See
-[commit signing](docs/signing.md) for the commands and required settings.
+The scaffold can help you set up commit signing with 1Password. Run
+`scripts/bcore doctor signing` to check your setup, and see
+[commit signing](docs/signing.md) for configuration steps.
 
 ## Build and run the tests you changed
 
