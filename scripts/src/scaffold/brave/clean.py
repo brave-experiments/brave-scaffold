@@ -148,7 +148,7 @@ def _remainder_entry(child, out_dir, parent, targets, configs, arch, remnants):
     if any(matches(recorded["directory"], t, c, arch) for t in targets for c in configs):
         entry.detail = describe
     else:
-        entry.outcome, entry.detail = "skipped", "%s; select its target to finish it" % describe
+        entry.outcome, entry.detail = "unselected", "%s; select its target to finish it" % describe
     return entry
 
 

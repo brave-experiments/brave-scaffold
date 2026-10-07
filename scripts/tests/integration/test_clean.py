@@ -347,6 +347,20 @@ class InterruptedCleanupTests(SandboxTest):
         self.assertEqual((lookalike / "keep").read_text(), "not ours")
         self.assertTrue((self.out / "Release_arm64").exists())
 
+    def test_an_unfinished_deletion_of_an_unselected_target_does_not_make_the_run_partial(self):
+        self.interrupt_after_rename(partial=True)
+        (remainder,) = [p for p in self.out.iterdir() if p.name.startswith(".scaffold-deleting-Debug_arm64-")]
+        code, document = self.run_cli("android", "--execute")
+        self.assertEqual((code, document["status"]), (0, "ok"))
+        self.assertEqual(document["warnings"], [])
+        (entry,) = [e for e in document["data"]["entries"] if e["name"] == remainder.name]
+        self.assertEqual(entry["outcome"], "unselected")
+        self.assertIn("select its target to finish it", entry["detail"])
+        self.assertTrue(remainder.exists(), "it is reported and left alone")
+        code, document = self.run_cli("mac", "--configuration", "debug", "--execute")
+        self.assertEqual((code, document["status"]), (0, "ok"))
+        self.assertFalse(remainder.exists(), "selecting its target finishes it")
+
     def test_a_remainder_that_is_not_the_recorded_directory_is_never_deleted(self):
         self.interrupt_after_rename(partial=False)
         (remainder,) = [p for p in self.out.iterdir() if p.name.startswith(".scaffold-deleting-Debug_arm64-")]

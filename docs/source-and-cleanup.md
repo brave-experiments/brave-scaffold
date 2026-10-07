@@ -177,7 +177,9 @@ and a symlink is never followed. If the renamed entry turns out not to be the ap
 one, it is renamed back and nothing is deleted. A deletion that fails part way reports
 the private name of what remains. If some
 directories are skipped or fail, the result is `partial` with exit code 6 and each
-entry carries its outcome (`deleted`, `skipped`, `failed`) and reason.
+entry carries its outcome (`deleted`, `skipped`, `failed`) and reason. An unfinished deletion that
+belongs to a target you did not select is listed as `unselected`; it is reported and left alone,
+and it does not make the run partial.
 `--no-size` skips size calculation.
 
 If `src/out` itself is a symlink or resolves elsewhere, nothing is deleted
