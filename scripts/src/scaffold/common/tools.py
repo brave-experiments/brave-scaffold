@@ -107,7 +107,7 @@ def satisfies(version, range_text):
     if have is None:
         return None
     for alternative in range_text.split("||"):
-        outcome = _all_comparators(have, alternative.split())
+        outcome = _all_comparators(have, _comparators(alternative))
         if outcome is None:
             return None
         if outcome:
@@ -115,31 +115,55 @@ def satisfies(version, range_text):
     return False
 
 
+def _comparators(alternative):
+    text = re.sub(r"(\S+)\s+-\s+(\S+)", r">=\1 <=\2", alternative.strip())
+    return re.sub(r"(>=|<=|>|<|=|\^|~)\s+", r"\1", text).split()
+
+
+def _bump(parts):
+    return (*parts[:-1], parts[-1] + 1, *(0,) * (3 - len(parts)))
+
+
 def _all_comparators(have, comparators):
     for comparator in comparators:
-        found = re.fullmatch(r"(>=|<=|>|<|=|\^|~)?\s*(v?\d+(?:\.\d+)?(?:\.\d+)?)", comparator)
+        found = re.fullmatch(r"(>=|<=|>|<|=|\^|~)?v?((?:\d+|[xX*])(?:\.(?:\d+|[xX*])){0,2})", comparator)
         if not found:
             return None
-        op, text = found.group(1) or "=", found.group(2)
-        want = parse_version(text)
-        if op == ">=":
-            ok = have >= want
-        elif op == "<=":
-            ok = have <= want
-        elif op == ">":
-            ok = have > want
-        elif op == "<":
-            ok = have < want
-        elif op == "=":
-            ok = have == want
-        elif op == "^":
-            upper = (want[0] + 1, 0, 0) if want[0] else (0, want[1] + 1, 0)
-            ok = want <= have < upper
-        else:
-            ok = want <= have < (want[0], want[1] + 1, 0)
+        ok = _within(have, found.group(1) or "=", found.group(2))
         if not ok:
             return False
     return True
+
+
+def _within(have, op, text):
+    parts = []
+    for part in text.split("."):
+        if not part.isdigit():
+            break
+        parts.append(int(part))
+    count = len(parts)
+    if count == 0:
+        return op not in (">", "<")
+    base = (*parts, *(0,) * (3 - count))
+    if op == ">=":
+        return have >= base
+    if op == "<=":
+        return have <= base if count == 3 else have < _bump(parts)
+    if op == ">":
+        return have > base if count == 3 else have >= _bump(parts)
+    if op == "<":
+        return have < base
+    if op == "=":
+        return have == base if count == 3 else base <= have < _bump(parts)
+    if op == "~":
+        return base <= have < (_bump(parts[:1]) if count == 1 else _bump(parts[:2]))
+    if parts[0] > 0 or count == 1:
+        upper = _bump(parts[:1])
+    elif parts[1] > 0 or count == 2:
+        upper = _bump(parts[:2])
+    else:
+        upper = _bump(parts)
+    return base <= have < upper
 
 
 # --- payload layout ---------------------------------------------------------------
