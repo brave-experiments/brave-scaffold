@@ -264,14 +264,25 @@ class OutputState:
 
     def __init__(self, identity, output_dir, root=None):
         self.output_dir = os.path.realpath(output_dir)
-        digest = hashlib.sha1(self.output_dir.encode()).hexdigest()[:16]
+        digest = hashlib.sha256(self.output_dir.encode()).hexdigest()[:16]
         self.path = store_root(root) / "outputs" / checkout_key(identity.core) / (digest + ".json")
         loaded = _read(self.path)
+        # Files written under the earlier SHA-1 naming are found by the output directory they record.
+        self.previous = None if self.path.exists() else self._record_under_another_name()
+        if self.previous is not None:
+            loaded = _read(self.previous)
         # An unreadable file hides what the output went through, so the output counts as uncertain.
         self.damaged = self.path.exists() and not _usable_state(loaded)
         self.data = loaded if _usable_state(loaded) else {
             "output_dir": self.output_dir, "checkout": str(identity.core), "needs_revalidation": self.damaged,
             "attempts": [], "success": None, "history": []}
+
+    def _record_under_another_name(self):
+        for path in sorted(self.path.parent.glob("*.json")):
+            data = _read(path)
+            if _usable_state(data) and data.get("output_dir") == self.output_dir:
+                return path
+        return None
 
     def save(self):
         if self.damaged:
@@ -280,6 +291,10 @@ class OutputState:
                 os.replace(self.path, aside)
             self.damaged = False
         _write(self.path, self.data)
+        if self.previous is not None:
+            with contextlib.suppress(OSError):
+                self.previous.unlink()
+            self.previous = None
 
     def begin_attempt(self, operation_id, changes_output=True):
         """Record an attempt before any write; earlier success stops being proof."""

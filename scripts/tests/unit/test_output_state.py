@@ -4,6 +4,7 @@
 # You can obtain one at https://mozilla.org/MPL/2.0/.
 """Per-output build state survives damaged files without forgetting that the output is uncertain."""
 
+import hashlib
 import json
 import os
 import tempfile
@@ -39,6 +40,31 @@ class OutputStateTests(unittest.TestCase):
         state = self.state()
         self.assertFalse(state.needs_revalidation)
         self.assertIsNone(state.success)
+
+    def test_state_files_are_named_by_a_sha256_of_the_output_directory(self):
+        expected = hashlib.sha256(os.path.realpath(self.output).encode()).hexdigest()[:16] + ".json"
+        self.assertEqual(self.state().path.name, expected)
+
+    def test_a_state_file_from_the_previous_naming_scheme_is_adopted_and_then_replaced(self):
+        output = os.path.realpath(self.output)
+        folder = self.state().path.parent
+        folder.mkdir(parents=True)
+        record = {"output_dir": output, "checkout": str(self.identity.core), "needs_revalidation": True,
+                  "attempts": [], "history": [], "success": {"operation_id": "op-old", "artifact": {}, "fingerprint": {}}}
+        previous = folder / (hashlib.sha1(output.encode(), usedforsecurity=False).hexdigest()[:16] + ".json")
+        previous.write_text(json.dumps(record))
+        elsewhere = folder / "unrelated.json"
+        elsewhere.write_text(json.dumps(dict(record, output_dir=output + "-other")))
+        state = self.state()
+        self.assertEqual((state.success["operation_id"], state.needs_revalidation), ("op-old", True))
+        self.assertTrue(previous.exists(), "reading changes nothing")
+        state.begin_attempt("op-new")
+        self.assertFalse(previous.exists(), "the old name is replaced once the new file is written")
+        self.assertTrue(state.path.exists())
+        self.assertTrue(elsewhere.exists(), "another output's record is never touched")
+        again = self.state()
+        self.assertEqual(again.success["operation_id"], "op-old")
+        self.assertEqual(again.last_attempt()["operation_id"], "op-new")
 
     def test_a_damaged_file_means_the_output_needs_revalidation(self):
         for text in ('{"success": ', "", "[]", "null"):
