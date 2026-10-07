@@ -882,6 +882,18 @@ def cmd_deploy(ctx):
     return cmd_run(ctx)
 
 
+def warn_unvalidated_output(ctx, identity, bundle, result):
+    """Launching never inspects sources, but an interrupted or failed rebuild is recorded and worth saying."""
+    state = OutputState(identity, Path(bundle["path"]).parent, ctx.state_root)
+    if not state.needs_revalidation:
+        return
+    attempt = state.last_uncertain_attempt() or {}
+    message = ("Build freshness is unknown for %s. An attempt to change this output did not complete successfully "
+               "(%s); its contents may be partly overwritten." % (bundle["path"], attempt.get("outcome", "unknown")))
+    result.add_warning("ARTIFACT_FRESHNESS_UNKNOWN", message)
+    ctx.log.phase("Warning [ARTIFACT_FRESHNESS_UNKNOWN]: " + message)
+
+
 def cmd_run(ctx):
     parsed = ctx.parsed
     identity = ctx.identity()
@@ -904,8 +916,10 @@ def cmd_run(ctx):
     bundle = select_artifact(ctx, identity, target, configuration, "arm64")
     if parsed.get("plan"):
         return run_plan(ctx, identity, bundle)
+    result = Result(command=ctx.command)
+    warn_unvalidated_output(ctx, identity, bundle, result)
     with track(ctx, ctx.command, identity, {"target": target, "artifact": bundle["path"]}, validated=True) as op:
-        return op.complete(run_phase(ctx, execution, bundle, Result(command=ctx.command), None, op))
+        return op.complete(run_phase(ctx, execution, bundle, result, None, op))
 
 
 # --- sync ------------------------------------------------------------------------------

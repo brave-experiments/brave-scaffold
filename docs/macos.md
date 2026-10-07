@@ -122,7 +122,8 @@ An older or independently built output may run. `run` checks the selected applic
 and restarts it without comparing source files, dependency repositories, or build
 records. It does not report build freshness or rebuild anything. Failed or interrupted
 builds still mark their output records as needing revalidation; launching an application
-does not clear that state.
+does not clear that state, and `run` warns (`ARTIFACT_FRESHNESS_UNKNOWN`) before it
+launches an output with that mark.
 
 `sync-build` and `sync-build-run` (aliases `sb`, `sbr`) run the sync phase first and
 send extra arguments to the build phase only. See

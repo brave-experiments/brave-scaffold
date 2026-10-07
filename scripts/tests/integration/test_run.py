@@ -165,6 +165,22 @@ class RunTests(BuildTestCase):
         result, document = self.run_app("--artifact", str(self.output_app()))
         self.assertEqual(result.returncode, 0, result.stderr)
 
+    def test_run_warns_when_the_output_needs_revalidation_without_inspecting_sources(self):
+        self.build()
+        result, document = self.run_app()
+        self.assertEqual(document["warnings"], [])
+        self.document("build", env=self.env(FAKE_EXIT="1"))
+        result, document = self.run_app("--artifact", str(self.output_app()))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        warning = next(w for w in document["warnings"] if w["code"] == "ARTIFACT_FRESHNESS_UNKNOWN")
+        self.assertIn("partly overwritten", warning["message"])
+        self.assertIn(str(self.output_app()), warning["message"])
+        self.assertNotIn("freshness", document["data"]["run"])
+        self.assertIn("Warning [ARTIFACT_FRESHNESS_UNKNOWN]", result.stderr)
+        self.build()
+        result, document = self.run_app()
+        self.assertEqual(document["warnings"], [])
+
     def test_a_passing_test_run_does_not_leave_the_output_marked_uncertain(self):
         self.build()
         result, document = self.document("test", "brave_unit_tests")
