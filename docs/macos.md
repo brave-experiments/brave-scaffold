@@ -99,7 +99,8 @@ fails with `NO_TESTS_RAN`, so a filter that matches nothing is no longer reporte
 parameterized fixture needs an instantiation prefix, such as `--filter '*/Fixture.*'`. A missing or
 unreadable summary leaves the run successful with a `TEST_RESULTS_UNVERIFIED` warning.
 
-A test run that fails or is interrupted marks the output directory as needing
+A test run that fails or is interrupted, including one that exits 0 but whose results show failed tests or none run,
+marks the output directory as needing
 revalidation, shown by `bcore status` and by a warning from `bcore run`. The test command compiles
 into the same directory as the application, and the scaffold cannot tell a compile
 failure from a failing test, so it assumes the output may be partly overwritten. A passing test

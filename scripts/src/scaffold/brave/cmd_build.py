@@ -619,6 +619,23 @@ def verify_desktop_results(results):
     return summary, None
 
 
+def finish_test_attempt(state, op, verify):
+    """Record the attempt as complete only once its results are verified.
+
+    A run can exit 0 and still fail (failed tests, no tests, no runner). That is a failed attempt: the output stays
+    marked for revalidation, because the test command builds into the same directory as the application.
+    """
+    try:
+        outcome = verify()
+    except ScaffoldError:
+        if state is not None:
+            state.end_attempt(op.id, "failed")
+        raise
+    if state is not None:
+        state.end_attempt_completed(op.id)
+    return outcome
+
+
 def run_test_package(ctx, execution, effective, op, arguments, results=None):
     log_test_phase(ctx, effective)
     op.detail(effective={"target": effective.target, "configuration": effective.configuration,
@@ -638,11 +655,8 @@ def run_test_package(ctx, execution, effective, op, arguments, results=None):
         if results is not None and error.code == "CHILD_FAILED":
             error.details["results"] = android_tests.summarize_results(results)
         raise
-    if state is not None:
-        state.end_attempt_completed(op.id)
-    if results is None:
-        return argv, None, None
-    summary, warning = verify_desktop_results(results)
+    summary, warning = finish_test_attempt(
+        state, op, (lambda: verify_desktop_results(results)) if results is not None else (lambda: (None, None)))
     return argv, summary, warning
 
 
@@ -857,11 +871,11 @@ def run_android_test_with_overlay(ctx, execution, effective, op, known, tail, su
         if error.code == "CHILD_FAILED" and results is not None:
             error.details["results"] = android_tests.summarize_results(results)
         raise
-    if state is not None:
-        state.end_attempt_completed(op.id)
     if report is not None:
+        finish_test_attempt(state, op, lambda: (None, None))
         return argv, None, None
-    summary, warning = android_tests.verify_outcome(effective, suite, results, results is not None)
+    summary, warning = finish_test_attempt(
+        state, op, lambda: android_tests.verify_outcome(effective, suite, results, results is not None))
     return argv, summary, warning
 
 
