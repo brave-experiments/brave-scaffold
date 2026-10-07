@@ -51,6 +51,15 @@ class LauncherTests(unittest.TestCase):
         result = self.run_bcore("capabilities", "--json", launcher=link)
         self.assertEqual(result.returncode, 0, result.stderr)
 
+    def test_runs_by_relative_path_when_cdpath_is_set(self):
+        for cdpath in (str(self.installation), ".:%s" % self.installation):
+            for name in ("bcore", "bpm", "sync-support-repos"):
+                with self.subTest(cdpath=cdpath, launcher=name):
+                    result = self.run_bcore("--help", env={"CDPATH": cdpath}, cwd=self.installation,
+                                            launcher=Path("scripts") / name)
+                    self.assertNotEqual(result.returncode, 3, result.stderr)
+                    self.assertNotIn("missing or broken", result.stderr)
+
     def test_ignores_path_virtualenv_and_python_variables(self):
         poison = self.root / "poison"
         poison.mkdir(exist_ok=True)
