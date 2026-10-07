@@ -45,6 +45,11 @@ def select_build(ctx, target_token, forwarded, tests=False):
     effective = buildopts.resolve_effective(
         identity.src, forwarded, target, configuration or "Debug", explicit, configuration,
         bool(ctx.parsed.get("offline")), tests=tests)
+    if effective.target == "ios" and target != "ios" and not tests:
+        raise ScaffoldError(
+            "SELECTOR_CONFLICT", "--target_os=ios in the forwarded arguments cannot select an iOS build here; "
+            "iOS builds run through Xcode, not the package build command.",
+            details={"forwarded": "ios", "example": "bcore build ios"})
     require_available_target(effective.target, "test" if tests else "build")
     return identity, effective
 

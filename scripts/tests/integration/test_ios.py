@@ -200,6 +200,16 @@ class IosBuildTests(IosTestCase):
         self.assertEqual(self.xcode_calls(), [])
         self.assertEqual(self.output_states(), [])
 
+    def test_a_forwarded_target_os_cannot_route_a_package_build_to_ios(self):
+        for command in (("build",), ("build-run",), ("build", "--plan")):
+            with self.subTest(command=command):
+                result, document = self.document(*command, "--target_os=ios")
+                self.assertEqual((result.returncode, document["error"]["code"]), (2, "SELECTOR_CONFLICT"))
+                self.assertIn("bcore build ios", document["error"]["details"]["example"])
+        self.assertEqual(self.node_calls(), [])
+        self.assertEqual(self.xcode_calls(), [])
+        self.assertEqual(self.output_states(), [])
+
     def test_device_chooses_the_simulator_by_name_or_udid(self):
         for requested in ("iPhone 16 Pro", "CCCC-PHONE"):
             self.sandbox.record.unlink(missing_ok=True)
