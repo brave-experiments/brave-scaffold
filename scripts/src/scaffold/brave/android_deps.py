@@ -81,6 +81,10 @@ def inspect_working_copy(path, log=None):
 
 def setup_working_copy(identity, config, source, ref, log=None):
     """Prepare one shared checkout and preserve existing workspace copies before linking."""
+    for option, value in (("--source", source), ("--ref", ref)):
+        if value and value.startswith("-"):
+            raise ScaffoldError("INVALID_INPUT", "%s cannot start with '-': Git would read it as an option." % option,
+                                details={"option": option})
     shared = shared_path(config).absolute()
     wc = working_copy(identity)
     if shared == wc.absolute() or shared.is_relative_to(wc.absolute()):
@@ -117,8 +121,7 @@ def setup_working_copy(identity, config, source, ref, log=None):
     source = source or metadata()["url"]
     if created:
         shared.parent.mkdir(parents=True, exist_ok=True)
-        result = run_capture(["git", "clone", source, str(shared)],
-                             str(shared.parent), _no_smudge_env(), log, timeout=3600)
+        result = run_capture(_clone_argv(source, shared), str(shared.parent), _no_smudge_env(), log, timeout=3600)
         if result.returncode:
             raise ScaffoldError("CHILD_FAILED", "Cloning the shared support checkout failed.",
                                 child_exit_code=result.returncode)
@@ -237,8 +240,13 @@ def materialize_lfs(wc, source, store, log=None):
                             note="Uses the network and your Git credentials; run it after fixing access.")])
 
 
+def _clone_argv(source, shared):
+    return ["git", "clone", "--", source, str(shared)]
+
+
 def _checkout(wc, ref, log):
-    result = run_capture(["git", "-C", str(wc), "checkout", "-q", ref], str(wc), _no_smudge_env(), log, timeout=300)
+    result = run_capture(["git", "-C", str(wc), "checkout", "-q", ref, "--"], str(wc), _no_smudge_env(), log,
+                         timeout=300)
     if result.returncode != 0:
         raise ScaffoldError("DEPENDENCY_INCOMPATIBLE", "The ref %r does not exist in the support repository." % ref,
                             details={"stderr": result.stderr.strip()[-300:]})
