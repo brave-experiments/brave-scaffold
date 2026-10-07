@@ -390,8 +390,10 @@ for each device so results are not overwritten. Plans never prompt or run tests.
 
 The final discovery/file test summary marks successful suite commands with ✅ and
 failed or blocked suites with ❌. An overall result states whether all suite commands
-succeeded, some failed, or an error stopped the run. When counts are unavailable,
-command success is shown without claiming verified test counts. Tests excluded by
+succeeded, some failed, or an error stopped the run. Desktop suites report counts from
+the test launcher's JSON summary (see [macOS tests](macos.md#test)); Android suites use their
+results file. When counts are unavailable, command success is shown without claiming
+verified test counts. Tests excluded by
 the selected platform remain listed separately under “Not run.”
 
 ## cd

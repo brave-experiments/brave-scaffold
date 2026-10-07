@@ -555,30 +555,80 @@ def cmd_test(ctx):
     script_args = [parsed.get("suite")]
     if parsed.get("filter"):
         script_args.append("--filter=%s" % parsed.get("filter"))
+    results = desktop_results_path(effective, parsed.forwarded)
+    tail = ["%s=%s" % (SUMMARY_OPTION, results)] if results else []
     if parsed.get("plan"):
-        return plan_result("test", effective, build_plan_steps(ctx, identity, effective, "test", script_args))
+        return plan_result("test", effective, build_plan_steps(ctx, identity, effective, "test", script_args,
+                                                               tail_args=tail))
     execution = prepare(ctx, identity, effective.target, "build", not effective.offline)
     with track(ctx, "test", identity, {"target": effective.target, "suite": parsed.get("suite")}, validated=True) as op:
-        arguments = build_arguments(effective, "test", script_args, False)
-        outcome = run_test_package(ctx, execution, effective, op, arguments)
+        arguments = build_arguments(effective, "test", script_args, False, tail)
+        argv, summary, warning = run_test_package(ctx, execution, effective, op, arguments, results)
         result = Result(command="test", child_exit_code=0, checks=[check.to_dict() for check in execution.checks])
-        result.data = {"suite": parsed.get("suite"), "argv": outcome, "cwd": str(identity.core)}
+        result.data = {"suite": parsed.get("suite"), "argv": argv, "cwd": str(identity.core), "results": summary}
         result.text = "Test suite %s passed." % parsed.get("suite")
+        if summary:
+            result.text = "Test suite %s passed (%d passed, %d skipped)." % (
+                parsed.get("suite"), summary["passed"], summary["skipped"])
+        if warning:
+            result.add_warning("TEST_RESULTS_UNVERIFIED", warning)
         return op.complete(result)
 
 
-def run_test_package(ctx, execution, effective, op, arguments):
+SUMMARY_OPTION = "--test-launcher-summary-output"
+DESKTOP_RESULTS_NAME = "scaffold_test_results.json"
+
+
+def desktop_results_path(effective, forwarded):
+    """Where the test launcher writes its JSON summary, or None when the caller chose their own or no output is known."""
+    if effective.unresolved or not effective.preparation_dir:
+        return None
+    if any(token.partition("=")[0] == SUMMARY_OPTION for token in forwarded):
+        return None
+    return Path(effective.preparation_dir) / DESKTOP_RESULTS_NAME
+
+
+def verify_desktop_results(results):
+    """After a zero exit, trust the launcher's own counts over the exit code. Returns (summary, warning)."""
+    summary = android_tests.summarize_results(results)
+    if summary is None:
+        return None, "The test command exited 0 but wrote no readable summary (%s), so the test count is unverified." % results
+    if summary["failed"]:
+        raise ScaffoldError("TEST_FAILED", "%d test(s) failed although the test command exited 0." % summary["failed"],
+                            details={"results": summary}, child_exit_code=0)
+    if summary["ran"] == 0:
+        raise ScaffoldError(
+            "NO_TESTS_RAN", "The test command exited 0 but ran no tests; the filter may match nothing. Parameterized "
+            "fixtures (TEST_P) need an instantiation prefix, such as '*/Fixture.*'.",
+            details={"results": summary}, child_exit_code=0)
+    return summary, None
+
+
+def run_test_package(ctx, execution, effective, op, arguments, results=None):
     log_test_phase(ctx, effective)
     op.detail(effective={"target": effective.target, "configuration": effective.configuration,
                          "arch": effective.arch, "output_dir": str(effective.output_dir) if effective.output_dir else None,
                          "package_arguments": arguments})
     prepare_patches(ctx, execution, op)
-    argv, state = run_output_step(ctx, execution, effective, op, arguments, "test",
-                                  metal_environment(ctx, execution.environ, execution.checks)
-                                  if effective.target == "mac" else {})
+
+    def before_child():
+        if results is not None:
+            results.unlink(missing_ok=True)
+
+    try:
+        argv, state = run_output_step(ctx, execution, effective, op, arguments, "test",
+                                      metal_environment(ctx, execution.environ, execution.checks)
+                                      if effective.target == "mac" else {}, before_child)
+    except ScaffoldError as error:
+        if results is not None and error.code == "CHILD_FAILED":
+            error.details["results"] = android_tests.summarize_results(results)
+        raise
     if state is not None:
         state.end_attempt_completed(op.id)
-    return argv
+    if results is None:
+        return argv, None, None
+    summary, warning = verify_desktop_results(results)
+    return argv, summary, warning
 
 
 # --- Android tests -----------------------------------------------------------------------

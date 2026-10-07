@@ -92,6 +92,13 @@ and the diagnostic log. A failed package command returns scaffold exit 5 and sav
 the child's status as `child_exit_code` in JSON and the operation record.
 Other arguments go to `bpm run test` after the generated ones.
 
+Desktop suites also pass `--test-launcher-summary-output=<output directory>/scaffold_test_results.json`
+to the test binary (unless you forward that option yourself, or the output directory is
+unresolved) and read the launcher's own counts afterward. A run that exits 0 but ran no tests
+fails with `NO_TESTS_RAN`, so a filter that matches nothing is no longer reported as a pass; a
+parameterized fixture needs an instantiation prefix, such as `--filter '*/Fixture.*'`. A missing or
+unreadable summary leaves the run successful with a `TEST_RESULTS_UNVERIFIED` warning.
+
 A test run that fails or is interrupted marks the output directory as needing
 revalidation, shown by `bcore status` and by a warning from `bcore run`. The test command compiles
 into the same directory as the application, and the scaffold cannot tell a compile

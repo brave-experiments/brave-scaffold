@@ -141,6 +141,85 @@ class TestChangedTests(AndroidTestsTestCase):
         self.assertIn("❌ 1 of 1 suite commands failed.", summary)
         self.assertIn("browser/extensions/android/n_unittest.cc", summary)
 
+    def mac_runs(self):
+        return [call["argv"] for call in self.runner_calls() if "--target_os=mac" in call["argv"]]
+
+    def plain_mac(self, **env):
+        return self.sandbox.bcore("--config", self.config, "--checkout", "main", "test", "mac", "--base", "base-ref",
+                                  env=self.env(**env))
+
+    def summary_options(self, argv):
+        return [token for token in argv if token.startswith("--test-launcher-summary-output=")]
+
+    def test_mac_counts_come_from_the_launchers_own_summary(self):
+        self.add_tests("unit", "browser")
+        result, document = self.local("mac", FAKE_MAC_RESULTS="pass")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        for argv in self.mac_runs():
+            (option,) = self.summary_options(argv)
+            self.assertTrue(option.endswith("/Debug_arm64/scaffold_test_results.json"), option)
+        self.assertEqual(len(self.mac_runs()), 2)
+        for phase in document["data"]["phases"]:
+            self.assertEqual({k: phase["results"][k] for k in ("passed", "failed", "skipped", "ran")},
+                             {"passed": 2, "failed": 0, "skipped": 1, "ran": 2})
+        self.assertEqual(document["warnings"], [])
+        plain = self.plain_mac(FAKE_MAC_RESULTS="pass")
+        self.assertIn("2 run, 2 passed, 0 failed, 1 skipped", plain.stdout)
+        self.assertIn("✅ All run tests passed.", plain.stdout)
+
+    def test_a_desktop_suite_that_runs_no_tests_is_not_a_success(self):
+        self.add_tests("unit", "browser")
+        result, document = self.local("mac", FAKE_MAC_RESULTS="empty")
+        self.assertEqual((result.returncode, document["error"]["code"]), (5, "CHILD_FAILED"))
+        phases = document["error"]["details"]["phases"]
+        self.assertEqual([(p["suite"], p["error"]["code"]) for p in phases],
+                         [("brave_unit_tests", "NO_TESTS_RAN"), ("brave_browser_tests", "NO_TESTS_RAN")])
+        self.assertEqual(len(self.mac_runs()), 2, "the second suite still ran")
+        self.assertIn("ran no tests", document["error"]["message"])
+        self.assertIn("0 run", document["error"]["message"])
+
+    def test_a_named_desktop_suite_that_runs_no_tests_fails_with_the_filter_advice(self):
+        result, document = self.document("test", "mac", "brave_unit_tests", "--filter", "Missing.*",
+                                         env=self.env(FAKE_MAC_RESULTS="empty"))
+        self.assertEqual((result.returncode, document["error"]["code"]), (5, "NO_TESTS_RAN"))
+        self.assertIn("filter may match nothing", document["error"]["message"])
+        self.assertIn("*/Fixture.*", document["error"]["message"])
+
+    def test_failed_desktop_runs_carry_their_counts_into_the_summary(self):
+        self.add_tests("unit")
+        result, document = self.local("mac", FAKE_MAC_RESULTS="fail", FAKE_MAC_EXIT="1")
+        self.assertEqual(result.returncode, 5, result.stderr)
+        self.assertIn("2 run, 1 passed, 1 failed, 0 skipped; phase failed", document["error"]["message"])
+
+    def test_an_unreadable_summary_leaves_the_run_unverified_but_not_failed(self):
+        self.add_tests("unit")
+        result, document = self.local("mac", FAKE_MAC_RESULTS="garbage")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("TEST_RESULTS_UNVERIFIED", [w["code"] for w in document["warnings"]])
+        self.assertIn("command succeeded; test counts unavailable", self.plain_mac(FAKE_MAC_RESULTS="garbage").stdout)
+
+    def test_a_forwarded_summary_option_is_left_alone(self):
+        self.add_tests("unit")
+        mine = str(self.sandbox.root / "mine.json")
+        result, document = self.local("mac", "--", "--test-launcher-summary-output=" + mine,
+                                      FAKE_MAC_RESULTS="empty")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        (argv,) = self.mac_runs()
+        self.assertEqual(self.summary_options(argv), ["--test-launcher-summary-output=" + mine])
+        self.assertEqual(document["warnings"], [])
+
+    def test_the_plan_names_the_results_file(self):
+        self.add_tests("unit")
+        result, document = self.local("mac", "--plan")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.mac_runs(), [])
+        result, document = self.document("test", "mac", "brave_unit_tests", "--plan")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        argvs = [step["argv"] for step in document["data"]["plan"]["steps"] if step["argv"]]
+        self.assertTrue(any(any(token.startswith("--test-launcher-summary-output=") and token.endswith(
+            "/scaffold_test_results.json") for token in argv) for argv in argvs), argvs)
+        self.assertEqual(self.mac_runs(), [])
+
     def test_a_failing_phase_does_not_stop_the_others_and_fails_the_command(self):
         self.on_test_branch()
         self.add_tests("unit", "browser")

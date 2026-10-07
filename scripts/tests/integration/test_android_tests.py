@@ -27,6 +27,19 @@ ONE_DEVICE = "emulator-5554,device"
 
 TEST_HOOK = """
 if "--target_os=mac" in argv:
+    out = [a.split("=", 1)[1] for a in argv if a.startswith("--test-launcher-summary-output=")]
+    mac_mode = os.environ.get("FAKE_MAC_RESULTS")
+    if out and mac_mode:
+        mac_tests = {"pass": {"Foo.A": [{"status": "SUCCESS"}], "Foo.B": [{"status": "SUCCESS"}],
+                              "Foo.C": [{"status": "SKIPPED"}]},
+                     "fail": {"Foo.A": [{"status": "SUCCESS"}], "Foo.B": [{"status": "FAILURE"}]},
+                     "empty": {}}
+        os.makedirs(os.path.dirname(out[0]), exist_ok=True)
+        if mac_mode in mac_tests:
+            with open(out[0], "w") as stream:
+                json.dump({"per_iteration_data": [mac_tests[mac_mode]]}, stream)
+        else:
+            open(out[0], "w").write("not json")
     raise SystemExit(int(os.environ.get("FAKE_MAC_EXIT", "0")))
 core = os.environ["BRAVE_CORE_DIR"]
 src = os.path.dirname(core)

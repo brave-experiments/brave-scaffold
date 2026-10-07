@@ -177,7 +177,8 @@ print("suite test output", file=sys.stderr, flush=True)
         self.document("test", "brave_browser_tests", "--upstream-option", "value", "extra")
         argv = self.build_argv()
         self.assertEqual(argv[:3], ["run", "test", "brave_browser_tests"])
-        self.assertEqual(argv[-3:], ["--upstream-option", "value", "extra"])
+        self.assertEqual(argv[-4:-1], ["--upstream-option", "value", "extra"])
+        self.assertTrue(argv[-1].startswith("--test-launcher-summary-output="), "generated options follow forwarded ones")
         self.assertIn("Debug", argv)
 
     def test_explicit_platform_filter_and_extra_positional(self):
@@ -185,7 +186,8 @@ print("suite test output", file=sys.stderr, flush=True)
         argv = self.build_argv()
         self.assertEqual(argv[2], "brave_unit_tests")
         self.assertIn("--filter=Example.*", argv)
-        self.assertEqual(argv[-2:], ["extra", "--x"])
+        self.assertEqual(argv[-3:-1], ["extra", "--x"])
+        self.assertTrue(argv[-1].startswith("--test-launcher-summary-output="))
         self.assertEqual(self.node_calls()[-1]["cwd"], str(self.core))
 
     def test_missing_or_malformed_suite_teaches_the_syntax(self):
