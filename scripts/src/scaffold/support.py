@@ -77,7 +77,7 @@ def sync(git, repo, directory, discard):
     branch, _, dirty = inspect(git, directory)
     if branch != repo["branch"]:
         raise ScaffoldError("PREPARATION_CONFLICT", "Current branch differs from the manifest.")
-    if git.read(directory, "remote", "get-url", "origin") != repo["url"]:
+    if git.read(directory, "config", "--get", "remote.origin.url") != repo["url"]:
         raise ScaffoldError("PREPARATION_CONFLICT", "Origin URL differs from the manifest.")
     if dirty and not discard:
         raise ScaffoldError("PREPARATION_CONFLICT", "Working tree has local files or changes.")

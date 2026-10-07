@@ -123,6 +123,18 @@ class SupportRepositoriesTests(unittest.TestCase):
         self.command(expected=6)
         self.assertEqual(self.git(checkout, "remote", "get-url", "origin"), str(self.root / "other"))
 
+    def test_url_rewrite_rules_do_not_make_a_matching_origin_look_different(self):
+        checkout = self.checkout()
+        mirror = self.root / "mirror"
+        self.git(self.root, "clone", "--bare", str(self.source), str(mirror))
+        self.git(checkout, "config", "url.%s.insteadOf" % mirror, str(self.source))
+        self.assertEqual(self.git(checkout, "remote", "get-url", "origin"), str(mirror))
+        after = self.commit(self.source, "upstream")
+        self.git(mirror, "fetch", str(self.source), "main:main")
+        document = self.command()
+        self.assertIn("handbook: updated", document.stdout)
+        self.assertEqual(self.git(checkout, "rev-parse", "HEAD"), after)
+
     def test_prune_preview_and_execute_only_remove_unlisted_clean_repositories(self):
         checkout = self.checkout()
         self.git(self.directory, "clone", str(self.source), "obsolete")
