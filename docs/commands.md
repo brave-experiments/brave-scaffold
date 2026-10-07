@@ -409,7 +409,8 @@ returns an error and leaves the current directory unchanged.
 system `osascript` command: no service runs, nothing is installed, and Brave Core is
 not involved. Choose the policy with `[notifications] policy` in `brave-scaffold.toml`
 (default `major`) or per invocation with `--notify` (meaning `always`) or
-`--notify=always|major|never`. The command-line value wins over the file.
+`--notify=always|major|never` (a following `always`, `major`, or `never` is read as
+the value; any other word is not). The command-line value wins over the file.
 
 | Policy | Notifies for |
 | --- | --- |

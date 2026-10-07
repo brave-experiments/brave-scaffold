@@ -134,7 +134,12 @@ def parse_tokens(spec, tokens):
                     continue
                 raise _unknown_option(spec, name, options)
             if option.optional_value and not equals:
-                value = "always"
+                following = tokens[index + 1].lower() if index + 1 < len(tokens) else None
+                if option.choices and following in option.choices:
+                    index += 1
+                    value = following
+                else:
+                    value = "always"
             elif option.takes_value:
                 if equals:
                     value = inline

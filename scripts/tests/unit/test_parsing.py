@@ -44,6 +44,22 @@ class ForwardingParserTests(unittest.TestCase):
                 parse_tokens(FORWARDING, tokens)
             self.assertEqual(caught.exception.code, "INVALID_INPUT")
 
+    def test_notify_takes_a_following_policy_word_but_not_other_words(self):
+        spec = CommandSpec("build", "build", positionals=(Positional("target"),), forward=True,
+                           options=(Opt("--notify", "notify", choices=("always", "major", "never"),
+                                        optional_value=True, metavar="POLICY"),))
+        for tokens, expected in ((["--notify", "never"], "never"), (["--notify", "NEVER"], "never"),
+                                 (["mac", "--notify", "major"], "major"), (["--notify=never"], "never"),
+                                 (["--notify"], "always")):
+            with self.subTest(tokens=tokens):
+                parsed = parse_tokens(spec, tokens)
+                self.assertEqual(parsed.get("notify"), expected)
+                self.assertEqual(parsed.forwarded, [])
+        parsed = parse_tokens(spec, ["--notify", "mac"])
+        self.assertEqual((parsed.get("notify"), parsed.positionals), ("always", ["mac"]))
+        parsed = parse_tokens(spec, ["--", "--notify", "never"])
+        self.assertEqual((parsed.get("notify"), parsed.forwarded), (None, ["--notify", "never"]))
+
     def test_conflicting_repeated_values_fail_and_equal_ones_are_fine(self):
         with self.assertRaises(ScaffoldError) as caught:
             parse_tokens(FORWARDING, ["--checkout", "a", "--checkout=b"])
