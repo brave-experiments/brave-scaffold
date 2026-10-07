@@ -148,7 +148,8 @@ bcore clean all --execute                     # explicitly mac, android, and ios
   it also shows how to preview every platform. JSON reports this in `targets` and
   `target_source` (`explicit`, `configured`, or `host`).
 - `--configuration debug|release|all` (default `all`) and `--arch <arch>` narrow
-  the match.
+  the match. Core names the x64 output without an architecture suffix, so an unsuffixed
+  directory such as `Debug` is matched by `--arch x64` (or no `--arch`) and never by `--arch arm64`.
 - Only directories directly under the selected checkout's own `src/out` are
   considered: macOS `Debug_arm64`, `Release_arm64`, the `Origin` variants, and the
   unsuffixed base; Android `android_Debug_arm64`, `android_tests_Debug_arm64`, and

@@ -93,7 +93,40 @@ class CleanTests(SandboxTest):
         self.clean("mac", "--arch", "arm64", "--execute")
         self.assertIn("Debug_x64", self.remaining())
         self.assertNotIn("Debug_arm64", self.remaining())
-        self.assertNotIn("Debug", self.remaining())
+        self.assertNotIn("DebugOrigin_arm64", self.remaining())
+
+    def make_dirs(self, *names):
+        for name in names:
+            (self.out / name / "obj").mkdir(parents=True)
+            (self.out / name / "obj" / "x.o").write_text(name)
+
+    def test_an_unsuffixed_directory_is_the_x64_output_and_survives_an_arm64_clean(self):
+        self.make_dirs("Release", "DebugOrigin", "android_Debug", "ios_Debug_simulator")
+        result, document = self.clean("mac", "--arch", "arm64")
+        self.assertEqual(self.names(document), ["DebugOrigin_arm64", "Debug_arm64", "Release_arm64"])
+        self.clean("all", "--arch", "arm64", "--execute")
+        for survivor in ("Debug", "Release", "DebugOrigin", "Debug_x64", "android_Debug", "ios_Debug_simulator",
+                         "ios_Debug_x64_simulator"):
+            self.assertIn(survivor, self.remaining(), survivor)
+        for gone in ("Debug_arm64", "Release_arm64", "DebugOrigin_arm64", "android_Debug_arm64",
+                     "ios_Debug_arm64_simulator"):
+            self.assertNotIn(gone, self.remaining(), gone)
+
+    def test_x64_means_the_unsuffixed_directory_and_an_explicit_x64_suffix(self):
+        self.make_dirs("Release", "DebugOrigin", "android_Debug", "ios_Debug_simulator")
+        result, document = self.clean("mac", "--arch", "x64")
+        self.assertEqual(self.names(document), ["Debug", "DebugOrigin", "Debug_x64", "Release"])
+        result, document = self.clean("android", "--arch", "x64")
+        self.assertEqual(self.names(document), ["android_Debug"])
+        result, document = self.clean("ios", "--arch", "x64")
+        self.assertEqual(self.names(document), ["ios_Debug_simulator", "ios_Debug_x64_simulator"],
+                         "derived data holds products for every architecture and is only matched without --arch")
+
+    def test_without_an_arch_every_architecture_matches(self):
+        self.make_dirs("Release", "android_Debug")
+        result, document = self.clean("mac")
+        self.assertEqual(self.names(document), ["Debug", "DebugOrigin_arm64", "Debug_arm64", "Debug_x64", "Release",
+                                                "Release_arm64"])
 
     def test_all_is_explicit_and_omission_is_not_all(self):
         self.clean("--execute")

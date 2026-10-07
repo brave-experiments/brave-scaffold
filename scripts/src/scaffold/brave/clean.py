@@ -37,9 +37,12 @@ class Entry:
 
 
 def _with_arch(name, base, arch):
-    if arch:
-        return name == base or name == "%s_%s" % (base, arch)
-    return name == base or name.startswith(base + "_")
+    """Core names the x64 output without a suffix, so an unsuffixed directory belongs to x64 and no other arch."""
+    if not arch:
+        return name == base or name.startswith(base + "_")
+    if arch == "x64":
+        return name == base or name == base + "_x64"
+    return name == "%s_%s" % (base, arch)
 
 
 def matches(name, target, config, arch):
@@ -47,7 +50,10 @@ def matches(name, target, config, arch):
     label = CONFIG_NAMES[config]
     if target == "ios":
         found = re.fullmatch(r"ios_%s(?:_(arm64|x64))?(?:_simulator)?(?:_xcode_derived_data)?" % label, name)
-        return bool(found) and (not arch or found.group(1) == arch)
+        if not found or not arch:
+            return bool(found)
+        # Xcode's derived data holds products for every architecture, so a narrower selection leaves it alone.
+        return not name.endswith("_xcode_derived_data") and (found.group(1) or "x64") == arch
     if target == "mac":
         return any(_with_arch(name, label + sku, arch) for sku in ("", "Origin"))
     bases = ("android_" + label, "android_tests_" + label, "android_%sOrigin" % label,
@@ -370,7 +376,7 @@ SPEC = CommandSpec(
     positionals=(Positional("target", help="mac, android, ios, or all; omitted means the default target only."),),
     options=(Opt("--configuration", "configuration", choices=("debug", "release", "all"),
                  help="Configuration to match (default: all).", metavar="CONFIG"),
-             Opt("--arch", "arch", help="Only this architecture suffix, such as arm64.", metavar="ARCH"),
+             Opt("--arch", "arch", help="Only this architecture, such as arm64. Core names x64 outputs without a suffix.", metavar="ARCH"),
              Opt("--execute", "execute", takes_value=False, help="Delete the listed directories."),
              Opt("--no-size", "no_size", takes_value=False, help="Skip size calculation.")),
     side_effects="Preview writes nothing. --execute deletes matching directories directly under the "
