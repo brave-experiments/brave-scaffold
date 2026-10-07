@@ -71,7 +71,7 @@ The full suite takes about twelve minutes serially. `tests.run_parallel` runs ea
 
 ### Continuous integration
 
-`.github/workflows/tests.yml` runs the whole suite through `tests.run_parallel` on an Apple-silicon macOS runner for pull requests, pushes to `main`, and manual runs. It installs Python 3.14 and `direnv`, creates `scripts/.venv` without pip, and needs no credentials or network access beyond the installs. Actions are pinned by commit SHA with a version comment. The real-checkout acceptance checks never run there.
+`.github/workflows/tests.yml` runs the whole suite through `tests.run_parallel` on an Apple-silicon macOS runner for pull requests, pushes to `main`, and manual runs. It installs Python 3.14, Node.js, and `direnv`, creates `scripts/.venv` without pip, and needs no credentials or network access beyond the installs. Actions are pinned by commit SHA with a version comment. The real-checkout acceptance checks never run there.
 
 Real-checkout acceptance runs are opt-in, use an explicitly selected checkout, and need the user's authorization for the operations involved ([agent workflows](agent-workflows.md)). Record the checkout, operations, and results with the evidence.
 
