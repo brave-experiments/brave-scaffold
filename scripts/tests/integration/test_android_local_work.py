@@ -242,7 +242,7 @@ class ResourceRefreshTests(AndroidTestCase):
         origin.write_bytes(b"\xcf\xfa\xed\xfe support tool")
         script = (COPY_SCRIPT +
                   'patch_dependency "Tool" "third_party/tools" "" "res/jdk/current/tool" ""\n'
-                  'printf signed >> ../src/third_party/tools/tool\n')
+                  'printf signed >> "$src_root/third_party/tools/tool"\n')
         manifest = self.sandbox.scripts / "src/scaffold/brave/support_script_contracts.json"
         contracts = json.loads(manifest.read_text())
         contracts[hashlib.sha256(script.encode()).hexdigest()] = {
