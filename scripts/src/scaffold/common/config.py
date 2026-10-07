@@ -19,7 +19,7 @@ from .results import ScaffoldError, repair
 SCHEMA_VERSION = 1
 CONFIG_NAME = "brave-scaffold.toml"
 ALIAS_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]*")
-PLATFORM_NAMES = ("mac", "macos", "android")
+PLATFORM_NAMES = ("mac", "macos", "android", "ios")
 TOP_FIELDS = {"schema_version", "logging", "notifications", "defaults", "checkouts", "android_support_path"}
 LOGGING_FIELDS = {"verbosity"}
 NOTIFICATION_FIELDS = {"policy", "delivery"}
@@ -174,6 +174,7 @@ def _validate(path, data):
             if not env_dir.is_absolute():
                 env_dir = path.parent / env_dir
             env_dir = Path(os.path.normpath(env_dir))
+        core = os.path.expanduser(core)
         if not os.path.isabs(core):
             core = str(path.parent / core)
         core_real = Path(os.path.realpath(core))

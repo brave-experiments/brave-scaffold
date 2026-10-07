@@ -4,9 +4,11 @@
 # You can obtain one at https://mozilla.org/MPL/2.0/.
 """Configuration parsing, validation, and in-place record edits."""
 
+import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import tests.support  # noqa: F401
 from scaffold.common import config as config_module
@@ -58,6 +60,21 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(config_module.upsert_checkout(self.path, str(expected), alias="main"), "updated")
         self.assertIn('core = "browser/src/brave"', self.path.read_text())
         self.assertEqual(len(config_module.load_config(self.path).checkouts), 1)
+
+    def test_core_expands_the_home_directory_like_the_other_paths(self):
+        home = self.dir / "home"
+        home.mkdir()
+        with mock.patch.dict(os.environ, {"HOME": str(home)}):
+            config = self.load('schema_version = 1\n[[checkouts]]\ncore = "~/work/browser/src/brave"\n')
+        expected = home / "work" / "browser" / "src" / "brave"
+        self.assertEqual(config.checkouts[0].core_real, expected.resolve())
+        self.assertEqual(Path(config.checkouts[0].core), expected)
+
+    def test_ios_is_a_valid_default_platform(self):
+        config = self.load('schema_version = 1\n[defaults]\nplatform = "iOS"\n')
+        self.assertEqual(config.default_platform, "ios")
+        error = self.fails('schema_version = 1\n[defaults]\nplatform = "linux"\n', "defaults.platform")
+        self.assertIn("ios", error.message)
 
     def test_android_support_location_is_optional_and_relative_to_config(self):
         self.assertIsNone(self.load('schema_version = 1\n').android_support_path)
