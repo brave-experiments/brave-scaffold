@@ -160,7 +160,7 @@ def cmd_test_discovered(ctx):
         android_tests.require_support_branch(identity, ctx.log)
     if any(p.suite == "brave_java_unit_tests" for p in discovery.phases):
         execution = execution_module.load(ctx, identity)
-        choice = android.preflight_deployment(execution.context(ctx), "arm64")
+        choice = android.preflight_deployment(execution.context(ctx), effective.arch)
         device = choice if isinstance(choice, android.DeviceGroup) else choice[1]["id"]
     phase_results, failures = [], []
     for number, phase in enumerate(discovery.phases, 1):

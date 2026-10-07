@@ -25,6 +25,19 @@ class TestChangedTests(AndroidTestsTestCase):
         self.assertEqual([phase['status'] for phase in document['data']['phases']], ['passed', 'passed'])
         self.assertEqual(len(document['data']['phases'][1]['devices']), 2)
 
+    @unittest.skipUnless(shutil.which('node'), 'needs Node for the device adapter fixture')
+    def test_the_requested_architecture_decides_which_devices_are_compatible(self):
+        self.on_test_branch()
+        self.add_tests('java')
+        x86_64_only = json.dumps({'emulator-5554': {'ro.product.cpu.abilist': 'x86_64'}})
+        result, document = self.local('android', '--all-devices', '--target_arch=x64', devices=ONE_DEVICE,
+                                      FAKE_ADAPTER_NODE=shutil.which('node'), FAKE_ADB_PROPERTIES=x86_64_only)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual([phase['status'] for phase in document['data']['phases']], ['passed'])
+        result, document = self.local('android', '--all-devices', devices=ONE_DEVICE,
+                                      FAKE_ADAPTER_NODE=shutil.which('node'), FAKE_ADB_PROPERTIES=x86_64_only)
+        self.assertNotEqual(result.returncode, 0, "the arm64 default still rejects an x86_64-only device")
+
     def setUp(self):
         super().setUp()
         self.git("branch", "base-ref")
