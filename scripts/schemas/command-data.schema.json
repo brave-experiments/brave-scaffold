@@ -1456,6 +1456,12 @@
         "change_counts": {
           "type": "object"
         },
+        "diff_stat": {
+          "type": [
+            "object",
+            "null"
+          ]
+        },
         "history": {
           "type": "array"
         },

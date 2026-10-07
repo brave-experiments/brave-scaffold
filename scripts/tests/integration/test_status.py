@@ -39,6 +39,53 @@ class StatusTests(SandboxTest):
         self.assertEqual(Validator().problems(document), [])
         return document['data']
 
+    def commit_file(self, name, text):
+        (self.core / name).write_text(text)
+        self.git('add', name)
+        self.git('-c', 'user.name=T', '-c', 'user.email=t@example.com', '-c', 'commit.gpgsign=false',
+                 'commit', '-qm', 'change ' + name)
+
+    def test_the_branch_diff_against_master_is_shown_as_a_short_stat(self):
+        self.git('update-ref', 'refs/heads/master', self.head)
+        self.git('switch', '-qc', 'feature')
+        (self.core / 'tracked.cc').write_text('one\n')
+        self.git('add', 'tracked.cc')
+        self.commit_file('other.cc', 'a\nb\n')
+        (self.core / 'uncommitted.cc').write_text('not counted\n')
+        (self.core / 'other.cc').write_text('a\nb\nc\n')
+        data = self.status()
+        self.assertEqual(data['diff_stat'], {'base': 'master', 'files': 2, 'insertions': 3, 'deletions': 0,
+                                             'summary': '2 files changed, 3 insertions(+)'})
+        result = self.sandbox.bcore('status', '--config', str(self.sandbox.config), cwd=self.core)
+        self.assertIn('Diff       master...HEAD: 2 files changed, 3 insertions(+)', result.stdout)
+
+    def test_a_branch_with_nothing_beyond_master_says_so(self):
+        self.git('update-ref', 'refs/heads/master', self.head)
+        data = self.status()
+        self.assertEqual(data['diff_stat'], {'base': 'master', 'files': 0, 'insertions': 0, 'deletions': 0,
+                                             'summary': None})
+        result = self.sandbox.bcore('status', '--config', str(self.sandbox.config), cwd=self.core)
+        self.assertIn('Diff       master...HEAD: no changes', result.stdout)
+
+    def test_a_missing_master_is_reported_not_an_error(self):
+        self.assertEqual(self.git('branch', '--list', 'master').strip(), '')
+        data = self.status()
+        self.assertIsNone(data['diff_stat'])
+        result = self.sandbox.bcore('status', '--config', str(self.sandbox.config), cwd=self.core)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('Diff       master...HEAD unavailable', result.stdout)
+
+    def test_deleted_lines_are_counted(self):
+        self.commit_file('doomed.cc', '1\n2\n3\n')
+        self.git('update-ref', 'refs/heads/master', 'HEAD')
+        self.git('switch', '-qc', 'feature')
+        self.git('rm', '-q', 'doomed.cc')
+        self.git('-c', 'user.name=T', '-c', 'user.email=t@example.com', '-c', 'commit.gpgsign=false',
+                 'commit', '-qm', 'remove it')
+        data = self.status()
+        self.assertEqual(data['diff_stat'], {'base': 'master', 'files': 1, 'insertions': 0, 'deletions': 3,
+                                             'summary': '1 file changed, 3 deletions(-)'})
+
     def test_a_damaged_output_record_is_called_out_rather_than_hidden(self):
         folder = self.sandbox.config.parent / '.bcore' / 'outputs' / records.checkout_key(self.core)
         folder.mkdir(parents=True)

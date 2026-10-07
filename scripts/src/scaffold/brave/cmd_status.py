@@ -4,6 +4,7 @@
 # You can obtain one at https://mozilla.org/MPL/2.0/.
 """Checkout status, with operation history kept separate from source verification."""
 
+import re
 import shutil
 from datetime import datetime
 
@@ -20,6 +21,23 @@ def git(ctx, core, *args, optional=False):
             return None
         raise ScaffoldError("READINESS_INCOMPLETE", "Could not read complete Git status; no files were changed.")
     return result.stdout
+
+
+DIFF_BASE = "master"
+
+
+def diff_stat(ctx, core):
+    """The branch's committed changes against master, from `git diff --shortstat master...HEAD`.
+
+    None when Git cannot compare (for example there is no local master branch).
+    """
+    text = git(ctx, core, "diff", "--shortstat", DIFF_BASE + "...HEAD", optional=True)
+    if text is None:
+        return None
+    counts = {"files": 0, "insertions": 0, "deletions": 0}
+    for number, word in re.findall(r"(\d+) (file|insertion|deletion)", text):
+        counts[{"file": "files", "insertion": "insertions", "deletion": "deletions"}[word]] = int(number)
+    return {"base": DIFF_BASE, **counts, "summary": text.strip() or None}
 
 
 def changes_from_porcelain(text):
@@ -74,6 +92,7 @@ def run_status(ctx):
     if comparison:
         behind, ahead = map(int, comparison.split())
         base = {"ref": "origin/master", "ahead": ahead, "behind": behind}
+    stat = diff_stat(ctx, core)
     operations = list(records.all_operations(ctx.state_root, core))
     latest = {}
     incomplete = []
@@ -102,7 +121,7 @@ def run_status(ctx):
         free = None
     data = {"branch": branch, "head": head, "history_scope": "all-branches" if all_branches else "current-branch",
             "upstream": upstream.strip() if upstream else None, "base": base,
-            "changes": changes, "change_counts": counts, "history": history,
+            "changes": changes, "change_counts": counts, "diff_stat": stat, "history": history,
             "current_test_verification": "unknown", "outputs": outputs, "damaged_output_records": damaged,
             "incomplete_operations": incomplete,
             "disk_free_bytes": free}
@@ -110,6 +129,8 @@ def run_status(ctx):
              "", "Git", "  HEAD       " + head[:12], "  Upstream   " + (data["upstream"] or "Not configured")]
     lines.append("  Base       %d behind origin/master; %d ahead" % (base["behind"], base["ahead"])
                  if base else "  Base       origin/master comparison unavailable")
+    lines.append("  Diff       %s...HEAD: %s" % (DIFF_BASE, stat["summary"] or "no changes") if stat
+                 else "  Diff       %s...HEAD unavailable (no %s branch to compare with)" % (DIFF_BASE, DIFF_BASE))
     lines.append("  Changes    %(staged)d staged · %(unstaged)d unstaged · %(untracked)d untracked" % counts)
     lines += ["    %s %s" % (c["status"], repr(c["path"])) for c in changes[:10]]
     if len(changes) > 10:
