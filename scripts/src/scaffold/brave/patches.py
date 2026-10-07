@@ -143,8 +143,14 @@ def patch_inputs(identity, log=None):
         trees[name] = result.stdout.strip() if result.returncode == 0 else None
     status = _git(identity, identity.core, ["status", "--porcelain", "--untracked-files=all", "--", "patches",
                                             "rewrite"], log)
-    dirty = status.stdout.splitlines() if status.returncode == 0 else None
-    return trees, dirty
+    if status.returncode != 0 or status.truncated or status.timed_out:
+        raise ScaffoldError(
+            "PREPARATION_CONFLICT",
+            "Local changes to Core's patch inputs could not be inspected (%s), so nothing was changed." % (
+                "git status timed out" if status.timed_out else
+                "git status output was too large to read completely" if status.truncated else
+                "git status exit %d" % status.returncode), details={"repository": str(identity.core)})
+    return trees, status.stdout.splitlines()
 
 
 def snapshot_files(identity, report):
