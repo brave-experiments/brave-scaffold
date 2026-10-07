@@ -205,6 +205,14 @@ class BuildTests(BuildTestCase):
         self.assertEqual(self.sandbox.records(), [])
         self.assertFalse((self.src / "out").exists())
 
+    def test_a_plan_refuses_the_same_device_option_the_real_run_refuses(self):
+        for extra in ([], ["--plan"]):
+            with self.subTest(extra=extra):
+                result, document = self.document("build", "mac", "--device", "emulator-5554", *extra)
+                self.assertEqual((result.returncode, document["error"]["code"]), (2, "INVALID_INPUT"))
+                self.assertIn("--device", document["error"]["message"])
+        self.assertEqual(self.node_calls(), [])
+
     def test_zero_exit_with_unresolved_output_is_a_warning_for_build_and_sync_build(self):
         result, document = self.document("build", "--target=brave_unit_tests")
         self.assertEqual((result.returncode, document["status"], document["exit_code"]), (0, "ok", 0))

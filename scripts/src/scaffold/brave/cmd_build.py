@@ -462,12 +462,12 @@ def do_build(ctx, command, sync_first=False, run_after=False):
         raise ScaffoldError("INVALID_INPUT", "--all-devices applies to Android only.")
     if parsed.get("skip_support_refresh") and effective.target != "android":
         raise ScaffoldError("INVALID_INPUT", "--skip-support-refresh applies to Android only.")
+    if parsed.get("device") and effective.target != "android":
+        raise ScaffoldError("INVALID_INPUT", "--device applies to Android and iOS only.")
     if parsed.get("plan"):
         sync_plan = sync_module.sync_arguments(ctx, effective.target, [], identity) if sync_first else None
         return plan_result(command, effective, build_plan_steps(ctx, identity, effective, "build", (), sync_plan,
                                                                 run_after))
-    if parsed.get("device") and effective.target != "android":
-        raise ScaffoldError("INVALID_INPUT", "--device applies to Android and iOS only.")
     execution = execution_module.load(ctx, identity)
     device = android.preflight_deployment(execution.context(ctx), effective.arch) if run_after and effective.target == "android" \
         else None
