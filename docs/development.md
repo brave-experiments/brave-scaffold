@@ -57,7 +57,8 @@ runner turns either into exactly one output document.
 ```sh
 python3.14 -m venv --without-pip scripts/.venv
 cd scripts
-.venv/bin/python -m unittest discover -s tests -t .
+.venv/bin/python -m unittest discover -s tests -t .   # serial, about twelve minutes
+.venv/bin/python -m tests.run_parallel                # the same tests, modules in parallel
 ```
 
 Tests use only the standard library. Fast suites need no real checkout, SDK,
@@ -83,7 +84,14 @@ environments with `direnv allow`; nothing approves a real environment.
   is needed.
 - **Python 3.14+** as the scaffold runtime.
 
-The full suite takes about ten to fifteen minutes. Run a focused set while you work, for example
+The full suite takes about twelve minutes serially. `tests.run_parallel` runs each test module as its own
+process, up to `--jobs N` at a time (default: the core count, at most 8), and finished in about 2½ minutes on an
+8-job run; the longest single module, `test_android`, sets the floor. It takes module names or files
+(`tests.run_parallel --jobs 4 tests/unit/test_buildopts.py`) and `--suite unit|integration`, prints each module as
+it finishes and the output of any that fail, and exits non-zero if any module fails or runs no tests. It leaves
+out `tests/acceptance`, which needs a real checkout. Test sandboxes are disposable and separate, so modules do
+not interfere, and the sandbox environment sets `BCORE_NOTIFY_BACKEND=none`, so no test run raises a desktop
+notification. Run a focused set while you work, for example
 `.venv/bin/python -m unittest tests.integration.test_clean tests.integration.test_plans`, or one
 unit module such as `tests.unit.test_buildopts`; unit tests need no direnv, and integration classes
 name what they need in their skip messages. The one timing-sensitive test is
