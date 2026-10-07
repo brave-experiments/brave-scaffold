@@ -36,9 +36,19 @@ class DoctorTests(SandboxTest):
         self.assertEqual(len(names), len(set(names)))
         rbe = next(check for check in document["checks"] if check["name"] == "rbe-env")
         self.assertTrue(rbe["required"])
-        self.assertEqual(rbe["scopes"], ["mac", "rbe", "android"])
+        self.assertEqual(rbe["scopes"], ["mac", "rbe"])
         repairs = document["error"]["repairs"]
         self.assertEqual(len(repairs), len({json.dumps(step, sort_keys=True) for step in repairs}))
+
+    def test_default_scopes_leave_android_ios_and_signing_opt_in(self):
+        result, document = self.doctor("--checkout", "main")
+        self.assertEqual(document["data"]["scopes"], ["mac", "rbe", "shell"])
+        names = {check["name"] for check in document["checks"]}
+        for name in ("adb", "android-gclient-target", "git-signing-format", "signer-program", "signing-key"):
+            self.assertNotIn(name, names)
+        for scope in ("android", "ios", "signing"):
+            _, named = self.doctor(scope, "--checkout", "main")
+            self.assertEqual(named["data"]["scopes"], [scope])
 
     def two_checkouts(self):
         second = self.sandbox.make_checkout("second")

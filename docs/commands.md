@@ -296,7 +296,8 @@ something, so a plan can be compared with what was dispatched.
 `bcore doctor [mac|android|ios|rbe|shell|signing]` runs named checks, each `pass`, `blocker`, `warning`,
 `unsupported`, or `not_checked` (in text output marked ✅, ❌, ⚠️, 🚫, and ❔, with a legend line;
 JSON keeps the status words), marked required or optional. Without a scope it
-runs every delivered scope. A blocker in a required check gives
+runs `mac`, `rbe`, and `shell`. Name `android`, `ios`, or `signing` to check them;
+they are not part of the default run. A blocker in a required check gives
 `READINESS_BLOCKED`; otherwise an unevaluated required check gives
 `READINESS_INCOMPLETE`; both exit `3`. Optional problems are warnings and do not
 fail readiness. Outside a checkout, doctor inspects every configured checkout and runs shared

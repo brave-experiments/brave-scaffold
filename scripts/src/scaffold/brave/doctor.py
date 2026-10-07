@@ -34,6 +34,8 @@ SCOPES = {
     "ios": ("machine", "host-mac", "ios-machine", "checkout", "ios-build"),
 }
 
+# Android, iOS, and signing readiness depend on setup many developers never use, so they run only when named.
+DEFAULT_SCOPES = ("mac", "rbe", "shell")
 
 _check = make_check
 
@@ -285,7 +287,7 @@ def run_doctor(ctx):
             "UNSUPPORTED_CAPABILITY" if deferred else "INVALID_INPUT",
             "Doctor scope %r is %s." % (requested, "not available in this release" if deferred else "unknown"),
             details={"scopes": sorted(scopes_map)})
-    scopes = [requested] if requested else list(scopes_map)
+    scopes = [requested] if requested else list(DEFAULT_SCOPES)
     groups = {}
     for scope in scopes:
         for group in scopes_map[scope]:
