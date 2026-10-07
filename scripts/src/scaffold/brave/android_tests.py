@@ -27,7 +27,7 @@ SUITES = {"brave_junit_tests": HOST, "brave_java_unit_tests": DEVICE}
 RUNNERS = {"brave_junit_tests": "bin/run_brave_junit_tests", "brave_java_unit_tests": "bin/run_brave_java_unit_tests"}
 DEVICE_TOKENS = ("--device", "-s", "--adb-path", "--manual_android_test_device")
 PASSED = ("SUCCESS",)
-SKIPPED = ("SKIP", "NOTRUN")
+SKIPPED = ("SKIP", "SKIPPED", "NOTRUN")
 
 
 def suite_kind(suite):
