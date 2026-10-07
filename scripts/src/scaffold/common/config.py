@@ -243,12 +243,17 @@ def _record_of(block_text):
 
 
 def write_validated_config(path, text):
-    """Replace the configuration only if the new text is still valid TOML."""
+    """Replace the configuration only if the new text is still a valid configuration, not merely valid TOML."""
     try:
-        tomllib.loads(text)
+        data = tomllib.loads(text)
     except tomllib.TOMLDecodeError as error:
         raise ScaffoldError("CONFIG_INVALID", "%s would not be valid TOML after this change (%s); nothing was written."
                             % (path, error), details={"file": str(path)}, repairs=[])
+    try:
+        _validate(Path(path), data)
+    except ScaffoldError as error:
+        error.message = "%s This change would leave %s invalid; nothing was written." % (error.message, path)
+        raise
     atomic_write(path, text)
 
 
@@ -304,6 +309,7 @@ def upsert_checkout(path, core, alias=None, direnv_dir=None):
     match = None
     for start, end in _block_ranges(lines):
         found = _record_of("".join(lines[start:end])).get("core")
+        found = os.path.expanduser(found) if found else found
         if found and not os.path.isabs(found):
             found = str(path.absolute().parent / found)
         if found and Path(os.path.realpath(found)) == core_real:

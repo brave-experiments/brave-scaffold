@@ -70,6 +70,29 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(config.checkouts[0].core_real, expected.resolve())
         self.assertEqual(Path(config.checkouts[0].core), expected)
 
+    def test_updating_a_checkout_recorded_with_a_tilde_path_finds_it_instead_of_adding_a_duplicate(self):
+        home = self.dir / "home"
+        (home / "proj" / "src" / "brave").mkdir(parents=True)
+        self.path.write_text('schema_version = 1\n[[checkouts]]\ncore = "~/proj/src/brave"\n')
+        with mock.patch.dict(os.environ, {"HOME": str(home)}):
+            outcome = config_module.upsert_checkout(self.path, str(home / "proj" / "src" / "brave"), alias="main")
+            loaded = config_module.load_config(self.path)
+        self.assertEqual(outcome, "updated")
+        self.assertEqual(self.path.read_text().count("[[checkouts]]"), 1)
+        self.assertEqual([record.alias for record in loaded.checkouts], ["main"])
+        self.assertIn('core = "~/proj/src/brave"', self.path.read_text(), "the user's own spelling is kept")
+
+    def test_a_change_that_would_leave_the_configuration_invalid_is_never_written(self):
+        first, second = self.dir / "a" / "src" / "brave", self.dir / "b" / "src" / "brave"
+        self.path.write_text('schema_version = 1\n[[checkouts]]\nalias = "main"\ncore = "%s"\n' % first)
+        before = self.path.read_text()
+        with self.assertRaises(ScaffoldError) as caught:
+            config_module.upsert_checkout(self.path, str(second), alias="main")
+        self.assertEqual(caught.exception.code, "CONFIG_INVALID")
+        self.assertIn("nothing was written", caught.exception.message)
+        self.assertEqual(self.path.read_text(), before)
+        self.assertEqual(len(config_module.load_config(self.path).checkouts), 1, "the file still loads")
+
     def test_ios_is_a_valid_default_platform(self):
         config = self.load('schema_version = 1\n[defaults]\nplatform = "iOS"\n')
         self.assertEqual(config.default_platform, "ios")
