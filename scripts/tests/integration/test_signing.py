@@ -6,6 +6,7 @@
 
 import json
 import os
+import shlex
 import signal
 import subprocess
 import sys
@@ -99,9 +100,10 @@ class ProcessTests(unittest.TestCase):
         self.addCleanup(lambda: __import__("shutil").rmtree(self.dir, ignore_errors=True))
 
     def sleeper(self):
+        """A signer stand-in that publishes its pid atomically and starts in milliseconds, whatever the load."""
         pid_file = self.dir / "pid"
-        write_executable(self.dir / "child", "#!%s\nimport os, pathlib, time\n"
-                         "pathlib.Path(%r).write_text(str(os.getpid()))\ntime.sleep(30)\n" % (sys.executable, str(pid_file)))
+        write_executable(self.dir / "child", "#!/bin/sh\necho $$ > %s.tmp && mv %s.tmp %s\nexec sleep 30\n" % (
+            (shlex.quote(str(pid_file)),) * 3))
         return self.dir / "child", pid_file
 
     def assert_dead(self, pid_file):
@@ -111,10 +113,11 @@ class ProcessTests(unittest.TestCase):
     def test_timeout_reports_124_and_kills_the_signer(self):
         child, pid_file = self.sleeper()
         started = time.monotonic()
-        process = subprocess.run([str(harness(self.dir, child, timeout=0.5))], capture_output=True, timeout=10)
+        process = subprocess.run([str(harness(self.dir, child, timeout=2))], capture_output=True, timeout=20)
         self.assertEqual((process.returncode, process.stdout), (124, b""))
         self.assertIn(b"timed out", process.stderr)
-        self.assertLess(time.monotonic() - started, 5)
+        self.assertLess(time.monotonic() - started, 10)
+        self.assertTrue(pid_file.exists(), "the signer stand-in never started, so nothing was proved")
         self.assert_dead(pid_file)
 
     def test_termination_reports_130_and_kills_the_signer(self):
