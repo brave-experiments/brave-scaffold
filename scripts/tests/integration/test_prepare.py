@@ -69,6 +69,39 @@ class PatchPreparationTests(BuildTestCase):
         self.assertEqual((self.src / "base" / "BUILD.gn").read_text(), "my local experiment\n")
         self.assertEqual(document["error"]["repairs"][0]["argv"][:3], ["bcore", "drift", "--diff"])
 
+    def test_a_local_chmod_on_a_patched_file_stops_before_anything_runs(self):
+        self.document("build")
+        calls = len(self.node_calls())
+        self.hook = self.sandbox.hook(APPLY_HOOK)
+        self.update_patch_upstream()
+        target = self.src / "base" / "BUILD.gn"
+        target.chmod(0o755)
+        result, document = self.document("build")
+        self.assertEqual((result.returncode, document["error"]["code"]), (4, "PREPARATION_CONFLICT"))
+        (entry,) = document["error"]["details"]["files"]
+        self.assertEqual(entry["path"], "base/BUILD.gn")
+        self.assertIn("executable bit", entry["reason"])
+        self.assertEqual(len(self.node_calls()), calls, "neither apply_patches nor build ran")
+        self.assertEqual(target.stat().st_mode & 0o777, 0o755, "the local change is untouched")
+        target.chmod(0o644)
+        result, document = self.document("build")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(len(self.apply_calls()), 1, "undoing the change lets patch preparation proceed")
+
+    def test_a_receipt_written_before_modes_were_recorded_falls_back_to_the_mode_git_has(self):
+        self.document("build")
+        receipt = next((self.sandbox.config.parent / ".bcore" / "state").rglob("patch-receipt.json"))
+        data = json.loads(receipt.read_text())
+        self.assertIn("modes", data, "the receipt records each patched file's executable bit")
+        del data["modes"]
+        receipt.write_text(json.dumps(data))
+        self.hook = self.sandbox.hook(APPLY_HOOK)
+        self.update_patch_upstream()
+        (self.src / "base" / "BUILD.gn").chmod(0o755)
+        result, document = self.document("build")
+        self.assertEqual(document["error"]["code"], "PREPARATION_CONFLICT")
+        self.assertIn("executable bit", document["error"]["details"]["files"][0]["reason"])
+
     def test_drift_without_any_earlier_record_is_uncertain_ownership(self):
         self.update_patch_upstream()
         (self.src / "base" / "BUILD.gn").write_text("my unrecorded edit\n")

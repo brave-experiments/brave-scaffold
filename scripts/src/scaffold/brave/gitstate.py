@@ -143,6 +143,23 @@ def tracked_paths(repo, paths, log=None):
     return {name for name in result.stdout.split("\0") if name}
 
 
+def tracked_executable_bits(repo, paths, log=None):
+    """{path: whether Git records it as executable} for the given tracked repository-relative paths."""
+    paths = list(paths)
+    if not paths:
+        return {}
+    result = _git(repo, ["ls-files", "-s", "-z", "--", *paths], log)
+    if result.returncode != 0 or result.truncated:
+        raise ScaffoldError("PREPARATION_CONFLICT", "File modes in %s could not be listed completely." % repo,
+                            details={"repository": str(repo)})
+    found = {}
+    for entry in result.stdout.split("\0"):
+        meta, _, name = entry.partition("\t")
+        if name:
+            found[name] = meta.split()[0] == "100755"
+    return found
+
+
 def head_commit(repo, log=None):
     """The commit HEAD names, asked of Git so every layout (linked, separate, packed) gives the same answer."""
     result = _git(repo, ["rev-parse", "--verify", "--quiet", "HEAD^{commit}"], log, timeout=30)

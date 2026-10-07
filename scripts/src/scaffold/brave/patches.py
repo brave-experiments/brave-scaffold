@@ -7,6 +7,8 @@
 from __future__ import annotations
 
 import json
+import os
+import stat
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -167,11 +169,19 @@ def snapshot_files(identity, report):
 _CARRY = object()
 
 
+def is_executable(path):
+    try:
+        return bool(os.stat(path).st_mode & stat.S_IXUSR)
+    except OSError:
+        return False
+
+
 def write_receipt(identity, trees, files, root=None, extra_expected=_CARRY):
     """Record patch inputs and file checksums. Expected extra changes are kept unless replaced."""
     if extra_expected is _CARRY:
         extra_expected = (read_receipt(identity, root) or {}).get("extra_expected") or {}
     data = {"patches_tree": trees.get("patches"), "rewrite_tree": trees.get("rewrite"), "files": files,
+            "modes": {path: is_executable(identity.src / path) for path in files},
             "extra_expected": extra_expected}
     atomic_write(receipt_path(identity, root), json.dumps(data, sort_keys=True, indent=1) + "\n")
 
@@ -231,7 +241,7 @@ def plan_patch_preparation(identity, log=None, root=None):
         return PatchPlan("current", "Files match the patch metadata.", report, trees)
     known = (receipt or {}).get("files", {})
     stale = [entry for entry in inventory.entries if entry.stale_reason()]
-    conflicts, writes = write_set_conflicts(identity, stale, known, extra, log)
+    conflicts, writes = write_set_conflicts(identity, stale, known, extra, log, (receipt or {}).get("modes") or {})
     if conflicts:
         return PatchPlan("conflict", "Applying patches could overwrite Chromium files with changes not explained by saved patch records.", report, trees,
                          conflicts, receipt is not None, writes)
@@ -249,7 +259,7 @@ def plan_patch_preparation(identity, log=None, root=None):
                      sorted(str(entry.info) for entry in stale if entry.has_patch))
 
 
-def write_set_conflicts(identity, stale, known, extra, log):
+def write_set_conflicts(identity, stale, known, extra, log, modes=None):
     """(conflicts, writes) for applying the stale patches.
 
     Applying a patch resets every file it targets now or recorded earlier, so all of them are checked, not only
@@ -257,6 +267,7 @@ def write_set_conflicts(identity, stale, known, extra, log):
     recorded, or when nothing claims it and Git sees no local work there. Anything else could be lost: staged,
     unstaged, deleted, renamed, and untracked work all count, and so does any Git failure or unreadable patch.
     """
+    modes = modes or {}
     conflicts, keys = [], {}
     for entry in stale:
         if entry.has_patch and entry.target_problem:
@@ -279,6 +290,10 @@ def write_set_conflicts(identity, stale, known, extra, log):
             changes = gitstate.inspect_changes(repository.path, log, sorted(relatives)) \
                 if repository.path.exists() else gitstate.Changes()
             dirty, staged = changes.all, changes.staged
+            # Receipts written before modes were recorded fall back to the mode Git has for the file.
+            unrecorded = sorted(name for name, key in relatives.items() if key not in modes and name in dirty)
+            git_exec = gitstate.tracked_executable_bits(repository.path, unrecorded, log) \
+                if unrecorded and repository.path.exists() else {}
             if repository == chromium:
                 tracked = gitstate.tracked_paths(repository.path, CORE_WRITTEN, log)
                 dirty |= {path for path in CORE_WRITTEN if path not in tracked
@@ -290,13 +305,14 @@ def write_set_conflicts(identity, stale, known, extra, log):
             if relative in staged:
                 conflicts.append({"path": key, "reason": "has staged changes that patch preparation could discard"})
                 continue
-            reason = _write_conflict(identity, key, relative, keys[key], relative in dirty, known, extra)
+            reason = _write_conflict(identity, key, relative, keys[key], relative in dirty, known, extra,
+                                     modes, git_exec)
             if reason:
                 conflicts.append({"path": key, "reason": reason})
     return conflicts, sorted(keys)
 
 
-def _write_conflict(identity, key, relative, owners, dirty, known, extra):
+def _write_conflict(identity, key, relative, owners, dirty, known, extra, modes=None, git_exec=None):
     if (identity.src / key).is_symlink():
         return "local symlink would redirect a patch or version write; save or remove the link first"
     # Clean tracked bytes are safe to replace even when old patch metadata names different output.
@@ -307,7 +323,7 @@ def _write_conflict(identity, key, relative, owners, dirty, known, extra):
     accepted = recorded | {value for value in (known.get(key), extra.get(key)) if value}
     current = sha256_or_none(identity.src / key)
     if current is not None and current in accepted:
-        return None
+        return _mode_conflict(identity, key, relative, modes or {}, git_exec or {})
     if not recorded and key not in known and key not in extra:
         return ("has local changes (staged, unstaged, deleted, renamed, or untracked) and a patch will be "
                 "applied to it") if dirty else None
@@ -316,6 +332,20 @@ def _write_conflict(identity, key, relative, owners, dirty, known, extra):
     if current is None:
         return "file is missing"
     return "changed since patches were last applied here"
+
+
+def _mode_conflict(identity, key, relative, modes, git_exec):
+    """Matching bytes do not make a file safe to reset: a local chmod would be lost with them."""
+    if key in modes:
+        expected, where = modes[key], "when patches were last applied here"
+    elif relative in git_exec:
+        expected, where = git_exec[relative], "in Git"
+    else:
+        return None
+    if is_executable(identity.src / key) != expected:
+        return ("its executable bit differs from the one recorded %s, and patch preparation would reset it; "
+                "restore the mode or save the change first" % where)
+    return None
 
 
 def conflict_error(plan, identity):

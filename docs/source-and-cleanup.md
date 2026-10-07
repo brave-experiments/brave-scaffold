@@ -86,7 +86,9 @@ Applying a patch resets every file it targets, so the command checks the whole w
 set of each patch Core would apply again: the files the current patch changes and the
 files its earlier metadata recorded. Staged changes block preparation independently
 of working-file content. Otherwise, a file is safe when it still holds content the
-metadata or the scaffold's receipt recorded for it. Otherwise it may hold local work,
+metadata or the scaffold's receipt recorded for it and has the executable bit recorded for it
+(the receipt keeps each patched file's bit; an older receipt falls back to the bit Git has), because a
+local `chmod` would be reset along with the contents. Otherwise it may hold local work,
 and the command stops with `PREPARATION_CONFLICT`, lists the files, and suggests
 `bcore drift --diff`. That covers a file that differs from its metadata and from the
 receipt, a file with no earlier record, and a target a patch gained that has staged
