@@ -91,6 +91,13 @@ just as they do for `bcore build`. Build and test output streams live to the con
 and the diagnostic log. A failed package command returns scaffold exit 5 and saves
 the child's status as `child_exit_code` in JSON and the operation record.
 Other arguments go to `bpm run test` after the generated ones.
+
+A test run that fails or is interrupted marks the output directory as needing
+revalidation, shown by `bcore status` and by a warning from `bcore run`. The test command compiles
+into the same directory as the application, and the scaffold cannot tell a compile
+failure from a failing test, so it assumes the output may be partly overwritten. A passing test
+run does not clear the mark and does not add one; only a build that verifies the output clears it.
+
 Android tests are covered in [Android](android.md#tests). The effective target
 decides whether `test` runs the macOS or the Android path: an Android default
 platform or forwarded `--target_os=android` selects Android, forwarding
