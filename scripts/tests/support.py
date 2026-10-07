@@ -231,7 +231,7 @@ class Sandbox:
         env = {"PATH": "%s:/usr/bin:/bin:/opt/homebrew/bin" % self.bin, "HOME": str(self.home),
                "XDG_DATA_HOME": str(self.data), "XDG_CONFIG_HOME": str(self.root / "xdg"),
                "FAKE_BUNDLE_ID": self.bundle_id, "FAKE_RECORD": str(self.record), "FAKE_APP_PIDS": str(self.root / "app-pids"), "FAKE_SLEEPER": os.environ["FAKE_SLEEPER"],
-               "LANG": "en_US.UTF-8"}
+               "LANG": "en_US.UTF-8", "BCORE_NOTIFY_BACKEND": "none"}
         env.update(extra)
         return env
 

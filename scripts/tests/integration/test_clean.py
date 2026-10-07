@@ -310,6 +310,14 @@ class InterruptedCleanupTests(SandboxTest):
         self.assertEqual((code, document["status"]), (130, "cancelled"))
         return document
 
+    def test_cleanup_never_sends_a_real_notification(self):
+        from unittest import mock
+        from scaffold.common import notify
+        with mock.patch.object(notify.MacNotifier, "send") as send:
+            code, _ = self.run_cli("mac", "--configuration", "debug", "--execute")
+        self.assertEqual(code, 0)
+        send.assert_not_called()
+
     def test_cancellation_after_the_rename_records_the_remainder_and_the_partial_outcome(self):
         for partial in (False, True):
             with self.subTest(partial=partial):

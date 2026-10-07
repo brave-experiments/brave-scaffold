@@ -15,6 +15,21 @@ from tests.support import SandboxTest, tree_snapshot, write_executable
 SKIP = shutil.which("direnv") is None
 
 
+class NotificationIsolationTests(SandboxTest):
+    """Tests never raise a real desktop notification or ring the terminal, whatever process they start."""
+
+    def test_the_sandbox_environment_turns_off_notification_delivery(self):
+        from scaffold.common import notify
+        environment = self.sandbox.env()
+        self.assertEqual(environment.get(notify.BACKEND_VARIABLE), "none")
+        self.assertIsNone(notify.default_notifier(environment))
+        self.assertIsNone(notify.default_bell(environment))
+
+    def test_a_test_can_still_ask_for_a_notification_backend_explicitly(self):
+        from scaffold.common import notify
+        self.assertIsNotNone(notify.default_notifier(self.sandbox.env(**{notify.BACKEND_VARIABLE: "macos"})))
+
+
 @unittest.skipIf(SKIP, "direnv is required")
 class IsolationTests(SandboxTest):
     def test_scaffold_commands_leave_core_and_its_git_state_untouched(self):
