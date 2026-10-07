@@ -74,5 +74,26 @@ class ExitVerificationTests(unittest.TestCase):
         os.kill(self.process.pid, signal.SIGKILL)
 
 
+class ForeignProcessTests(unittest.TestCase):
+    def test_a_process_this_user_may_not_signal_is_reported_not_crashed_on(self):
+        denied = []
+
+        def kill(pid, sig):
+            denied.append((pid, sig))
+            raise PermissionError(1, "Operation not permitted")
+
+        with mock.patch.object(macos, "run_capture", return_value=ProcessResult(returncode=0)), \
+                mock.patch.object(macos.os, "kill", side_effect=kill), \
+                mock.patch.object(macos, "_alive", return_value=True), \
+                mock.patch.object(macos, "QUIT_WAIT_SECONDS", 0.2), mock.patch.object(macos, "TERM_WAIT_SECONDS", 0.2), \
+                mock.patch.object(macos, "KILL_WAIT_SECONDS", 0.2):
+            with self.assertRaises(ScaffoldError) as caught:
+                macos.stop_instances(BUNDLE, [{"pid": 4242, "bundle": "/x.app"}], {}, CommandLog(enabled=False))
+        self.assertEqual(caught.exception.code, "LAUNCH_FAILED")
+        self.assertEqual(caught.exception.details["not_permitted"], [4242])
+        self.assertIn("not permitted", caught.exception.message)
+        self.assertEqual([sig for _, sig in denied], [signal.SIGTERM, signal.SIGKILL], "escalation still ran")
+
+
 if __name__ == "__main__":
     unittest.main()

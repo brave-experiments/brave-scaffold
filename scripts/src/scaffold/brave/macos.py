@@ -144,17 +144,25 @@ def _stop_instances(bundle, instances, environ, log):
     steps.append("quit")
     if _wait_gone(pids, QUIT_WAIT_SECONDS, log):
         return steps
+    not_permitted = []
     for name, sig, wait in (("terminate", signal.SIGTERM, TERM_WAIT_SECONDS), ("kill", signal.SIGKILL, KILL_WAIT_SECONDS)):
         for pid in pids:
             try:
                 os.kill(pid, sig)
             except ProcessLookupError:
                 pass
+            except PermissionError:
+                if pid not in not_permitted:
+                    not_permitted.append(pid)
         steps.append(name)
         if _wait_gone(pids, wait, log):
             return steps
-    raise ScaffoldError("LAUNCH_FAILED", "Could not stop the running %s (process %s)." % (
-        bundle["name"], ", ".join(str(p) for p in pids)), details={"pids": pids, "steps": steps})
+    message = "Could not stop the running %s (process %s)." % (bundle["name"], ", ".join(str(p) for p in pids))
+    if not_permitted:
+        message += " This user is not permitted to signal process %s; another user may own it." % (
+            ", ".join(str(p) for p in not_permitted))
+    raise ScaffoldError("LAUNCH_FAILED", message,
+                        details={"pids": pids, "steps": steps, "not_permitted": not_permitted})
 
 
 def launch(bundle, environ, log=None):
