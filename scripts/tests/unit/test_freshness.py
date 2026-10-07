@@ -4,6 +4,8 @@
 # You can obtain one at https://mozilla.org/MPL/2.0/.
 """Freshness evidence: which inputs are compared and when the answer is unknown."""
 
+import os
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -21,6 +23,51 @@ class State:
 
 CURRENT = {"core_head": "a", "chromium_head": "b", "core_worktree": "c", "patched_files": "d", "env_file": "e",
            "chromium_worktree": "f"}
+
+
+class TrackedChangesTests(unittest.TestCase):
+    """The Chromium tree's fingerprint reflects edits, not file timestamps."""
+
+    def setUp(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.repo = Path(directory.name)
+        for args in (["init", "-q", "-b", "main"], ["config", "user.email", "t@example.com"],
+                     ["config", "user.name", "T"], ["config", "commit.gpgsign", "false"]):
+            self.git(*args)
+        (self.repo / "a.txt").write_text("hello\n")
+        (self.repo / "b.txt").write_text("world\n")
+        self.git("add", ".")
+        self.git("commit", "-qm", "init")
+
+    def git(self, *args):
+        subprocess.run(["git", "-C", str(self.repo), *args], check=True, capture_output=True)
+
+    def state(self):
+        return freshness.tracked_changes_state(self.repo)
+
+    def test_touching_a_file_without_changing_it_does_not_change_the_fingerprint(self):
+        before = self.state()
+        os.utime(self.repo / "a.txt", ns=(1_000_000_000, 1_000_000_000))
+        self.assertEqual(self.state(), before)
+        self.git("status", "--porcelain")  # an unrelated command refreshes the index
+        self.assertEqual(self.state(), before)
+
+    def test_an_edit_changes_the_fingerprint_and_reverting_it_restores_it(self):
+        before = self.state()
+        (self.repo / "a.txt").write_text("hello, edited\n")
+        edited = self.state()
+        self.assertNotEqual(edited, before)
+        (self.repo / "a.txt").write_text("hello\n")
+        self.git("status", "--porcelain")
+        self.assertEqual(self.state(), before)
+
+    def test_staged_changes_count_and_a_missing_repository_is_unknown(self):
+        before = self.state()
+        (self.repo / "b.txt").write_text("staged\n")
+        self.git("add", "b.txt")
+        self.assertNotEqual(self.state(), before)
+        self.assertIsNone(freshness.tracked_changes_state(self.repo / "nowhere"))
 
 
 class AssessTests(unittest.TestCase):

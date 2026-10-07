@@ -51,12 +51,15 @@ def tracked_changes_state(repo, log=None, timeout=90):
     Untracked files and other repositories nested inside are not covered. None when Git cannot answer in time,
     so a slow or failing check makes freshness unknown instead of claiming a match.
     """
-    result = run_capture(["git", "--no-optional-locks", "-C", str(repo), "diff-index", "-z", "--name-only", "HEAD",
-                          "--"], str(repo), None, log, timeout=timeout, max_bytes=EVIDENCE_BYTES)
+    # status compares content for files whose timestamps changed; diff-index would list them as changed until
+    # the index is refreshed, and --no-optional-locks keeps this from writing the Chromium index to refresh it.
+    result = run_capture(["git", "--no-optional-locks", "-C", str(repo), "status", "--porcelain=v1", "-z",
+                          "--no-renames", "--untracked-files=no"], str(repo), None, log, timeout=timeout,
+                         max_bytes=EVIDENCE_BYTES)
     if result.returncode != 0 or result.timed_out or result.truncated:
         return None
     digest = hashlib.sha256()
-    for name in sorted(item for item in result.stdout.split("\0") if item):
+    for name in sorted(entry[3:] for entry in result.stdout.split("\0") if len(entry) > 3):
         digest.update(("%s=%s\n" % (name, _file_signature(Path(repo) / name))).encode())
     return digest.hexdigest()
 
