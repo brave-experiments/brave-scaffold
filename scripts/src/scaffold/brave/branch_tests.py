@@ -322,12 +322,12 @@ def map_file(repo, path, base, scope, groups, phases, unmapped):
             if part in wrapped:
                 unmapped.append((path, "%s native tests are not available through bcore" % name))
                 return
-        fixtures = sorted({m.group("fixture") for m in CPP_TEST_CASE_RE.finditer(content_of(repo, path, scope))})
-        if not fixtures:
+        filters = {("*/%s.*" if m.group("macro").endswith("_P") else "%s.*") % m.group("fixture")
+                   for m in CPP_TEST_CASE_RE.finditer(content_of(repo, path, scope))}
+        if not filters:
             unmapped.append((path, "no C++ test fixture macro found in the file"))
         else:
-            add("mac", "brave_browser_tests" if is_cpp_browser_test(path) else "brave_unit_tests",
-                [fixture + ".*" for fixture in fixtures])
+            add("mac", "brave_browser_tests" if is_cpp_browser_test(path) else "brave_unit_tests", sorted(filters))
         return
     target = webui_test_target(path)
     if target:

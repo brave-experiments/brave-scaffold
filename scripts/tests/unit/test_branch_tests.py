@@ -72,6 +72,16 @@ class BranchTestsTests(unittest.TestCase):
         self.assertEqual([path for path, _ in discovery.unmapped], ["browser/extensions/android/native_browsertest.cc"])
         self.assertEqual(len(discovery.test_files), 5)
 
+    def test_parameterized_fixtures_match_their_instantiation_prefixes(self):
+        self.write("browser/param_unittest.cc",
+                   "TEST_P(ParamTest, Works) {}\nTEST_F(PlainTest, One) {}\nTEST_P(PlainTest2, Two) {}\n")
+        self.write("browser/param_browsertest.cc",
+                   "IN_PROC_BROWSER_TEST_P(ParamBrowserTest, Runs) {}\nIN_PROC_BROWSER_TEST_F(Plain, Runs) {}\n")
+        self.commit("tests")
+        self.assertEqual(self.phases(self.found()), {
+            ("mac", "brave_unit_tests"): ["*/ParamTest.*", "*/PlainTest2.*", "PlainTest.*"],
+            ("mac", "brave_browser_tests"): ["*/ParamBrowserTest.*", "Plain.*"]})
+
     def test_a_junit_file_without_a_readable_package_gets_a_wildcard_filter(self):
         self.write("android/junit/src/NoPackageTest.java", "public class NoPackageTest {}\n")
         self.commit("t")
