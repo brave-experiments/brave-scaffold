@@ -16,10 +16,11 @@ from ..common.results import ScaffoldError, repair
 SCOPES = ("both", "committed", "worktree")
 DEFAULT_BASE = "origin/master"
 CPP_TEST_CASE_RE = re.compile(
-    r"^\s*(?P<macro>IN_PROC_BROWSER_TEST(?:_[A-Z]+)?|TEST(?:_[A-Z]+)?|TEST_F|TEST_P)\s*"
+    r"^\s*(?P<macro>IN_PROC_BROWSER_TEST(?:_[A-Z]+)?|TYPED_TEST(?:_P)?|TEST(?:_[A-Z]+)?|TEST_F|TEST_P)\s*"
     r"\(\s*(?P<fixture>[A-Za-z_][A-Za-z0-9_]*)\s*,\s*(?P<test>[A-Za-z_][A-Za-z0-9_]*)\s*\)", re.MULTILINE)
 JAVA_PACKAGE_RE = re.compile(r"^\s*package\s+([A-Za-z_][A-Za-z0-9_.]*)\s*;", re.MULTILINE)
-DIFF_HUNK_RE = re.compile(r"^@@\s+-\d+(?:,\d+)?\s+\+(?P<start>\d+)(?:,(?P<count>\d+))?\s+@@", re.MULTILINE)
+DIFF_HUNK_RE = re.compile(r"^@@\s+-(?P<old_start>\d+)(?:,(?P<old_count>\d+))?\s+\+(?P<start>\d+)(?:,(?P<count>\d+))?\s+@@",
+                          re.MULTILINE)
 NAMED_FUNCTION_RE = re.compile(r"\b(?:async\s+)?function\s+(?P<name>[A-Za-z_$][A-Za-z0-9_$]*)\s*\([^)]*\)\s*\{",
                                re.MULTILINE)
 NAMED_SUITE_RE = re.compile(r"\bsuite\s*\(\s*(['\"])(?P<suite>[^'\"]+)\1\s*,\s*(?P<function>[A-Za-z_$][A-Za-z0-9_$]*)\b",
@@ -222,13 +223,12 @@ def mocha_suite_spans(content):
 ALL_SUITES = None  # every suite registered for the file
 
 
-def mocha_selection(content, lines, deletions=()):
+def mocha_selection(content, lines, old_content="", removed=()):
     """The suites the changes touch, or ALL_SUITES when a change lies outside every suite body.
 
-    `lines` are added or modified lines. `deletions` are the lines that precede removed text (0 at the start of
-    the file), because removed text has no line of its own. Text counts as inside a suite only if the lines on
-    both sides of it are. A line outside the suites may be a helper, fixture, or value any of them uses, so it
-    cannot be tied to one.
+    `lines` are added or modified lines of `content`. `removed` are lines of `old_content`, which the changes took
+    out, and are placed in that old file's suites: removed text has no line of its own in the new one. A line outside
+    the suites may be a helper, fixture, or value any of them uses, so it cannot be tied to one.
     """
     spans = mocha_suite_spans(content)
     touched = set()
@@ -237,32 +237,33 @@ def mocha_selection(content, lines, deletions=()):
         if not inside:
             return ALL_SUITES
         touched |= inside
-    for before in deletions:
-        inside = {name for name, start, end in spans if start <= before and before + 1 <= end}
-        if not inside:
-            return ALL_SUITES
-        touched |= inside
+    if removed:
+        old_spans = mocha_suite_spans(old_content) if old_content else []
+        still_there = {name for name, _, _ in spans}
+        for number in removed:
+            inside = {name for name, start, end in old_spans if start <= number <= end}
+            if not inside:
+                return ALL_SUITES
+            touched |= inside & still_there
     return touched
 
 
 def changed_lines(repo, path, base, scope, groups, content):
-    """(added or modified lines, lines that precede removed text) in the file's current numbering."""
+    """(lines added or modified now, the file's content before the changes, the lines removed from that content)."""
     if path in groups["untracked"]:
-        return set(range(1, len(content.splitlines()) + 1)), set()
-    if scope == "committed":
-        args = ["diff", "--unified=0", base + "...HEAD", "--", path]
-    elif scope == "worktree":
-        args = ["diff", "--unified=0", "HEAD", "--", path]
+        return set(range(1, len(content.splitlines()) + 1)), "", set()
+    if scope == "worktree":
+        before, args = "HEAD", ["diff", "--unified=0", "HEAD", "--", path]
     else:
-        args = ["diff", "--unified=0", repo.git("merge-base", base, "HEAD").strip(), "--", path]
-    found, removed_after = set(), set()
+        before = repo.git("merge-base", base, "HEAD").strip()
+        args = ["diff", "--unified=0", base + "...HEAD" if scope == "committed" else before, "--", path]
+    added, removed = set(), set()
     for match in DIFF_HUNK_RE.finditer(repo.git(*args)):
+        old_start, old_count = int(match.group("old_start")), int(match.group("old_count") or "1")
         start, count = int(match.group("start")), int(match.group("count") or "1")
-        if count == 0:
-            removed_after.add(start)
-        else:
-            found.update(range(start, start + count))
-    return found, removed_after
+        removed.update(range(old_start, old_start + old_count))
+        added.update(range(start, start + count))
+    return added, repo.git("show", "%s:%s" % (before, path), check=False), removed
 
 
 def parse_webui_harnesses(content, target, source):
@@ -342,6 +343,19 @@ def java_filter(content, path, suite):
     return "%s.%s.*" % (package.group(1), name) if package else "*%s.*" % name
 
 
+def cpp_filter(macro, fixture):
+    """The gtest filter for every test a fixture's macro defines.
+
+    gtest adds an instantiation prefix to value-parameterized tests (Prefix/Fixture.Test/N) and an index to typed
+    ones (Fixture/N.Test, or Prefix/Fixture/N.Test for type-parameterized suites), so a plain Fixture.* matches none.
+    """
+    if macro == "TYPED_TEST":
+        return "%s/*.*" % fixture
+    if macro == "TYPED_TEST_P":
+        return "*/%s/*.*" % fixture
+    return ("*/%s.*" if macro.endswith("_P") else "%s.*") % fixture
+
+
 def map_file(repo, path, base, scope, groups, phases, unmapped):
     def add(target, suite, filters):
         phase = phases.setdefault((target, suite), Phase(target, suite))
@@ -362,7 +376,7 @@ def map_file(repo, path, base, scope, groups, phases, unmapped):
             if part in wrapped:
                 unmapped.append((path, "%s native tests are not available through bcore" % name))
                 return
-        filters = {("*/%s.*" if m.group("macro").endswith("_P") else "%s.*") % m.group("fixture")
+        filters = {cpp_filter(m.group("macro"), m.group("fixture"))
                    for m in CPP_TEST_CASE_RE.finditer(content_of(repo, path, scope))}
         if not filters:
             unmapped.append((path, "no C++ test fixture macro found in the file"))

@@ -362,8 +362,8 @@ Filters are built from the files:
 | --- | --- | --- |
 | `*/junit/*.java` | Android `brave_junit_tests` | `package.Class.*` (`*Class.*` without a package) |
 | `*/javatests/*.java` | Android `brave_java_unit_tests` | `Class.*` |
-| `*_unittest.cc` | macOS `brave_unit_tests` | `Fixture.*` for each fixture in the file (`*/Fixture.*` for `TEST_P` fixtures, which gtest names with an instantiation prefix) |
-| `*_browsertest.cc`, `*_uitest.cc` | macOS `brave_browser_tests` | `Fixture.*` for each fixture in the file (`*/Fixture.*` for `IN_PROC_BROWSER_TEST_P` fixtures) |
+| `*_unittest.cc` | macOS `brave_unit_tests` | `Fixture.*` for each fixture in the file (`*/Fixture.*` for `TEST_P` fixtures, which gtest names with an instantiation prefix; `Fixture/*.*` for `TYPED_TEST` and `*/Fixture/*.*` for `TYPED_TEST_P`, whose suites are type-indexed) |
+| `*_browsertest.cc`, `*_uitest.cc` | macOS `brave_browser_tests` | `Fixture.*` for each fixture in the file (`*/Fixture.*` for `IN_PROC_BROWSER_TEST_P` fixtures; typed fixtures as above) |
 | desktop WebUI `.ts`/`.js` under `chrome/test/data/webui` | macOS `brave_browser_tests` | the C++ harness that registers each changed Mocha suite; every suite in the file with `--file`, or when a change, including a deletion, lies outside all suite bodies (a shared helper or value any suite may use) |
 
 The output lists the suites and filters that will run, and every file it cannot map (for

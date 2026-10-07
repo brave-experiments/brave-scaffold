@@ -84,6 +84,24 @@ class BranchTestsTests(unittest.TestCase):
             ("mac", "brave_unit_tests"): ["*/ParamTest.*", "*/PlainTest2.*", "PlainTest.*"],
             ("mac", "brave_browser_tests"): ["*/ParamBrowserTest.*", "Plain.*"]})
 
+    def test_typed_fixtures_get_filters_that_match_their_type_indexed_names(self):
+        self.write("browser/typed_unittest.cc",
+                   "TEST_F(PlainTest, One) {}\nTYPED_TEST(TypedTest, Works) {}\nTYPED_TEST_P(TypedParamTest, Works) {}\n"
+                   "TEST_P(ValueParamTest, Works) {}\n")
+        self.write("browser/typed_browsertest.cc", "IN_PROC_BROWSER_TEST_F(PlainBrowserTest, A) {}\n"
+                   "  TYPED_TEST(TypedBrowserTest, B) {}\n")
+        self.commit("typed tests")
+        discovery = self.found()
+        self.assertEqual(self.phases(discovery), {
+            ("mac", "brave_unit_tests"): ["*/TypedParamTest/*.*", "*/ValueParamTest.*", "PlainTest.*", "TypedTest/*.*"],
+            ("mac", "brave_browser_tests"): ["PlainBrowserTest.*", "TypedBrowserTest/*.*"]})
+        self.assertEqual(discovery.unmapped, [])
+
+    def test_a_file_with_only_typed_fixtures_is_mapped_too(self):
+        self.write("browser/only_typed_unittest.cc", "TYPED_TEST(OnlyTyped, Works) {}\n")
+        self.commit("only typed")
+        self.assertEqual(self.phases(self.found()), {("mac", "brave_unit_tests"): ["OnlyTyped/*.*"]})
+
     def test_a_junit_file_without_a_readable_package_gets_a_wildcard_filter(self):
         self.write("android/junit/src/NoPackageTest.java", "public class NoPackageTest {}\n")
         self.commit("t")
@@ -276,14 +294,44 @@ class BranchTestsTests(unittest.TestCase):
         self.commit("delete one beta test")
         self.assertEqual(self.webui_phase(self.found()), ["WebUiTest.Beta"])
 
-    def test_deletions_are_placed_by_the_lines_on_both_sides(self):
-        content = self.SETUP_BETWEEN.replace("const shared = 1;\n", "")  # Alpha is lines 1-3, Beta 4-6
+    def test_removed_lines_are_placed_by_the_suites_of_the_old_file(self):
+        old = self.SETUP_BETWEEN  # Alpha is lines 1-3, shared setup line 4, Beta lines 5-7
+        new = old.replace("const shared = 1;\n", "")  # Alpha is lines 1-3, Beta lines 4-6
         select = branch_tests.mocha_selection
-        self.assertEqual(select(content, set(), {1}), {"Alpha"}, "removed from inside Alpha")
-        self.assertEqual(select(content, set(), {5}), {"Beta"}, "removed from inside Beta")
-        for boundary in (0, 3, 6):
-            self.assertIs(select(content, set(), {boundary}), branch_tests.ALL_SUITES, boundary)
-        self.assertIs(select(content, {2}, {3}), branch_tests.ALL_SUITES, "a boundary deletion widens an inside edit")
+        self.assertEqual(select(new, set(), old, {2}), {"Alpha"})
+        self.assertEqual(select(new, set(), old, {6}), {"Beta"})
+        self.assertIs(select(new, set(), old, {4}), branch_tests.ALL_SUITES, "removed from between the suites")
+        self.assertEqual(select(new, {4}, old, {5}), {"Beta"}, "a suite's own declaration line was reworded")
+        self.assertIs(select(new, {4}, old, {4, 5}), branch_tests.ALL_SUITES,
+                      "shared setup removed together with the declaration line after it")
+        self.assertIs(select(new, {2}, old, {4}), branch_tests.ALL_SUITES, "an inside edit does not hide a shared one")
+        self.assertIs(select(new, set(), "", {1}), branch_tests.ALL_SUITES, "no old file to place removed lines in")
+
+    def test_removed_lines_of_a_suite_that_no_longer_exists_select_nothing_extra(self):
+        old = self.SETUP_BETWEEN
+        only_alpha = "suite('Alpha', function() {\n  test('a', () => {});\n});\n"
+        self.assertEqual(branch_tests.mocha_selection(only_alpha, set(), old, {6}), set())
+
+    def test_deleting_shared_setup_while_editing_the_adjacent_suite_selects_every_suite(self):
+        webui = "chromium_src/chrome/test/data/webui/settings/x_test.ts"
+        self.write(webui, self.SETUP_BETWEEN)
+        self.commit("setup between the suites")
+        self.git("branch", "-f", "base-ref", "HEAD")
+        self.write(webui, self.SETUP_BETWEEN.replace("const shared = 1;\nsuite('Beta', function() {",
+                                                    "suite('Beta', function() { // reworked"))
+        self.commit("delete the setup and reword the next line, which git reports as one hunk")
+        discovery = self.found()
+        self.assertEqual(self.webui_phase(discovery), ["WebUiTest.Alpha", "WebUiTest.Beta"])
+        self.assertEqual(discovery.unmapped, [])
+
+    def test_rewording_only_a_suite_declaration_still_selects_only_that_suite(self):
+        webui = "chromium_src/chrome/test/data/webui/settings/x_test.ts"
+        self.write(webui, self.SETUP_BETWEEN)
+        self.commit("setup between the suites")
+        self.git("branch", "-f", "base-ref", "HEAD")
+        self.write(webui, self.SETUP_BETWEEN.replace("suite('Beta', function() {", "suite('Beta', function() { // reworked"))
+        self.commit("reword Beta's declaration")
+        self.assertEqual(self.webui_phase(self.found()), ["WebUiTest.Beta"])
 
     def test_the_selection_helper_distinguishes_suite_lines_from_shared_lines(self):
         content = self.SHARED_WEBUI
