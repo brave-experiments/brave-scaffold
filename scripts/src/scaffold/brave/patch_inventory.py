@@ -12,9 +12,12 @@ this module's public results are relative to Chromium's source root unless a nam
 
 from __future__ import annotations
 
+import errno
 import hashlib
 import json
+import os
 import posixpath
+import stat
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -32,6 +35,9 @@ TARGET_MISSING = "target file missing"
 
 
 def sha256_file(path):
+    """The SHA-256 of a regular file. A named pipe would block the open and a device may never end, so neither is read."""
+    if not stat.S_ISREG(os.stat(path).st_mode):
+        raise OSError(errno.EINVAL, "not a regular file", str(path))
     digest = hashlib.sha256()
     with open(path, "rb") as stream:
         for chunk in iter(lambda: stream.read(1 << 20), b""):

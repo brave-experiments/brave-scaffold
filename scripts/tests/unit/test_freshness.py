@@ -7,6 +7,7 @@
 import os
 import subprocess
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 
@@ -121,6 +122,49 @@ class FileSignatureTests(unittest.TestCase):
         self.assertEqual(freshness._file_signature(path), plain, "group write depends on the umask, not on Git")
         os.chmod(path, 0o600)
         self.assertEqual(freshness._file_signature(path), plain)
+
+    def within_a_deadline(self, function, seconds=5):
+        """The function's result, or None if it blocked. A blocked reader is released so the test run can end."""
+        outcome = []
+        worker = threading.Thread(target=lambda: outcome.append(function()), daemon=True)
+        worker.start()
+        worker.join(seconds)
+        return outcome[0] if outcome else None
+
+    def unblock(self, path):
+        try:
+            os.close(os.open(path, os.O_WRONLY | os.O_NONBLOCK))
+        except OSError:
+            pass
+
+    def test_a_named_pipe_in_place_of_a_file_is_classified_without_being_opened(self):
+        pipe = self.dir / "was-a-file.txt"
+        os.mkfifo(pipe)
+        self.addCleanup(self.unblock, pipe)
+        self.assertEqual(self.within_a_deadline(lambda: freshness._file_signature(pipe)), "special:fifo",
+                         "opening a FIFO for reading blocks until something writes to it")
+
+    def test_devices_are_not_read(self):
+        self.assertEqual(freshness._file_signature("/dev/null"), "special:chardev")
+
+    def test_a_tracked_file_replaced_by_a_named_pipe_does_not_hang_the_fingerprints(self):
+        repo = self.dir / "repo"
+        repo.mkdir()
+        for args in (["init", "-q", "-b", "main"], ["config", "user.email", "t@example.com"],
+                     ["config", "user.name", "T"], ["config", "commit.gpgsign", "false"]):
+            subprocess.run(["git", "-C", str(repo), *args], check=True, capture_output=True)
+        (repo / "a.txt").write_text("hello\n")
+        subprocess.run(["git", "-C", str(repo), "add", "."], check=True, capture_output=True)
+        subprocess.run(["git", "-C", str(repo), "commit", "-qm", "init"], check=True, capture_output=True)
+        before = freshness.tracked_changes_state(repo)
+        (repo / "a.txt").unlink()
+        os.mkfifo(repo / "a.txt")
+        self.addCleanup(self.unblock, repo / "a.txt")
+        for function in (freshness.tracked_changes_state, freshness.worktree_state):
+            with self.subTest(function=function.__name__):
+                state = self.within_a_deadline(lambda: function(repo))
+                self.assertIsNotNone(state, "the fingerprint blocked on the pipe")
+        self.assertNotEqual(self.within_a_deadline(lambda: freshness.tracked_changes_state(repo)), before)
 
     def test_missing_files_directories_and_links_have_their_own_signatures(self):
         (self.dir / "d").mkdir()

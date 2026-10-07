@@ -27,6 +27,7 @@ def resolve_head(repo, log=None):
 
 
 SIGNATURE_FORMAT = "content-mode-sha256-v2"
+SPECIAL_KINDS = {stat.S_IFIFO: "fifo", stat.S_IFSOCK: "socket", stat.S_IFCHR: "chardev", stat.S_IFBLK: "blockdev"}
 
 
 def _file_signature(path):
@@ -45,6 +46,9 @@ def _file_signature(path):
             return "unreadable"
     if stat.S_ISDIR(info.st_mode):
         return "directory"
+    if not stat.S_ISREG(info.st_mode):
+        # Opening a named pipe blocks until something writes to it, and a device may never end.
+        return "special:" + SPECIAL_KINDS.get(stat.S_IFMT(info.st_mode), "other")
     digest = hashlib.sha256()
     try:
         with open(path, "rb") as stream:
