@@ -25,8 +25,36 @@ def redact_url_credentials(text):
     return URL_CREDENTIALS.sub(r"\g<scheme>\g<user>:" + REDACTED + "@", text)
 
 
+def _attached_header(part):
+    """(option prefix, header text) when an option carries its value in the same argument.
+
+    `--header=Name: value` and `-HName: value` both do; curl and similar tools accept either form.
+    """
+    if part.startswith("--") and "=" in part:
+        prefix, _, text = part.partition("=")
+        return prefix + "=", text
+    if part.startswith("-") and not part.startswith("--") and len(part) > 2:
+        return part[:2], part[2:]
+    return None
+
+
+def header_secret_values(argument):
+    """The secret values of a header carried by one argument, whole or attached to an option; else an empty set."""
+    candidates = [argument]
+    attached = _attached_header(argument)
+    if attached:
+        candidates.append(attached[1])
+    found = set()
+    for text in candidates:
+        if SECRET_HEADER.match(text):
+            value = text.partition(":")[2].strip()
+            # Tools echo the whole header value, or only the credential after a scheme such as "Bearer".
+            found.update({value, value.split()[-1]})
+    return found
+
+
 def redact_argv(argv):
-    """Hide secret values in separated and --key=value forms and in URLs."""
+    """Hide secret values in separated and --key=value forms, in headers, and in URLs."""
     result = []
     hide_next = False
     for part in argv:
@@ -34,6 +62,11 @@ def redact_argv(argv):
         if hide_next:
             result.append(REDACTED)
             hide_next = False
+            continue
+        attached = _attached_header(part)
+        attached_header = SECRET_HEADER.match(attached[1]) if attached else None
+        if attached_header:
+            result.append("%s%s: %s" % (attached[0], attached_header.group("name"), REDACTED))
             continue
         if part.startswith("-") and "=" in part:
             name, _, value = part.partition("=")

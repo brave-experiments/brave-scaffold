@@ -46,6 +46,29 @@ class RedactionTests(unittest.TestCase):
                               {"AUTH_X": "1", "API_KEY": "longapikey123"}, None, True)
         self.assertEqual(set(scrub.secrets), {"s3cretvalue", "longapikey123"})
 
+    def test_headers_attached_to_an_option_are_redacted_without_hiding_the_next_argument(self):
+        self.assertEqual(
+            redact_argv(["curl", "--header=Authorization: Bearer abc123def456", "-HX-Api-Key: k1longvalue99",
+                         "--proxy-header=Proxy-Authorization: Basic zzzzzz", "--header=Accept: application/json",
+                         "-HAccept: text/plain", "https://example.invalid/x"]),
+            ["curl", "--header=Authorization: ***", "-HX-Api-Key: ***", "--proxy-header=Proxy-Authorization: ***",
+             "--header=Accept: application/json", "-HAccept: text/plain", "https://example.invalid/x"])
+
+    def test_attached_header_secrets_are_scrubbed_from_child_output_too(self):
+        saved = []
+        log = mock.MagicMock()
+        log.verbosity = "quiet"
+        log.save.side_effect = saved.append
+        output = _StreamOutput(log, ["curl", "-v", "--header=Authorization: Bearer abc123def456",
+                                     "-HX-Api-Key: k1longvalue99", "--header=Accept: application/json"],
+                               {}, None, True)
+        output.write(None, "> Authorization: Bearer abc123def456\n> X-Api-Key: k1longvalue99\n"
+                           "> Accept: application/json\n")
+        text = "".join(saved)
+        self.assertNotIn("abc123def456", text)
+        self.assertNotIn("k1longvalue99", text)
+        self.assertIn("Accept: application/json", text)
+
     def test_header_secrets_are_scrubbed_from_child_output_too(self):
         saved = []
         log = mock.MagicMock()

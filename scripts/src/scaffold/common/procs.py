@@ -24,7 +24,7 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .redaction import SECRET_HEADER, SECRET_NAME, URL_CREDENTIALS, redact_argv, redact_url_credentials
+from .redaction import SECRET_NAME, URL_CREDENTIALS, header_secret_values, redact_argv, redact_url_credentials
 from .results import Cancelled
 from .revision import read_revision
 
@@ -390,10 +390,7 @@ class _StreamOutput:
             if "=" in arg and SECRET_NAME.search(arg.partition("=")[0]):
                 secrets.add(arg.partition("=")[2])
             secrets.update(match.group("secret") for match in URL_CREDENTIALS.finditer(arg))
-            if SECRET_HEADER.match(arg):
-                value = arg.partition(":")[2].strip()
-                # Tools echo the whole header value, or only the credential after a scheme such as "Bearer".
-                secrets.update({value, value.split()[-1]})
+            secrets.update(header_secret_values(arg))
         secrets.update(line for value in list(secrets) for line in value.splitlines() if line)
         self.secrets = sorted((value for value in secrets if len(value) >= MIN_SCRUBBED_SECRET_LENGTH),
                               key=len, reverse=True)
