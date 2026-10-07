@@ -266,11 +266,19 @@ class OutputState:
         self.output_dir = os.path.realpath(output_dir)
         digest = hashlib.sha1(self.output_dir.encode()).hexdigest()[:16]
         self.path = store_root(root) / "outputs" / checkout_key(identity.core) / (digest + ".json")
-        self.data = _read(self.path) or {
-            "output_dir": self.output_dir, "checkout": str(identity.core), "needs_revalidation": False,
+        loaded = _read(self.path)
+        # An unreadable file hides what the output went through, so the output counts as uncertain.
+        self.damaged = self.path.exists() and not (isinstance(loaded, dict) and loaded)
+        self.data = loaded if isinstance(loaded, dict) and loaded else {
+            "output_dir": self.output_dir, "checkout": str(identity.core), "needs_revalidation": self.damaged,
             "attempts": [], "success": None, "history": []}
 
     def save(self):
+        if self.damaged:
+            aside = self.path.with_name("%s.damaged-%s" % (self.path.name, time.strftime("%Y%m%dT%H%M%S")))
+            with contextlib.suppress(OSError):
+                os.replace(self.path, aside)
+            self.damaged = False
         _write(self.path, self.data)
 
     def begin_attempt(self, operation_id, changes_output=True):
