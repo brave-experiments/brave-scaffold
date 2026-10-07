@@ -109,12 +109,15 @@ class SyncTests(BuildTestCase):
         revisions = document["data"]["sync"]
         self.assertIn("core_head", revisions["revisions_before"])
 
-    def test_sync_stops_when_local_work_could_be_overwritten(self):
+    def test_sync_leaves_local_work_protection_to_core(self):
         (self.core / "uncommitted.txt").write_text("work in progress\n")
         result, document = self.document("sync")
-        self.assertEqual((result.returncode, document["error"]["code"]), (4, "PREPARATION_CONFLICT"))
-        self.assertEqual(self.node_calls(), [])
-        self.assertEqual((self.core / "uncommitted.txt").read_text(), "work in progress\n")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIsNone(document["error"])
+        calls = [r["argv"][1:] for r in self.node_calls()]
+        self.assertEqual(calls, [["run", "sync"]], "sync is Core's command, without a guard added here")
+        self.assertEqual((self.core / "uncommitted.txt").read_text(), "work in progress\n",
+                         "the scaffold itself removes nothing")
 
     def test_sync_build_routes_each_tail_to_its_phase(self):
         self.document("sync-build", "-C", "Custom")
