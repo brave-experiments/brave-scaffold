@@ -364,7 +364,7 @@ Filters are built from the files:
 | `*/javatests/*.java` | Android `brave_java_unit_tests` | `Class.*` |
 | `*_unittest.cc` | macOS `brave_unit_tests` | `Fixture.*` for each fixture in the file (`*/Fixture.*` for `TEST_P` fixtures, which gtest names with an instantiation prefix) |
 | `*_browsertest.cc`, `*_uitest.cc` | macOS `brave_browser_tests` | `Fixture.*` for each fixture in the file (`*/Fixture.*` for `IN_PROC_BROWSER_TEST_P` fixtures) |
-| desktop WebUI `.ts`/`.js` under `chrome/test/data/webui` | macOS `brave_browser_tests` | the C++ harness that registers the changed Mocha suite (all suites in the file with `--file`) |
+| desktop WebUI `.ts`/`.js` under `chrome/test/data/webui` | macOS `brave_browser_tests` | the C++ harness that registers each changed Mocha suite; every suite in the file with `--file`, or when a change lies outside all suite bodies (a shared helper or value any suite may use) |
 
 The output lists the suites and filters that will run, and every file it cannot map (for
 example, C++ tests under an `android` or `ios` directory, or an unsupported file type) with the reason.

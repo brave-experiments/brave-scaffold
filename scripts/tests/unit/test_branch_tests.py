@@ -208,6 +208,57 @@ class BranchTestsTests(unittest.TestCase):
         self.assertEqual(self.phases(discovery), {("mac", "brave_browser_tests"): ["WebUiTest.Beta"]})
         self.assertEqual(discovery.unmapped, [])
 
+    SHARED_WEBUI = ("const shared = 1;\nsuite('Alpha', function() {\n  test('a', () => shared);\n});\n"
+                    "suite('Beta', function() {\n  test('b', () => shared);\n});\n")
+
+    def webui_phase(self, discovery):
+        return self.phases(discovery).get(("mac", "brave_browser_tests"))
+
+    def test_naming_a_webui_file_runs_every_suite_registered_for_it(self):
+        discovery = branch_tests.discover_files(self.root, ["chromium_src/chrome/test/data/webui/settings/x_test.ts"])
+        self.assertEqual(self.webui_phase(discovery), ["WebUiTest.Alpha", "WebUiTest.Beta"])
+        self.assertEqual(discovery.unmapped, [])
+
+    def test_a_change_outside_every_suite_selects_all_of_them(self):
+        webui = "chromium_src/chrome/test/data/webui/settings/x_test.ts"
+        self.write(webui, self.SHARED_WEBUI)
+        self.commit("shared value")
+        self.git("branch", "-f", "base-ref", "HEAD")
+        self.write(webui, self.SHARED_WEBUI.replace("shared = 1", "shared = 2").replace("() => shared);\n});\nsuite",
+                                                    "() => shared + 0);\n});\nsuite"))
+        self.commit("change the shared value and one suite")
+        discovery = self.found()
+        self.assertEqual(self.webui_phase(discovery), ["WebUiTest.Alpha", "WebUiTest.Beta"])
+        self.assertEqual(discovery.unmapped, [])
+
+    def test_a_change_only_outside_the_suites_is_not_left_unmapped(self):
+        webui = "chromium_src/chrome/test/data/webui/settings/x_test.ts"
+        self.write(webui, self.SHARED_WEBUI)
+        self.commit("shared value")
+        self.git("branch", "-f", "base-ref", "HEAD")
+        self.write(webui, self.SHARED_WEBUI.replace("shared = 1", "shared = 2"))
+        self.commit("change only the shared value")
+        discovery = self.found()
+        self.assertEqual(self.webui_phase(discovery), ["WebUiTest.Alpha", "WebUiTest.Beta"])
+        self.assertEqual(discovery.unmapped, [])
+
+    def test_a_change_inside_one_suite_still_selects_only_that_suite(self):
+        webui = "chromium_src/chrome/test/data/webui/settings/x_test.ts"
+        self.write(webui, self.SHARED_WEBUI)
+        self.commit("shared value")
+        self.git("branch", "-f", "base-ref", "HEAD")
+        self.write(webui, self.SHARED_WEBUI.replace("test('b', () => shared);", "test('b', () => shared + 1);"))
+        self.commit("edit beta only")
+        self.assertEqual(self.webui_phase(self.found()), ["WebUiTest.Beta"])
+
+    def test_the_selection_helper_distinguishes_suite_lines_from_shared_lines(self):
+        content = self.SHARED_WEBUI
+        self.assertEqual(branch_tests.mocha_selection(content, {3}), {"Alpha"})
+        self.assertEqual(branch_tests.mocha_selection(content, {3, 6}), {"Alpha", "Beta"})
+        self.assertIs(branch_tests.mocha_selection(content, {1}), branch_tests.ALL_SUITES)
+        self.assertIs(branch_tests.mocha_selection(content, {3, 1}), branch_tests.ALL_SUITES)
+        self.assertEqual(branch_tests.mocha_selection(content, set()), set())
+
     def test_a_webui_test_without_a_registration_is_reported_not_guessed(self):
         self.write("chromium_src/chrome/test/data/webui/other/y_test.ts", WEBUI_TEST)
         self.commit("t")

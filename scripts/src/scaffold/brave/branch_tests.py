@@ -219,8 +219,22 @@ def mocha_suite_spans(content):
     return sorted(spans)
 
 
+ALL_SUITES = None  # every suite registered for the file
+
+
 def changed_mocha_suites(content, lines):
     return {suite for suite, start, end in mocha_suite_spans(content) if any(start <= n <= end for n in lines)}
+
+
+def mocha_selection(content, lines):
+    """The suites the changed lines touch, or ALL_SUITES when a change lies outside every suite body.
+
+    A line outside the suites may be a helper, fixture, or value any of them uses, so it cannot be tied to one.
+    """
+    spans = mocha_suite_spans(content)
+    if any(not any(start <= number <= end for _, start, end in spans) for number in lines):
+        return ALL_SUITES
+    return changed_mocha_suites(content, lines)
 
 
 def changed_lines(repo, path, base, scope, groups, content):
@@ -285,6 +299,8 @@ def find_webui_harnesses(repo, target):
 def select_webui_harnesses(harnesses, suites):
     if not harnesses:
         return [], "no C++ RunTest registration found"
+    if suites is ALL_SUITES:
+        return list(harnesses), None
     unnamed = [item for item in harnesses if item.mocha_suite is None]
     if suites:
         explicit = [item for item in harnesses if item.mocha_suite in suites]
@@ -347,8 +363,8 @@ def map_file(repo, path, base, scope, groups, phases, unmapped):
         if not content:
             unmapped.append((path, "test file is missing or empty"))
             return
-        suites = (changed_mocha_suites(content, changed_lines(repo, path, base, scope, groups, content))
-                  if base else set())
+        suites = (mocha_selection(content, changed_lines(repo, path, base, scope, groups, content))
+                  if base else ALL_SUITES)
         selected, reason = select_webui_harnesses(find_webui_harnesses(repo, target), suites)
         if reason:
             unmapped.append((path, "%s for %s" % (reason, target)))
