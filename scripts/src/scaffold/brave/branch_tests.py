@@ -222,35 +222,47 @@ def mocha_suite_spans(content):
 ALL_SUITES = None  # every suite registered for the file
 
 
-def changed_mocha_suites(content, lines):
-    return {suite for suite, start, end in mocha_suite_spans(content) if any(start <= n <= end for n in lines)}
+def mocha_selection(content, lines, deletions=()):
+    """The suites the changes touch, or ALL_SUITES when a change lies outside every suite body.
 
-
-def mocha_selection(content, lines):
-    """The suites the changed lines touch, or ALL_SUITES when a change lies outside every suite body.
-
-    A line outside the suites may be a helper, fixture, or value any of them uses, so it cannot be tied to one.
+    `lines` are added or modified lines. `deletions` are the lines that precede removed text (0 at the start of
+    the file), because removed text has no line of its own. Text counts as inside a suite only if the lines on
+    both sides of it are. A line outside the suites may be a helper, fixture, or value any of them uses, so it
+    cannot be tied to one.
     """
     spans = mocha_suite_spans(content)
-    if any(not any(start <= number <= end for _, start, end in spans) for number in lines):
-        return ALL_SUITES
-    return changed_mocha_suites(content, lines)
+    touched = set()
+    for number in lines:
+        inside = {name for name, start, end in spans if start <= number <= end}
+        if not inside:
+            return ALL_SUITES
+        touched |= inside
+    for before in deletions:
+        inside = {name for name, start, end in spans if start <= before and before + 1 <= end}
+        if not inside:
+            return ALL_SUITES
+        touched |= inside
+    return touched
 
 
 def changed_lines(repo, path, base, scope, groups, content):
+    """(added or modified lines, lines that precede removed text) in the file's current numbering."""
     if path in groups["untracked"]:
-        return set(range(1, len(content.splitlines()) + 1))
+        return set(range(1, len(content.splitlines()) + 1)), set()
     if scope == "committed":
         args = ["diff", "--unified=0", base + "...HEAD", "--", path]
     elif scope == "worktree":
         args = ["diff", "--unified=0", "HEAD", "--", path]
     else:
         args = ["diff", "--unified=0", repo.git("merge-base", base, "HEAD").strip(), "--", path]
-    found = set()
+    found, removed_after = set(), set()
     for match in DIFF_HUNK_RE.finditer(repo.git(*args)):
         start, count = int(match.group("start")), int(match.group("count") or "1")
-        found.update({start} if count == 0 else range(start, start + count))
-    return found
+        if count == 0:
+            removed_after.add(start)
+        else:
+            found.update(range(start, start + count))
+    return found, removed_after
 
 
 def parse_webui_harnesses(content, target, source):
@@ -363,7 +375,7 @@ def map_file(repo, path, base, scope, groups, phases, unmapped):
         if not content:
             unmapped.append((path, "test file is missing or empty"))
             return
-        suites = (mocha_selection(content, changed_lines(repo, path, base, scope, groups, content))
+        suites = (mocha_selection(content, *changed_lines(repo, path, base, scope, groups, content))
                   if base else ALL_SUITES)
         selected, reason = select_webui_harnesses(find_webui_harnesses(repo, target), suites)
         if reason:

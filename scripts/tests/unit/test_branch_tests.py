@@ -251,6 +251,40 @@ class BranchTestsTests(unittest.TestCase):
         self.commit("edit beta only")
         self.assertEqual(self.webui_phase(self.found()), ["WebUiTest.Beta"])
 
+    SETUP_BETWEEN = ("suite('Alpha', function() {\n  test('a', () => {});\n});\nconst shared = 1;\n"
+                     "suite('Beta', function() {\n  test('b', () => {});\n});\n")
+    BETA_WITH_TWO_TESTS = ("suite('Alpha', function() {\n  test('a', () => {});\n});\n"
+                           "suite('Beta', function() {\n  test('b', () => {});\n  test('c', () => {});\n});\n")
+
+    def test_deleting_shared_setup_between_suites_selects_every_suite(self):
+        webui = "chromium_src/chrome/test/data/webui/settings/x_test.ts"
+        self.write(webui, self.SETUP_BETWEEN)
+        self.commit("setup between the suites")
+        self.git("branch", "-f", "base-ref", "HEAD")
+        self.write(webui, self.SETUP_BETWEEN.replace("const shared = 1;\n", ""))
+        self.commit("delete the shared setup")
+        discovery = self.found()
+        self.assertEqual(self.webui_phase(discovery), ["WebUiTest.Alpha", "WebUiTest.Beta"])
+        self.assertEqual(discovery.unmapped, [])
+
+    def test_deleting_a_line_inside_one_suite_still_selects_only_that_suite(self):
+        webui = "chromium_src/chrome/test/data/webui/settings/x_test.ts"
+        self.write(webui, self.BETA_WITH_TWO_TESTS)
+        self.commit("two beta tests")
+        self.git("branch", "-f", "base-ref", "HEAD")
+        self.write(webui, self.BETA_WITH_TWO_TESTS.replace("  test('c', () => {});\n", ""))
+        self.commit("delete one beta test")
+        self.assertEqual(self.webui_phase(self.found()), ["WebUiTest.Beta"])
+
+    def test_deletions_are_placed_by_the_lines_on_both_sides(self):
+        content = self.SETUP_BETWEEN.replace("const shared = 1;\n", "")  # Alpha is lines 1-3, Beta 4-6
+        select = branch_tests.mocha_selection
+        self.assertEqual(select(content, set(), {1}), {"Alpha"}, "removed from inside Alpha")
+        self.assertEqual(select(content, set(), {5}), {"Beta"}, "removed from inside Beta")
+        for boundary in (0, 3, 6):
+            self.assertIs(select(content, set(), {boundary}), branch_tests.ALL_SUITES, boundary)
+        self.assertIs(select(content, {2}, {3}), branch_tests.ALL_SUITES, "a boundary deletion widens an inside edit")
+
     def test_the_selection_helper_distinguishes_suite_lines_from_shared_lines(self):
         content = self.SHARED_WEBUI
         self.assertEqual(branch_tests.mocha_selection(content, {3}), {"Alpha"})
