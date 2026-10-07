@@ -46,6 +46,22 @@ class RedactionTests(unittest.TestCase):
                               {"AUTH_X": "1", "API_KEY": "longapikey123"}, None, True)
         self.assertEqual(set(scrub.secrets), {"s3cretvalue", "longapikey123"})
 
+    def test_header_secrets_are_scrubbed_from_child_output_too(self):
+        saved = []
+        log = mock.MagicMock()
+        log.verbosity = "quiet"
+        log.save.side_effect = saved.append
+        output = _StreamOutput(log, ["curl", "-v", "-H", "Authorization: Bearer abc123def456",
+                                     "-H", "X-Api-Key:k1longvalue99", "-H", "Accept: application/json"],
+                               {}, None, True)
+        output.write(None, "> Authorization: Bearer abc123def456\n> X-Api-Key: k1longvalue99\n"
+                           "> Accept: application/json\ntoken abc123def456 was echoed\n")
+        text = "".join(saved)
+        self.assertNotIn("abc123def456", text)
+        self.assertNotIn("k1longvalue99", text)
+        self.assertIn("> Authorization: ***", text)
+        self.assertIn("Accept: application/json", text, "ordinary headers are left alone")
+
     def test_argument_lists_are_found_by_key_anywhere_in_a_report(self):
         report = {"data": {"argv": ["--token=a"], "steps": [{"package_arguments": ["--secret", "b"]}],
                            "files": ["--token=not-a-command-line"], "note": "see https://u:p@host/"}}
