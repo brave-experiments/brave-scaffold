@@ -39,6 +39,20 @@ class StatusTests(SandboxTest):
         self.assertEqual(Validator().problems(document), [])
         return document['data']
 
+    def test_a_damaged_output_record_is_called_out_rather_than_hidden(self):
+        folder = self.sandbox.config.parent / '.bcore' / 'outputs' / records.checkout_key(self.core)
+        folder.mkdir(parents=True)
+        (folder / 'abc123.json').write_text('{"success": ')
+        (folder / 'def456.json').write_text(json.dumps({
+            'output_dir': '/out/Good', 'checkout': str(self.core), 'needs_revalidation': False,
+            'attempts': [], 'success': None, 'history': []}))
+        data = self.status()
+        self.assertEqual(data['damaged_output_records'], [str(folder / 'abc123.json')])
+        self.assertEqual([o['path'] for o in data['outputs']], ['/out/Good'])
+        result = self.sandbox.bcore('status', '--config', str(self.sandbox.config), cwd=self.core)
+        self.assertIn('Output history is unreadable: %s' % (folder / 'abc123.json'), result.stdout)
+        self.assertIn('Needs attention', result.stdout)
+
     def test_read_only_without_environment_and_no_history(self):
         self.git('update-ref', 'refs/remotes/origin/master', self.head)
         (self.core / 'new test.cc').write_text('test')

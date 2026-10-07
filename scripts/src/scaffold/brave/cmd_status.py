@@ -95,6 +95,7 @@ def run_status(ctx):
     history = sorted(latest.values(), key=lambda e: (e["command"] == "test", e["target"] or "", e["suite"] or ""))
     outputs = [{"path": s.get("output_dir"), "needs_revalidation": s.get("needs_revalidation", False)}
                for s in records.output_states(identity, ctx.state_root)]
+    damaged = records.damaged_output_records(identity, ctx.state_root)
     try:
         free = shutil.disk_usage(core).free
     except OSError:
@@ -102,7 +103,8 @@ def run_status(ctx):
     data = {"branch": branch, "head": head, "history_scope": "all-branches" if all_branches else "current-branch",
             "upstream": upstream.strip() if upstream else None, "base": base,
             "changes": changes, "change_counts": counts, "history": history,
-            "current_test_verification": "unknown", "outputs": outputs, "incomplete_operations": incomplete,
+            "current_test_verification": "unknown", "outputs": outputs, "damaged_output_records": damaged,
+            "incomplete_operations": incomplete,
             "disk_free_bytes": free}
     lines = ["%s · %s" % (identity.alias or "Checkout", data["branch"] or "detached HEAD"), str(core),
              "", "Git", "  HEAD       " + head[:12], "  Upstream   " + (data["upstream"] or "Not configured")]
@@ -132,6 +134,8 @@ def run_status(ctx):
     if not all_branches:
         lines.append("  Use --all-branches to include other branches and older records with unknown branches.")
     attention = ["  ⚠️ Output needs revalidation: %s" % o["path"] for o in outputs if o["needs_revalidation"]]
+    attention += ["  ⚠️ Output history is unreadable: %s (the next build or test of that output sets it aside "
+                  "and marks it for revalidation)" % path for path in damaged]
     attention += ["  ⚠️ Unfinished %s record %s (%s); process state unknown" % (
         r["command"], r["operation_id"], str(r["started"]) + "; branch: " + (r["branch"] or "unknown")) for r in incomplete]
     if attention:

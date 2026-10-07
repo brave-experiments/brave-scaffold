@@ -13,6 +13,7 @@ from types import SimpleNamespace
 from unittest import mock
 
 import tests.support  # noqa: F401
+from scaffold.brave import records
 from scaffold.brave.records import OutputState
 from scaffold.common import config as config_module
 
@@ -67,6 +68,27 @@ class OutputStateTests(unittest.TestCase):
         self.assertTrue(state.needs_revalidation)
         state.record_success("op-2", {"path": "x"}, {})
         self.assertFalse(self.state().needs_revalidation)
+
+
+class DamagedRecordListingTests(unittest.TestCase):
+    def test_unreadable_records_are_listed_and_valid_ones_are_not(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            identity = SimpleNamespace(core=root / "checkout" / "src" / "brave")
+            good = OutputState(identity, root / "out" / "Good", root)
+            good.begin_attempt("op-1")
+            folder = good.path.parent
+            for name, text in (("a.json", "{"), ("b.json", ""), ("c.json", "[]"), ("d.json", "null")):
+                (folder / name).write_text(text)
+            (folder / "e.json.damaged-20261007T000000").write_text("{")
+            damaged = records.damaged_output_records(identity, root)
+            self.assertEqual(sorted(Path(path).name for path in damaged), ["a.json", "b.json", "c.json", "d.json"])
+            self.assertEqual(len(records.output_states(identity, root)), 1)
+
+    def test_no_records_means_nothing_is_damaged(self):
+        with tempfile.TemporaryDirectory() as directory:
+            identity = SimpleNamespace(core=Path(directory) / "checkout" / "src" / "brave")
+            self.assertEqual(records.damaged_output_records(identity, Path(directory)), [])
 
 
 class AtomicWriteTests(unittest.TestCase):

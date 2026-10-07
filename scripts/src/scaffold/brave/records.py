@@ -268,8 +268,8 @@ class OutputState:
         self.path = store_root(root) / "outputs" / checkout_key(identity.core) / (digest + ".json")
         loaded = _read(self.path)
         # An unreadable file hides what the output went through, so the output counts as uncertain.
-        self.damaged = self.path.exists() and not (isinstance(loaded, dict) and loaded)
-        self.data = loaded if isinstance(loaded, dict) and loaded else {
+        self.damaged = self.path.exists() and not _usable_state(loaded)
+        self.data = loaded if _usable_state(loaded) else {
             "output_dir": self.output_dir, "checkout": str(identity.core), "needs_revalidation": self.damaged,
             "attempts": [], "success": None, "history": []}
 
@@ -332,11 +332,21 @@ class OutputState:
         return next((item for item in reversed(self.data["attempts"]) if item["outcome"] != "succeeded"), None)
 
 
+def _usable_state(data):
+    return isinstance(data, dict) and bool(data)
+
+
 def output_states(identity, root=None):
     directory = store_root(root) / "outputs" / checkout_key(identity.core)
     states = []
     for path in sorted(directory.glob("*.json")):
         data = _read(path)
-        if data:
+        if _usable_state(data):
             states.append(data)
     return states
+
+
+def damaged_output_records(identity, root=None):
+    """Paths of output-state files that exist but cannot be read; their outputs count as uncertain."""
+    directory = store_root(root) / "outputs" / checkout_key(identity.core)
+    return [str(path) for path in sorted(directory.glob("*.json")) if not _usable_state(_read(path))]

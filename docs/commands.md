@@ -475,7 +475,9 @@ uncommitted files or build inputs. Current test verification therefore remains
 unknown. Historical failures remain visible, and a newer failure replaces an older
 success for the same platform and suite. Results from other checkouts are excluded.
 
-Status also shows outputs marked as needing revalidation, unfinished operation
+Status also shows outputs marked as needing revalidation, unreadable output-history
+files (`damaged_output_records` in JSON; the next build or test of that output sets the file
+aside and marks the output for revalidation), unfinished operation
 records, and free disk space when less than 200 GB remains. JSON output always
 includes the free-space value (or null if unavailable). An unfinished record does not prove a process is
 running. Status does not inspect processes or verify build freshness. Like other

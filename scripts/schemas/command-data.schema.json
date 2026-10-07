@@ -1462,6 +1462,12 @@
         "outputs": {
           "type": "array"
         },
+        "damaged_output_records": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
         "incomplete_operations": {
           "type": "array"
         },
