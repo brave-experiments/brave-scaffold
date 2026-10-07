@@ -19,6 +19,11 @@ from . import android, android_tests, branch_tests, cmd_build, execution as exec
 TEST_OUTCOME_CODES = ("CHILD_FAILED", "TEST_FAILED", "NO_TESTS_RAN", "ARTIFACT_MISSING")
 
 
+def is_test_outcome(error):
+    """A failed `apply_patches` shares CHILD_FAILED with a failing suite but leaves the tree for every later phase."""
+    return error.code in TEST_OUTCOME_CODES and error.details.get("phase") != "patches"
+
+
 def phase_context(ctx, phase, device):
     values = {**ctx.parsed.values, "suite": phase.suite, "target": phase.target, "filter": phase.filter,
               "base": None, "file": None, "device": device if phase.suite == "brave_java_unit_tests" else None}
@@ -169,7 +174,7 @@ def cmd_test_discovered(ctx):
                 error.operation_id = done.operation_id
                 raise error
         except ScaffoldError as error:
-            if error.code not in TEST_OUTCOME_CODES:
+            if not is_test_outcome(error):
                 error.details.setdefault("test_phases", phase_results)
                 error.details.setdefault("not_run", [p.suite for p in discovery.phases[number - 1:]])
                 error.message += "\n\n" + render_summary(discovery, phase_results)
