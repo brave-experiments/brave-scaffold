@@ -53,6 +53,18 @@ class TrackedChangesTests(unittest.TestCase):
         self.git("status", "--porcelain")  # an unrelated command refreshes the index
         self.assertEqual(self.state(), before)
 
+    def test_a_same_length_edit_with_a_restored_timestamp_still_changes_every_fingerprint(self):
+        (self.repo / "a.txt").write_text("edited AAAA\n")
+        (self.repo / "untracked.txt").write_text("new AAAA\n")
+        stamps = {name: os.stat(self.repo / name).st_mtime_ns for name in ("a.txt", "untracked.txt")}
+        tracked, worktree = self.state(), freshness.worktree_state(self.repo)
+        (self.repo / "a.txt").write_text("edited BBBB\n")
+        (self.repo / "untracked.txt").write_text("new BBBB\n")
+        for name, ns in stamps.items():
+            os.utime(self.repo / name, ns=(ns, ns))
+        self.assertNotEqual(self.state(), tracked)
+        self.assertNotEqual(freshness.worktree_state(self.repo), worktree)
+
     def test_an_edit_changes_the_fingerprint_and_reverting_it_restores_it(self):
         before = self.state()
         (self.repo / "a.txt").write_text("hello, edited\n")
@@ -68,6 +80,59 @@ class TrackedChangesTests(unittest.TestCase):
         self.git("add", "b.txt")
         self.assertNotEqual(self.state(), before)
         self.assertIsNone(freshness.tracked_changes_state(self.repo / "nowhere"))
+
+
+class FileSignatureTests(unittest.TestCase):
+    def setUp(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.dir = Path(directory.name)
+
+    def test_the_signature_follows_the_content_not_the_size_or_timestamp(self):
+        path = self.dir / "f.txt"
+        path.write_text("AAAA\n")
+        ns = os.stat(path).st_mtime_ns
+        before = freshness._file_signature(path)
+        path.write_text("BBBB\n")
+        os.utime(path, ns=(ns, ns))
+        self.assertNotEqual(freshness._file_signature(path), before)
+        path.write_text("AAAA\n")
+        os.utime(path, ns=(ns + 5_000_000_000, ns + 5_000_000_000))
+        self.assertEqual(freshness._file_signature(path), before, "a touched but identical file is unchanged")
+
+    def test_missing_files_directories_and_links_have_their_own_signatures(self):
+        (self.dir / "d").mkdir()
+        (self.dir / "t1.txt").write_text("one")
+        (self.dir / "t2.txt").write_text("two")
+        (self.dir / "link").symlink_to("t1.txt")
+        first = freshness._file_signature(self.dir / "link")
+        (self.dir / "link").unlink()
+        (self.dir / "link").symlink_to("t2.txt")
+        signatures = {freshness._file_signature(self.dir / "nowhere"), freshness._file_signature(self.dir / "d"),
+                      first, freshness._file_signature(self.dir / "link"),
+                      freshness._file_signature(self.dir / "t1.txt")}
+        self.assertEqual(len(signatures), 5, signatures)
+        self.assertEqual(freshness._file_signature(self.dir / "nowhere"), "missing")
+
+    def test_a_large_file_is_hashed_in_full(self):
+        path = self.dir / "big.bin"
+        path.write_bytes(b"x" * (3 << 20))
+        before = freshness._file_signature(path)
+        data = bytearray(path.read_bytes())
+        data[-1] ^= 1
+        path.write_bytes(bytes(data))
+        self.assertNotEqual(freshness._file_signature(path), before)
+
+
+class AssessFormatTests(unittest.TestCase):
+    def test_a_record_made_before_content_hashing_is_unknown_not_stale(self):
+        result = freshness.assess(dict(CURRENT), {**CURRENT, "signature_format": "content-sha256-v1",
+                                                  "patched_files": "different"}, State())
+        self.assertEqual(result["status"], "unknown")
+        self.assertIn("signature_format", " ".join(result["evidence"]))
+
+    def test_the_fingerprint_names_its_signature_format(self):
+        self.assertIn("signature_format", freshness.TRACKED)
 
 
 class AssessTests(unittest.TestCase):

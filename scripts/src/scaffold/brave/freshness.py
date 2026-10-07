@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import os
 import re
+import stat
 from pathlib import Path
 
 from ..common.procs import run_capture
@@ -25,12 +26,30 @@ def resolve_head(repo, log=None):
     return gitstate.head_commit(repo, log)
 
 
+SIGNATURE_FORMAT = "content-sha256-v1"
+
+
 def _file_signature(path):
+    """What a changed file holds. Size and timestamp are not evidence: both survive an edit that restores them."""
     try:
-        info = os.stat(path)
+        info = os.lstat(path)
     except OSError:
         return "missing"
-    return "%d:%d" % (info.st_size, info.st_mtime_ns)
+    if stat.S_ISLNK(info.st_mode):
+        try:
+            return "link:" + os.readlink(path)
+        except OSError:
+            return "unreadable"
+    if stat.S_ISDIR(info.st_mode):
+        return "directory"
+    digest = hashlib.sha256()
+    try:
+        with open(path, "rb") as stream:
+            for block in iter(lambda: stream.read(1 << 20), b""):
+                digest.update(block)
+    except OSError:
+        return "unreadable"
+    return digest.hexdigest()
 
 
 def worktree_state(repo, log=None):
@@ -143,13 +162,14 @@ def compute(identity, patched_paths, effective_args, log=None, extra=None):
         "dependency_changes": dependency_changes,
         "patched_files": patched.hexdigest() if patched_paths else None,
         "env_file": env_files_fingerprint(identity.core),
+        "signature_format": SIGNATURE_FORMAT,
         "build_arguments": hashlib.sha256("\0".join(redact_argv(effective_args)).encode()).hexdigest(),
         **(extra or {}),
     }
 
 
 TRACKED = ("core_head", "chromium_head", "core_worktree", "chromium_worktree", "dependency_heads",
-           "dependency_changes", "patched_files", "env_file",
+           "dependency_changes", "patched_files", "env_file", "signature_format",
            "support_head", "support_worktree", "support_resources")
 NOT_TRACKED = "untracked files are not tracked, and neither are files the build reads from outside the checkout"
 
