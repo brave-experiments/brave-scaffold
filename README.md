@@ -60,6 +60,21 @@ compatible device. These commands are implemented but remain unverified on a
 real checkout. Desktop WebUI tests can also map to their C++ browser-test harness.
 See [test selection](docs/commands.md#test) for supported file patterns and limits.
 
+### `apply_patches` applied automatically
+
+Before compiling, `bcore build` and `bcore test` check Core's patch state and run
+`apply_patches` when preparation is needed. This also applies to combined commands
+such as `bcore br` and `bcore sbr`; commands that sync first check patches after
+sync. You can build after pulling a Core change without running a full sync just
+to apply its updated patches.
+
+If patched files match complete metadata and patch/rewrite inputs are clean,
+the command skips patch application. If applying patches could overwrite local
+work that the saved patch records cannot explain, it stops with
+`PREPARATION_CONFLICT` and lists the files for review. Use `--plan` to preview the
+decision. See [patch preparation](docs/source-and-cleanup.md#patch-preparation)
+for the checks and how to resolve conflicts.
+
 ### Check your setup before a long build
 
 `bcore doctor mac` checks the selected checkout's environment, required tools,

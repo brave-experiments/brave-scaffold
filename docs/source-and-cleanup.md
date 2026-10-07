@@ -63,8 +63,15 @@ like patch preparation does.
 
 ## Patch preparation
 
-Builds and tests apply Core patches only when the Chromium files no
-longer match the patch metadata, and only when that cannot lose local work.
+Before compiling, builds and tests check Core's patch state and run
+`apply_patches` when preparation is needed, and only when that cannot lose local
+work. Combined commands use the same check; commands that sync first check after
+sync. `--plan` previews the decision without applying patches.
+
+Preparation is needed when patched files differ from their metadata, metadata is
+incomplete, or patch/rewrite inputs have local changes. If patched files match
+complete metadata and those inputs are clean, patch application is skipped.
+Unusable metadata or local work that could be lost blocks preparation instead.
 
 Core lists the repositories it patches in `patches/.repositories.cfg` (`//` is
 Chromium itself; entries such as `//v8` or `//third_party/ffmpeg` are separate Git
