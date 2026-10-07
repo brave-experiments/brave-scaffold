@@ -8,11 +8,16 @@ from __future__ import annotations
 
 import re
 
+# "auth" must not match author, authority, or authentic*.
 SECRET_NAME = re.compile(
-    r"(token|secret|passw(?:or)?d|api[-_]?key|auth(?:orization)?|credential|private[-_]?key)",
+    r"(token|secret|passw(?:or)?d|api[-_]?key|auth(?!or(?!ization)|entic)(?:orization)?|credential|private[-_]?key)",
     re.IGNORECASE)
-URL_CREDENTIALS = re.compile(r"(?P<scheme>[a-z][a-z0-9+.-]*://)(?P<user>[^/@\s:]+):(?P<secret>[^/@\s]+)@",
+# The password runs to the last "@" before the path, so a password may contain "@".
+URL_CREDENTIALS = re.compile(r"(?P<scheme>[a-z][a-z0-9+.-]*://)(?P<user>[^/@\s:]+):(?P<secret>[^/\s]+)@",
                              re.IGNORECASE)
+SECRET_HEADER = re.compile(
+    r"^(?P<name>[A-Za-z0-9-]*(?:authorization|token|secret|api[-_]?key|password|credential|cookie)[A-Za-z0-9-]*)"
+    r"\s*:\s*\S.*$", re.IGNORECASE)
 REDACTED = "***"
 
 
@@ -42,6 +47,10 @@ def redact_argv(argv):
         elif "=" in part and not part.startswith("-") and SECRET_NAME.search(part.partition("=")[0]) \
                 and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", part.partition("=")[0]):
             result.append("%s=%s" % (part.partition("=")[0], REDACTED))
+            continue
+        header = SECRET_HEADER.match(part)
+        if header:
+            result.append("%s: %s" % (header.group("name"), REDACTED))
             continue
         result.append(redact_url_credentials(part))
     return result

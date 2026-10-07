@@ -31,6 +31,8 @@ from .revision import read_revision
 TERMINATE_GRACE_SECONDS = 10
 KILL_WAIT_SECONDS = 3
 PIPE_DRAIN_SECONDS = 3
+# Shorter values would replace ordinary words in child output; command lines are redacted by name regardless.
+MIN_SCRUBBED_SECRET_LENGTH = 6
 CANCEL_SIGNALS = {130: signal.SIGINT, 143: signal.SIGTERM}
 
 
@@ -366,7 +368,8 @@ class _StreamOutput:
                 secrets.add(arg.partition("=")[2])
             secrets.update(match.group("secret") for match in URL_CREDENTIALS.finditer(arg))
         secrets.update(line for value in list(secrets) for line in value.splitlines() if line)
-        self.secrets = sorted(filter(None, secrets), key=len, reverse=True)
+        self.secrets = sorted((value for value in secrets if len(value) >= MIN_SCRUBBED_SECRET_LENGTH),
+                              key=len, reverse=True)
 
     def receive(self, stream, chunk):
         if self.preserve_stdout and stream is self.stdout:
