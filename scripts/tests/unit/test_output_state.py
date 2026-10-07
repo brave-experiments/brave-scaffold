@@ -81,6 +81,36 @@ class AtomicWriteTests(unittest.TestCase):
             self.assertEqual(order, ["fsync", "replace"])
             self.assertEqual(target.read_text(), "{}\n")
 
+    def test_an_existing_file_keeps_its_permissions(self):
+        with tempfile.TemporaryDirectory() as directory:
+            for mode in (0o644, 0o640, 0o600):
+                with self.subTest(mode=oct(mode)):
+                    target = Path(directory) / ("file-%o" % mode)
+                    target.write_text("old\n")
+                    target.chmod(mode)
+                    config_module.atomic_write(target, "new\n")
+                    self.assertEqual((target.read_text(), target.stat().st_mode & 0o7777), ("new\n", mode))
+
+    def test_a_symlinked_file_is_updated_in_place_and_stays_a_symlink(self):
+        with tempfile.TemporaryDirectory() as directory:
+            real = Path(directory) / "dotfiles" / "brave-scaffold.toml"
+            real.parent.mkdir()
+            real.write_text("old\n")
+            real.chmod(0o644)
+            link = Path(directory) / "brave-scaffold.toml"
+            link.symlink_to(real)
+            config_module.atomic_write(link, "new\n")
+            self.assertTrue(link.is_symlink())
+            self.assertEqual(os.readlink(link), str(real))
+            self.assertEqual((real.read_text(), real.stat().st_mode & 0o7777), ("new\n", 0o644))
+            self.assertEqual([item.name for item in real.parent.iterdir()], ["brave-scaffold.toml"], "no temp files")
+
+    def test_a_new_file_and_its_directories_are_created(self):
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / "a" / "b" / "state.json"
+            config_module.atomic_write(target, "{}\n")
+            self.assertEqual(target.read_text(), "{}\n")
+
 
 if __name__ == "__main__":
     unittest.main()

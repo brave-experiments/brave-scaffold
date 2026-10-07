@@ -208,12 +208,20 @@ def _block_ranges(lines):
 
 
 def atomic_write(path, text):
+    """Replace a file's contents in one step, keeping its permissions and writing through a symlink."""
+    path = Path(os.path.realpath(path))
     path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        mode = path.stat().st_mode & 0o7777
+    except OSError:
+        mode = None
     handle, temporary = tempfile.mkstemp(dir=path.parent, prefix=path.name + ".")
     try:
         with os.fdopen(handle, "w", encoding="utf-8") as stream:
             stream.write(text)
             stream.flush()
+            if mode is not None:
+                os.fchmod(stream.fileno(), mode)
             os.fsync(stream.fileno())
         os.replace(temporary, path)
     finally:
