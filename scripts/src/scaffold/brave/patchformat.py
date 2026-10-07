@@ -10,6 +10,7 @@ import re
 
 DIFF_GIT_LINE = re.compile(r"^diff --git (\S+) (\S+)$")
 RENAME_LINE = re.compile(r"^(?:rename|copy) (?:from|to) (\S+)$")
+HUNK_LINE = re.compile(r"^@@ -\d+(?:,(\d+))? \+\d+(?:,(\d+))? @@")
 
 
 class UnknownPatchFormat(ValueError):
@@ -26,7 +27,26 @@ def _strip_prefix(name):
 def parse_patch_targets(text):
     """Repository-relative files a patch writes. Raises UnknownPatchFormat instead of guessing."""
     targets = set()
+    old_left = new_left = 0
     for line in text.splitlines():
+        if old_left > 0 or new_left > 0:
+            # Inside a hunk, "--- x" is a removed line and "+++ x" an added one, not a file header.
+            if line.startswith("\\"):
+                continue
+            if line.startswith("-") and old_left > 0:
+                old_left -= 1
+                continue
+            if line.startswith("+") and new_left > 0:
+                new_left -= 1
+                continue
+            if (line.startswith(" ") or not line) and old_left > 0 and new_left > 0:
+                old_left, new_left = old_left - 1, new_left - 1
+                continue
+            old_left = new_left = 0
+        hunk = HUNK_LINE.match(line)
+        if hunk:
+            old_left, new_left = (int(count) if count is not None else 1 for count in hunk.groups())
+            continue
         if line.startswith(("--- ", "+++ ")):
             name = line[4:].split("\t")[0].strip()
             if name and name != "/dev/null":
