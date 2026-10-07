@@ -113,6 +113,30 @@ class BranchTestsTests(unittest.TestCase):
                                   "browser/staged_unittest.cc": ["staged"],
                                   "browser/untracked_unittest.cc": ["untracked"]})
 
+    def test_unusual_file_names_are_discovered_in_every_change_kind(self):
+        self.write("browser/café_unittest.cc", CPP % {"f": "Committed"})
+        self.commit("committed")
+        self.write("browser/with space_unittest.cc", CPP % {"f": "Staged"})
+        self.git("add", "browser/with space_unittest.cc")
+        self.write("browser/café_unittest.cc", CPP % {"f": "Committed"} + "// edit\n")
+        self.write("browser/ünïcode_unittest.cc", CPP % {"f": "Untracked"})
+        groups = {item["path"]: item["changes"] for item in self.found().to_dict()["test_files"]}
+        self.assertEqual(groups, {"browser/café_unittest.cc": ["committed", "unstaged"],
+                                  "browser/with space_unittest.cc": ["staged"],
+                                  "browser/ünïcode_unittest.cc": ["untracked"]})
+        self.assertEqual(self.found().unmapped, [])
+
+    def test_a_webui_harness_in_a_file_with_spaces_is_found(self):
+        self.git("mv", "test/data/webui_tests_browsertest.cc", "test/data/webui tests_browsertest.cc")
+        self.commit("rename harness")
+        self.git("branch", "-f", "base-ref", "HEAD")
+        self.write("chromium_src/chrome/test/data/webui/settings/x_test.ts",
+                   WEBUI_TEST.replace("test('b', () => {});", "test('b', () => {}); // edited"))
+        self.commit("edit beta")
+        discovery = self.found()
+        self.assertEqual(self.phases(discovery), {("mac", "brave_browser_tests"): ["WebUiTest.Beta"]})
+        self.assertEqual(discovery.unmapped, [])
+
     def test_named_files_run_whether_or_not_they_changed(self):
         self.write("chromium_src/chrome/test/data/webui/settings/x_test.ts", WEBUI_TEST + "\n")
         self.write("browser/old_unittest.cc", CPP % {"f": "Old"})

@@ -87,8 +87,9 @@ class Repo:
                                 details={"argv": ["git", *args]}, child_exit_code=result.returncode)
         return result.stdout
 
-    def lines(self, *args):
-        return [line.strip() for line in self.git(*args).splitlines() if line.strip()]
+    def names(self, *args):
+        """Paths from a Git command run with -z: NUL-separated, never quoted or reflowed."""
+        return [name for name in self.git(*args).split("\0") if name]
 
     def read(self, path):
         full = self.path / path
@@ -106,11 +107,11 @@ def require_base(repo, base):
 def changed_files(repo, base, scope):
     groups = {"committed": set(), "staged": set(), "unstaged": set(), "untracked": set()}
     if scope in ("both", "committed"):
-        groups["committed"].update(repo.lines("diff", "--name-only", "--diff-filter=d", base + "...HEAD"))
+        groups["committed"].update(repo.names("diff", "-z", "--name-only", "--diff-filter=d", base + "...HEAD"))
     if scope in ("both", "worktree"):
-        groups["staged"].update(repo.lines("diff", "--cached", "--name-only", "--diff-filter=d"))
-        groups["unstaged"].update(repo.lines("diff", "--name-only", "--diff-filter=d"))
-        groups["untracked"].update(repo.lines("ls-files", "--others", "--exclude-standard"))
+        groups["staged"].update(repo.names("diff", "-z", "--cached", "--name-only", "--diff-filter=d"))
+        groups["unstaged"].update(repo.names("diff", "-z", "--name-only", "--diff-filter=d"))
+        groups["untracked"].update(repo.names("ls-files", "-z", "--others", "--exclude-standard"))
     return groups
 
 
@@ -261,11 +262,11 @@ def find_webui_harnesses(repo, target):
         roots.append(Repo(repo.path.parent, repo.log))
     found = set()
     for root in roots:
-        result = run_capture(["git", "-C", str(root.path), "grep", "-l", "-F", target, "--", "*_browsertest.cc",
+        result = run_capture(["git", "-C", str(root.path), "grep", "-lz", "-F", target, "--", "*_browsertest.cc",
                               "*_uitest.cc"], str(root.path), None, root.log, timeout=120)
         if result.returncode not in (0, 1):
             raise ScaffoldError("CHILD_FAILED", "git grep failed in %s" % root.path, child_exit_code=result.returncode)
-        for name in result.stdout.split():
+        for name in filter(None, result.stdout.split("\0")):
             found.update(parse_webui_harnesses(root.read(name), target, "%s:%s" % (root.path, name)))
     return sorted(found, key=lambda item: (item.test_filter, item.source))
 
