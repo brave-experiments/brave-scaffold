@@ -4,6 +4,7 @@
 # You can obtain one at https://mozilla.org/MPL/2.0/.
 """Owned process groups: cancellation and timeouts must not leave descendants running."""
 
+import io
 import os
 import signal
 import subprocess
@@ -70,6 +71,25 @@ class GroupTestCase(unittest.TestCase):
         pid = int(Path(marker).read_text())
         self.cleanup_pids.append(pid)
         return process, pid
+
+
+class SpawnFailureTests(unittest.TestCase):
+    def test_a_command_that_cannot_start_exits_127_and_is_logged_like_any_other_failure(self):
+        for interactive in (False, True):
+            with self.subTest(interactive=interactive), tempfile.TemporaryDirectory() as directory:
+                stream = io.StringIO()
+                log = procs.CommandLog(stream=stream, verbosity="normal")
+                log.open(directory)
+                try:
+                    code = procs.run_streaming(["/nonexistent/scaffold-tool", "--flag"], directory, os.environ, log,
+                                               json_mode=True, interactive=interactive)
+                    saved = Path(log.path).read_text()
+                finally:
+                    log.close()
+                self.assertEqual(code, 127)
+                self.assertIn("/nonexistent/scaffold-tool", saved)
+                self.assertIn("Child exit: 127", saved)
+                self.assertIn("could not be started", stream.getvalue())
 
 
 class TerminateGroupTests(GroupTestCase):

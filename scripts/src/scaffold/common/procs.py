@@ -250,6 +250,16 @@ def terminate_group(process, grace=None, signum=signal.SIGTERM):
     return _wait_for_group(process, KILL_WAIT_SECONDS)
 
 
+class _SpawnFailed(Exception):
+    """The operating system refused to start the command (missing, not executable, bad working directory)."""
+
+
+def _report_spawn_failure(log, argv, error):
+    log.save("Could not start %s: %s\nChild exit: 127\n" % (argv[0], error))
+    log.message("%s could not be started: %s" % (argv[0], error))
+    return 127
+
+
 @contextlib.contextmanager
 def _stream_process(argv, cwd, env, stdin, terminal):
     """Give interactive children terminal output, without changing stdin or owning the user's terminal."""
@@ -265,9 +275,12 @@ def _stream_process(argv, cwd, env, stdin, terminal):
             attributes[1] &= ~termios.ONLCR
             termios.tcsetattr(slave, termios.TCSANOW, attributes)
             termios.tcsetwinsize(slave, termios.tcgetwinsize(sys.stdout.fileno()))
-        process = subprocess.Popen(list(argv), cwd=cwd, env=env, stdin=stdin, start_new_session=True,
-                                   stdout=slave if terminal else subprocess.PIPE,
-                                   stderr=slave if terminal else subprocess.PIPE)
+        try:
+            process = subprocess.Popen(list(argv), cwd=cwd, env=env, stdin=stdin, start_new_session=True,
+                                       stdout=slave if terminal else subprocess.PIPE,
+                                       stderr=slave if terminal else subprocess.PIPE)
+        except OSError as error:
+            raise _SpawnFailed(error) from error
         if terminal:
             os.close(slave)
             slave = None
@@ -310,10 +323,20 @@ def run_streaming(argv, cwd, env, log, json_mode=False, stdin=None, preserve_std
     if interactive:
         # Shell prompts and terminal control need inherited descriptors, not a text tee.
         log.save("Interactive shell output uses the terminal directly and is not captured.\n")
-        process = subprocess.Popen(list(argv), cwd=cwd, env=env, stdin=stdin,
-                                   stdout=sys.stderr if json_mode else None, start_new_session=True)
+        try:
+            process = subprocess.Popen(list(argv), cwd=cwd, env=env, stdin=stdin,
+                                       stdout=sys.stderr if json_mode else None, start_new_session=True)
+        except OSError as error:
+            return _report_spawn_failure(log, argv, error)
         return _forward_and_wait(process)
     terminal = not json_mode and sys.stdout.isatty() and sys.stderr.isatty()
+    try:
+        return _stream(argv, cwd, env, log, json_mode, stdin, preserve_stdout, verbose_output, terminal)
+    except _SpawnFailed as failed:
+        return _report_spawn_failure(log, argv, failed.__cause__)
+
+
+def _stream(argv, cwd, env, log, json_mode, stdin, preserve_stdout, verbose_output, terminal):
     with _stream_process(argv, cwd, env, stdin, terminal) as (process, streams):
         output = _StreamOutput(log, argv, env, streams[0], json_mode, preserve_stdout, verbose_output)
         code = None
