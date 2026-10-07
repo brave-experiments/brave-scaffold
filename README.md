@@ -109,7 +109,8 @@ Saved outcomes are history, not proof that your current source passes tests.
 workflow, and launch requires the verified output from that build. Use
 `bcore br mac` to build and restart without syncing, or `bcore sb mac` to sync and
 build without launching. The same commands accept `android` and `ios` targets.
-Extra arguments on combined commands go to the build phase.
+Extra arguments on combined commands go to the build phase; send arguments to Core's sync with
+`--sync-arg`, for example `bcore sbr --sync-arg=--force --sync-arg=-D`.
 
 Sync runs Core's normal resets, patches, and hooks, which can overwrite local
 changes. Save wanted work before syncing, including through `bcore sbr`.

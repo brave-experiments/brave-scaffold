@@ -125,6 +125,53 @@ class SyncTests(BuildTestCase):
         self.assertEqual(calls[0], ["run", "sync"])
         self.assertIn("Custom", calls[1])
 
+    def test_combined_commands_send_sync_args_to_the_sync_phase_only(self):
+        for command in ("sync-build", "sync-build-run", "sb", "sbr"):
+            with self.subTest(command=command):
+                self.sandbox.record.unlink(missing_ok=True)
+                result, document = self.document(command, "--sync-arg=--force", "--sync-arg", "-D", "--tail-option", "v")
+                self.assertEqual(result.returncode, 0, result.stderr)
+                calls = [r["argv"][1:] for r in self.node_calls()]
+                self.assertEqual(calls[0], ["run", "sync", "--force", "-D"])
+                self.assertEqual(sum("--force" in call or "-D" in call for call in calls), 1, "only the sync phase")
+                self.assertEqual(calls[1][-2:], ["--tail-option", "v"])
+
+    def test_combined_plans_show_the_sync_args_and_run_nothing(self):
+        result, document = self.document("sync-build", "--plan", "--sync-arg=--force")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        (sync,) = [s for s in document["data"]["plan"]["steps"] if s["name"] == "sync"]
+        self.assertIn("--force", sync["argv"])
+        self.assertEqual(self.node_calls(), [])
+
+    def test_sync_arg_belongs_to_the_combined_commands_only(self):
+        for command in ("build", "build-run"):
+            with self.subTest(command=command):
+                result, document = self.document(command, "--sync-arg=--force")
+                self.assertEqual((result.returncode, document["error"]["code"]), (2, "INVALID_INPUT"))
+                self.assertIn("sync-build", document["error"]["message"])
+        self.assertEqual(self.node_calls(), [])
+
+    def test_a_sync_style_dash_c_in_a_combined_command_is_refused_with_the_way_to_say_it(self):
+        for tokens in (["-C", "false"], ["-C", "true"], ["-C", "0"], ["-C", "1"]):
+            for plan in ([], ["--plan"]):
+                with self.subTest(tokens=tokens, plan=plan):
+                    result, document = self.document("sync-build", *tokens, *plan)
+                    self.assertEqual((result.returncode, document["error"]["code"]), (2, "INVALID_INPUT"))
+                    self.assertIn("--sync-arg=-C --sync-arg=%s" % tokens[1], document["error"]["message"])
+        self.assertEqual(self.node_calls(), [])
+        self.assertFalse((self.src / "out").exists())
+
+    def test_dash_c_keeps_its_meaning_outside_the_combined_commands_and_for_real_directories(self):
+        result, document = self.document("sync-build", "-C", "Custom")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        result, document = self.document("build", "-C", "false")
+        self.assertEqual(result.returncode, 0, "build -C is always an output directory")
+        self.assertTrue((self.src / "out" / "false").exists())
+        self.sandbox.record.unlink(missing_ok=True)
+        result, document = self.document("sync-build", "--sync-arg=-C", "--sync-arg=false")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual([r["argv"][1:] for r in self.node_calls()][0], ["run", "sync", "-C", "false"])
+
     def test_sync_plan_writes_nothing(self):
         result, document = self.document("sync", "--plan", "--force")
         self.assertEqual(self.node_calls(), [])

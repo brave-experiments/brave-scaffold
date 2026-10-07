@@ -112,7 +112,7 @@ without selecting a browser checkout. See [support repositories](support-reposit
 | `bcore test [target] --file PATH` | Run the tests in one file, changed or not ([details](#test)) | Same |
 | `bcore test [target] <suite>` | Compile if needed and run one suite ([macOS](macos.md), [Android](android.md#tests)); `--device` or `--all-devices` for Android device suites | Writes build output; runs tests; Android temporarily applies the support test overlay to Core's `build/commands`; preserves an existing overlay |
 | `bcore run [target]` | Restart the browser with an existing output; never builds | Quits and relaunches the application |
-| `bcore build-run` (`br`), `sync-build` (`sb`), `sync-build-run` (`sbr`) | Combined workflows; extras go to the build phase | Effects of each phase |
+| `bcore build-run` (`br`), `sync-build` (`sb`), `sync-build-run` (`sbr`) | Combined workflows; extras go to the build phase (`--sync-arg` for sync) | Effects of each phase |
 | `bcore deploy android` | Install the APK and launch it; same as `run android`; `--all-devices` selects all compatible devices ([Android](android.md)) | Installs over the existing app and restarts the package on selected devices |
 | `bcore android setup` | Prepare shared Android-on-Mac support and link this workspace | Uses the network; writes the shared checkout and preserves existing workspace copies |
 | `bcore sync [targets]` | Core source sync ([details](source-and-cleanup.md)) | Changes sources and dependencies |
@@ -136,8 +136,13 @@ script, after the generated ones, in the same order. Unknown options and extra
 positionals are not errors. A value after an unknown option is never read as the
 target. Use `--` to forward a token that is also a scaffold option
 (`bcore build -- --json`). The first `--` is consumed; later ones are forwarded.
-Combined commands send the tail to their build phase only; `sync` receives none
-of it. Commands that run no package script (`context`, `doctor`, `run`, `clean`,
+Combined commands send the tail to their build phase only. Give the sync phase of
+`sync-build` and `sync-build-run` its own arguments with `--sync-arg`, repeated once per
+argument: `bcore sbr --sync-arg=--force --sync-arg=-D`. A `--sync-arg` value that starts with `-`
+is fine, and `--sync-arg` is refused on `build` and `build-run`. In a combined command, a forwarded `-C true`,
+`-C false`, `-C 1`, or `-C 0` is refused because Core's sync reads those as "force or skip the Chromium
+sync" while the build reads `-C` as the output directory; write `--sync-arg=-C --sync-arg=false`
+for the sync meaning. Standalone `sync` receives the whole tail. Commands that run no package script (`context`, `doctor`, `run`, `clean`,
 `drift`) reject extra arguments. The effective command and directory are logged
 and recorded so the destination is clear.
 

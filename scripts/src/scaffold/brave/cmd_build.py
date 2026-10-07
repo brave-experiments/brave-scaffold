@@ -444,9 +444,15 @@ def plan_restart_after_build(ctx, effective, is_android, device_choice):
             step_module.launch_step(bundle, True, ["stop-running-instances"])]
 
 
+SYNC_STYLE_C_VALUES = ("true", "false", "1", "0")
+
+
 def do_build(ctx, command, sync_first=False, run_after=False):
     parsed = ctx.parsed
     target_token = parsed.positionals[0] if parsed.positionals else None
+    if parsed.get("sync_arg") and not sync_first:
+        raise ScaffoldError("INVALID_INPUT", "--sync-arg applies to sync-build and sync-build-run (sb, sbr) only; "
+                            "%s has no sync phase." % command, details={"example": "bcore sb --sync-arg=--force"})
     if parsed.get("all_devices"):
         if not run_after:
             raise ScaffoldError("INVALID_INPUT", "--all-devices applies to Android build-run and sync-build-run only.")
@@ -458,6 +464,13 @@ def do_build(ctx, command, sync_first=False, run_after=False):
         from . import cmd_ios
         return cmd_ios.do_build(ctx, command, sync_first, run_after)
     identity, effective = select_build(ctx, target_token, parsed.forwarded)
+    if sync_first and effective.sources.get("output") == "forwarded" \
+            and str(effective.build_dir_arg).lower() in SYNC_STYLE_C_VALUES:
+        raise ScaffoldError(
+            "INVALID_INPUT", "-C %s would name the build output directory %r here. Core's sync command reads "
+            "-C true|false as \"force or skip the Chromium sync\"; to send that to the sync phase, use "
+            "--sync-arg=-C --sync-arg=%s." % (effective.build_dir_arg, effective.build_dir_arg, effective.build_dir_arg),
+            details={"example": "bcore %s --sync-arg=-C --sync-arg=%s" % (command, effective.build_dir_arg)})
     if parsed.get("all_devices") and effective.target != "android":
         raise ScaffoldError("INVALID_INPUT", "--all-devices applies to Android only.")
     if parsed.get("skip_support_refresh") and effective.target != "android":
@@ -465,7 +478,8 @@ def do_build(ctx, command, sync_first=False, run_after=False):
     if parsed.get("device") and effective.target != "android":
         raise ScaffoldError("INVALID_INPUT", "--device applies to Android and iOS only.")
     if parsed.get("plan"):
-        sync_plan = sync_module.sync_arguments(ctx, effective.target, [], identity) if sync_first else None
+        sync_plan = (sync_module.sync_arguments(ctx, effective.target, list(parsed.get("sync_arg") or []), identity)
+                     if sync_first else None)
         return plan_result(command, effective, build_plan_steps(ctx, identity, effective, "build", (), sync_plan,
                                                                 run_after))
     execution = execution_module.load(ctx, identity)
@@ -477,7 +491,8 @@ def do_build(ctx, command, sync_first=False, run_after=False):
                                         "arch": effective.arch}, validated=True) as op:
         sync_result = None
         if sync_first:
-            sync_result = sync_module.do_sync_phase(ctx, execution, op, effective.target, [])
+            sync_result = sync_module.do_sync_phase(ctx, execution, op, effective.target,
+                                                    list(parsed.get("sync_arg") or []))
             execution = prepare_for_build(execution, ctx, effective.target, remote)
         outcome = perform_build(ctx, execution, effective, op, bool(parsed.get("force_gn")))
         if run_after and outcome.artifact is None:

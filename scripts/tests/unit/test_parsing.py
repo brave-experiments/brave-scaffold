@@ -60,6 +60,18 @@ class ForwardingParserTests(unittest.TestCase):
         parsed = parse_tokens(spec, ["--", "--notify", "never"])
         self.assertEqual((parsed.get("notify"), parsed.forwarded), (None, ["--notify", "never"]))
 
+    def test_a_repeatable_option_collects_every_value_in_order(self):
+        spec = CommandSpec("sync-build", "x", positionals=(Positional("target"),), forward=True,
+                           options=(Opt("--sync-arg", "sync_arg", metavar="ARG", repeatable=True),))
+        parsed = parse_tokens(spec, ["mac", "--sync-arg=--force", "--sync-arg", "-D", "--tail", "--sync-arg=--target_os=ios"])
+        self.assertEqual(parsed.get("sync_arg"), ["--force", "-D", "--target_os=ios"])
+        self.assertEqual((parsed.positionals, parsed.forwarded), (["mac"], ["--tail"]))
+        self.assertIsNone(parse_tokens(spec, ["mac"]).get("sync_arg"))
+        with self.assertRaises(ScaffoldError):
+            parse_tokens(spec, ["--sync-arg"])
+        parsed = parse_tokens(spec, ["--", "--sync-arg=--force"])
+        self.assertEqual((parsed.get("sync_arg"), parsed.forwarded), (None, ["--sync-arg=--force"]))
+
     def test_conflicting_repeated_values_fail_and_equal_ones_are_fine(self):
         with self.assertRaises(ScaffoldError) as caught:
             parse_tokens(FORWARDING, ["--checkout", "a", "--checkout=b"])

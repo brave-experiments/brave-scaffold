@@ -22,6 +22,7 @@ class Opt:
     help: str = ""
     metavar: str = "VALUE"
     optional_value: bool = False
+    repeatable: bool = False
 
 
 COMMON_OPTIONS = (
@@ -171,6 +172,9 @@ def parse_tokens(spec, tokens):
 
 
 def _set(values, option, value, spec):
+    if option.repeatable:
+        values.setdefault(option.dest, []).append(value)
+        return
     if option.dest in ("quiet", "verbose"):
         value = option.dest
         option = Opt(option.name, "verbosity")

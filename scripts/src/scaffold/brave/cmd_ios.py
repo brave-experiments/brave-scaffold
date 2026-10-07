@@ -51,7 +51,7 @@ def do_build(ctx, command, sync_first=False, run_after=False):
     with track(ctx, command, identity, build.describe(), validated=True) as op:
         sync_result = None
         if sync_first:
-            sync_result = sync_module.do_sync_phase(ctx, execution, op, "ios", [])
+            sync_result = sync_module.do_sync_phase(ctx, execution, op, "ios", list(parsed.get("sync_arg") or []))
             execution = cmd_build.prepare_for_build(execution, ctx, "ios", False)
             simulator = pick(execution)
         outcome = perform_build(ctx, execution, build, op, simulator)
@@ -151,7 +151,8 @@ def finish_build_result(command, outcome, execution, op):
 
 
 def plan_build(ctx, command, identity, build, sync_first, run_after):
-    sync_arguments = sync_module.sync_arguments(ctx, "ios", [], identity) if sync_first else None
+    sync_arguments = (sync_module.sync_arguments(ctx, "ios", list(ctx.parsed.get("sync_arg") or []), identity)
+                      if sync_first else None)
     toolchain, steps = cmd_build.common_plan_steps(ctx, identity, "ios", "sync" if sync_first else "build", False)
     last = "readiness"
     if sync_arguments is not None:

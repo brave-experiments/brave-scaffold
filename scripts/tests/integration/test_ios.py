@@ -305,6 +305,16 @@ class IosBuildTests(IosTestCase):
         self.assertEqual(self.build_argv(), ["run", "sync", "--target_os=ios"])
         self.assertEqual(len(self.xcode_calls()), 1)
 
+    def test_sync_build_sends_sync_args_to_the_sync_phase_and_still_refuses_nohooks(self):
+        (self.src.parent / ".gclient").write_text("target_os = []\n")
+        result, document = self.document("sync-build", "ios", "--sync-arg=--fetch_all")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.build_argv(), ["run", "sync", "--target_os=ios", "--fetch_all"])
+        self.sandbox.record.unlink(missing_ok=True)
+        result, document = self.document("sync-build", "ios", "--sync-arg=--nohooks")
+        self.assertEqual(document["error"]["code"], "SELECTOR_CONFLICT")
+        self.assertEqual(self.node_calls(), [])
+
     def test_tests_are_not_available_for_ios(self):
         result, document = self.document("test", "ios", "brave_unit_tests")
         self.assertEqual(document["error"]["code"], "UNSUPPORTED_CAPABILITY")

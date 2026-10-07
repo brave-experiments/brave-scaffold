@@ -140,7 +140,8 @@ does not clear that state, and `run` warns (`ARTIFACT_FRESHNESS_UNKNOWN`) before
 launches an output with that mark.
 
 `sync-build` and `sync-build-run` (aliases `sb`, `sbr`) run the sync phase first and
-send extra arguments to the build phase only. See
+send extra arguments to the build phase only; use `--sync-arg` for Core's sync (see
+[commands](commands.md#forwarding-to-package-commands)). See
 [source and cleanup](source-and-cleanup.md) for sync.
 
 ## Verification status

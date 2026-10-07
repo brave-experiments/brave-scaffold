@@ -47,6 +47,9 @@ def sync_arguments(ctx, target, forwarded, identity=None):
     arguments = ["run", "sync"]
     requested = mobile_targets(target)
     if requested:
+        if any(item == "--target_os" or item.startswith("--target_os=") for item in forwarded):
+            raise ScaffoldError("SELECTOR_CONFLICT", "Mobile sync targets build --target_os from the checkout's "
+                                "existing targets; remove --target_os from the sync arguments.")
         if "ios" in requested and "--nohooks" in forwarded:
             raise ScaffoldError("SELECTOR_CONFLICT", "Syncing iOS needs Core's hooks, which bootstrap the iOS "
                                 "project; remove --nohooks.")

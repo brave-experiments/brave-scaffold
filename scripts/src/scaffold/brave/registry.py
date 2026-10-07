@@ -27,6 +27,9 @@ FILTER = Opt("--filter", "filter", metavar="PATTERN", help="Only run tests match
 DEVICE = Opt("--device", "device", metavar="ID", help="Android device id (otherwise use the saved default, sole device, or terminal picker), or an iOS Simulator name or UDID.")
 ALL_DEVICES = Opt("--all-devices", "all_devices", takes_value=False,
                   help="Run Android apps or device-backed tests on every compatible, usable device; overrides the saved default.")
+SYNC_ARG = Opt("--sync-arg", "sync_arg", metavar="ARG", repeatable=True,
+               help="sync-build and sync-build-run only: an argument for Core's sync command (repeat the option for "
+                    "several). Extra arguments otherwise go to the build phase.")
 SOURCE = Opt("--source", "source", metavar="URL_OR_PATH", help="Support repository to clone (default: the standard source).")
 REF = Opt("--ref", "ref", metavar="REF", help="Shared support repository branch, tag, or commit.")
 DIFF = Opt("--diff", "diff", takes_value=False, help="Print the Git diff of each drifted file.")
@@ -104,7 +107,7 @@ def build_registry():
                     examples=("bcore vpython3 -- tools/example.py --flag", "bcore vpython3 --cwd out -- ../script.py")),
         clean.SPEC,
         CommandSpec("build", "Prepare and compile Brave for a target, then verify its output.", cmd_build.cmd_build,
-                    positionals=(TARGET,), options=(CONFIGURATION, OFFLINE, FORCE_GN, PLAN, DEVICE, ALL_DEVICES, SKIP_SUPPORT_REFRESH),
+                    positionals=(TARGET,), options=(CONFIGURATION, OFFLINE, FORCE_GN, PLAN, DEVICE, ALL_DEVICES, SKIP_SUPPORT_REFRESH, SYNC_ARG),
                     forward=True, side_effects=BUILD_SIDE_EFFECTS + " iOS: runs xcodebuild, whose Debug scheme "
                     "builds Core's output under src/out and repoints out/ios_current_link.",
                     notes="Unknown options and extra arguments go to 'bpm run build' after the generated ones; "
@@ -112,7 +115,7 @@ def build_registry():
                     examples=("bcore build", "bcore build mac --offline", "bcore build --plan")),
         CommandSpec("build-run", "Build, then restart the browser with exactly the output that build produced.",
                     cmd_build.cmd_build_run, aliases=("br",), positionals=(TARGET,),
-                    options=(CONFIGURATION, OFFLINE, FORCE_GN, PLAN, DEVICE, ALL_DEVICES, SKIP_SUPPORT_REFRESH), forward=True,
+                    options=(CONFIGURATION, OFFLINE, FORCE_GN, PLAN, DEVICE, ALL_DEVICES, SKIP_SUPPORT_REFRESH, SYNC_ARG), forward=True,
                     side_effects=BUILD_SIDE_EFFECTS + " Then stops any running instance of the same application and "
                                                      "launches the new build. iOS also opens the selected "
                                                      "Simulator window and checks the launched process.",
@@ -125,14 +128,18 @@ def build_registry():
                     examples=("bcore sync", "bcore sync mac,android --plan")),
         CommandSpec("sync-build", "Sync, then build; stops at the first failed phase.", cmd_build.cmd_sync_build,
                     aliases=("sb",), positionals=(TARGET,),
-                    options=(CONFIGURATION, OFFLINE, FORCE_GN, PLAN, DEVICE, ALL_DEVICES, SKIP_SUPPORT_REFRESH),
-                    forward=True, side_effects="Sync effects, then build effects.", examples=("bcore sb",),
-                    notes="Extra arguments go to the build phase only."),
+                    options=(CONFIGURATION, OFFLINE, FORCE_GN, PLAN, DEVICE, ALL_DEVICES, SKIP_SUPPORT_REFRESH, SYNC_ARG),
+                    forward=True, side_effects="Sync effects, then build effects.",
+                    examples=("bcore sb", "bcore sb --sync-arg=--force --sync-arg=-D"),
+                    notes="Extra arguments go to the build phase only; pass sync arguments with --sync-arg, "
+                          "for example --sync-arg=--force --sync-arg=-D."),
         CommandSpec("sync-build-run", "Sync, build, then restart the browser with the built output.",
                     cmd_build.cmd_sync_build_run, aliases=("sbr",), positionals=(TARGET,),
-                    options=(CONFIGURATION, OFFLINE, FORCE_GN, PLAN, DEVICE, ALL_DEVICES, SKIP_SUPPORT_REFRESH), forward=True,
-                    side_effects="Sync, build, and restart effects.", examples=("bcore sbr",),
-                    notes="Extra arguments go to the build phase only."),
+                    options=(CONFIGURATION, OFFLINE, FORCE_GN, PLAN, DEVICE, ALL_DEVICES, SKIP_SUPPORT_REFRESH, SYNC_ARG), forward=True,
+                    side_effects="Sync, build, and restart effects.",
+                    examples=("bcore sbr", "bcore sbr --sync-arg=--force --sync-arg=-D"),
+                    notes="Extra arguments go to the build phase only; pass sync arguments with --sync-arg, "
+                          "for example --sync-arg=--force --sync-arg=-D."),
         CommandSpec("test", "Run the tests this branch or working tree changes, the tests in a file, or one named suite.",
                     cmd_test.cmd_test,
                     positionals=(TARGET, Positional("suite", False, help="Test suite, for example brave_unit_tests; on "

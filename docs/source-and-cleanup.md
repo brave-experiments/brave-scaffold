@@ -19,7 +19,8 @@ bcore sync ios                   # adds ios to target_os; Core's hooks bootstrap
 ```
 
 `bcore sync [<targets>]` runs Core's `sync` script with the checkout-local tools.
-Extra arguments go to that script only (in `sync-build`, only to the build phase).
+Extra arguments go to that script only. In `sync-build` and `sync-build-run` they go to the build phase;
+use `--sync-arg` for the sync phase.
 Standalone `sync` reads `-C` as the script's own option, never as an output
 directory. Mobile targets build `--target_os` from the union of the checkout's
 existing `.gclient` values and the requested mobile target; the host platform is
