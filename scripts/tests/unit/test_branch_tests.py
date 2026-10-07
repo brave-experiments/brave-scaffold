@@ -8,9 +8,11 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import tests.support  # noqa: F401
 from scaffold.brave import branch_tests
+from scaffold.common.procs import ProcessResult
 from scaffold.common.results import ScaffoldError
 
 GIT = ["git", "-c", "user.name=T", "-c", "user.email=t@example.com", "-c", "commit.gpgsign=false"]
@@ -136,6 +138,35 @@ class BranchTestsTests(unittest.TestCase):
         discovery = self.found()
         self.assertEqual(self.phases(discovery), {("mac", "brave_browser_tests"): ["WebUiTest.Beta"]})
         self.assertEqual(discovery.unmapped, [])
+
+    def test_a_committed_file_too_large_to_read_completely_stops_discovery(self):
+        filler = "// filler line to make the file large enough to exceed one megabyte\n" * 16000
+        self.write("browser/big_unittest.cc", "TEST_F(EarlyTest, A) {}\n" + filler + "TEST_F(LateTest, B) {}\n")
+        self.commit("big test")
+        self.assertGreater(len((self.root / "browser/big_unittest.cc").read_bytes()), 1_000_000)
+        with self.assertRaises(ScaffoldError) as caught:
+            self.found("committed")
+        self.assertEqual(caught.exception.code, "READINESS_INCOMPLETE")
+        self.assertIn("too large", caught.exception.message)
+        self.assertEqual(self.phases(self.found("both")), {("mac", "brave_unit_tests"): ["EarlyTest.*", "LateTest.*"]},
+                         "the working-tree file is read whole")
+
+    def test_truncated_or_timed_out_git_output_never_becomes_a_partial_selection(self):
+        cut = ProcessResult(returncode=0, stdout="a_browsertest.cc\0", truncated=True)
+        slow = ProcessResult(returncode=124, stdout="", timed_out=True)
+        repo = branch_tests.Repo(self.root)
+        for label, result in (("truncated", cut), ("timed out", slow)):
+            for check in (True, False):
+                with self.subTest(label=label, check=check), \
+                        mock.patch.object(branch_tests, "run_capture", return_value=result):
+                    with self.assertRaises(ScaffoldError) as caught:
+                        repo.git("show", "HEAD:x", check=check)
+                    self.assertEqual(caught.exception.code, "READINESS_INCOMPLETE")
+            with self.subTest(label=label, call="webui harness search"), \
+                    mock.patch.object(branch_tests, "run_capture", return_value=result):
+                with self.assertRaises(ScaffoldError) as caught:
+                    branch_tests.find_webui_harnesses(repo, "settings/x_test.js")
+                self.assertEqual(caught.exception.code, "READINESS_INCOMPLETE")
 
     def test_named_files_run_whether_or_not_they_changed(self):
         self.write("chromium_src/chrome/test/data/webui/settings/x_test.ts", WEBUI_TEST + "\n")

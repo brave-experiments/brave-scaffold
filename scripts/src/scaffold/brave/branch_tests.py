@@ -76,12 +76,22 @@ class Discovery:
                 "deselected": [{"path": path, "reason": reason} for path, reason in self.deselected]}
 
 
+def require_complete(result, what):
+    """A truncated or timed-out Git answer must stop discovery: a partial selection would look like a complete one."""
+    if result.truncated or result.timed_out:
+        raise ScaffoldError(
+            "READINESS_INCOMPLETE", "%s %s, so test selection stopped instead of reporting a partial one." % (
+                what, "timed out" if result.timed_out else "was too large to read completely"),
+            details={"what": what})
+
+
 class Repo:
     def __init__(self, path, log=None):
         self.path, self.log = Path(path), log
 
     def git(self, *args, check=True):
         result = run_capture(["git", "-C", str(self.path), *args], str(self.path), None, self.log, timeout=120)
+        require_complete(result, "git %s output" % " ".join(args[:2]))
         if check and result.returncode != 0:
             raise ScaffoldError("CHILD_FAILED", "git %s failed: %s" % (" ".join(args[:2]), result.stderr.strip()[-300:]),
                                 details={"argv": ["git", *args]}, child_exit_code=result.returncode)
@@ -264,6 +274,7 @@ def find_webui_harnesses(repo, target):
     for root in roots:
         result = run_capture(["git", "-C", str(root.path), "grep", "-lz", "-F", target, "--", "*_browsertest.cc",
                               "*_uitest.cc"], str(root.path), None, root.log, timeout=120)
+        require_complete(result, "git grep output in %s" % root.path)
         if result.returncode not in (0, 1):
             raise ScaffoldError("CHILD_FAILED", "git grep failed in %s" % root.path, child_exit_code=result.returncode)
         for name in filter(None, result.stdout.split("\0")):
