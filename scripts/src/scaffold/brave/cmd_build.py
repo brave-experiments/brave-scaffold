@@ -633,6 +633,15 @@ def cmd_android_test(ctx, identity, effective):
         return op.complete(result)
 
 
+def read_device_runs(report):
+    """Runs from the multi-device report; a missing, partial, or malformed report has none."""
+    try:
+        runs = json.loads(Path(report).read_text())["runs"]
+    except (OSError, ValueError, KeyError, TypeError):
+        return []
+    return runs if isinstance(runs, list) else []
+
+
 def run_android_test_devices(ctx, execution, effective, suite, group):
     identity = execution.identity
     if effective.unresolved:
@@ -653,7 +662,7 @@ def run_android_test_devices(ctx, execution, effective, suite, group):
         known, tail = android_test_arguments(ctx, android_tests.DEVICE, (group.adapter, group.devices[0]))
         argv, _, _ = run_android_test(ctx, execution, effective, op, known, tail, suite, None,
                                      {"NODE_OPTIONS": options, "SCAFFOLD_ANDROID_TEST_DEVICES": str(config_path)}, report)
-        runs = json.loads(report.read_text())["runs"] if report.exists() else []
+        runs = read_device_runs(report)
         if len(runs) != len(devices) or any(run["status"] != "finished" for run in runs):
             raise ScaffoldError("TEST_RESULTS_UNVERIFIED", "The test command did not report a completed run for every selected device.",
                                 details={"devices": runs}, exit_code=5)
@@ -778,8 +787,7 @@ def run_android_test_with_overlay(ctx, execution, effective, op, known, tail, su
         argv, state = run_output_step(ctx, execution, effective, op, arguments, "test",
                                       {**android.build_environment(execution.context(ctx)), **(extra_env or {})}, before_child)
     except ScaffoldError as error:
-        if report is not None and error.code == "CHILD_FAILED" and report.exists() and \
-                json.loads(report.read_text()).get("runs"):
+        if report is not None and error.code == "CHILD_FAILED" and read_device_runs(report):
             return error.details["argv"], None, None
         if error.code == "CHILD_FAILED" and results is not None:
             error.details["results"] = android_tests.summarize_results(results)
