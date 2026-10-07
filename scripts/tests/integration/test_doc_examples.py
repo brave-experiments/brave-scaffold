@@ -146,7 +146,8 @@ def _mac_test(command, state, expected):
             if "--filter" in words:
                 self.assertIn("--filter=" + words[words.index("--filter") + 1], new_calls[-1])
             if "--gtest_repeat=2" in words:
-                self.assertEqual(new_calls[-1][-1], "--gtest_repeat=2")
+                self.assertEqual(new_calls[-1][-2], "--gtest_repeat=2", "forwarded arguments keep their place")
+                self.assertTrue(new_calls[-1][-1].startswith("--test-launcher-summary-output="))
         elif command.startswith("bcore run"):
             self.assertTrue([r for r in self.sandbox.records() if r["tool"] == "open"], "the application was launched")
         elif command in ("bcore clean mac --arch arm64 --execute", "bcore clean all --execute"):
