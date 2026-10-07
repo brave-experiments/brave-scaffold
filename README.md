@@ -98,7 +98,8 @@ This requires the optional Bash/Zsh helper in the
 [installation guide](docs/getting-started.md#install); without it, the command
 prints the path.
 
-`bcore status` brings together the current branch, local changes, previous
+`bcore status` brings together the current branch, local changes, a short diff stat
+against `master`, previous
 build/test outcomes for that branch, and their log paths. It also flags outputs
 that need revalidation and shows free disk space when it falls below 200 GB.
 Saved outcomes are history, not proof that your current source passes tests.

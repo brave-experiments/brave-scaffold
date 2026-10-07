@@ -465,7 +465,10 @@ Run `bcore status` inside a checkout, or `bcore status --checkout main`. Use
 `--json` for all changed paths and structured history. Status reads local Git refs
 without fetching and does not load direnv, run doctor, or change checkout files.
 It reports Core's branch, HEAD, upstream, staged/unstaged/untracked changes, and
-ahead/behind counts against local `origin/master` when available.
+ahead/behind counts against local `origin/master` when available. A `Diff` line shows
+`git diff --shortstat master...HEAD`: the files, insertions, and deletions this branch has committed
+since it left the local `master` branch (JSON: `diff_stat`, or `null` when there is no local
+`master`). Staged, unstaged, and untracked changes are counted under `Changes`, not in this line.
 
 By default, operation history includes only runs recorded on the current branch.
 Use `bcore status --all-branches` to include other branches and older records whose
