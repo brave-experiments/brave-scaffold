@@ -351,6 +351,16 @@ def _usable_state(data):
     return isinstance(data, dict) and bool(data)
 
 
+def revalidation_warning(identity, output_dir, artifact_path, root=None):
+    """Warning text when the output's last attempt may have partly overwritten it, else None. Reads only the record."""
+    state = OutputState(identity, output_dir, root)
+    if not state.needs_revalidation:
+        return None
+    attempt = state.last_uncertain_attempt() or {}
+    return ("Build freshness is unknown for %s. An attempt to change this output did not complete successfully "
+            "(%s); its contents may be partly overwritten." % (artifact_path, attempt.get("outcome", "unknown")))
+
+
 def output_states(identity, root=None):
     directory = store_root(root) / "outputs" / checkout_key(identity.core)
     states = []

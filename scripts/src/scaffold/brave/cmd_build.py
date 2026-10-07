@@ -21,7 +21,7 @@ from ..common.procs import run_capture
 from ..common.results import Cancelled, Result, ScaffoldError, repair
 from . import (android, android_deps, android_tests, buildopts, execution as execution_module, freshness, macos,
                packages, patches, steps as step_module, sync as sync_module)
-from .records import OutputState, output_states, track
+from .records import OutputState, output_states, revalidation_warning, track
 
 SUITE_PATTERN = re.compile(r"[A-Za-z][A-Za-z0-9_]*_tests?")
 COMMON_SUITES = ("brave_browser_tests", "brave_unit_tests", "brave_all_unit_tests", "chromium_unit_tests",
@@ -957,14 +957,10 @@ def cmd_deploy(ctx):
 
 def warn_unvalidated_output(ctx, identity, bundle, result):
     """Launching never inspects sources, but an interrupted or failed rebuild is recorded and worth saying."""
-    state = OutputState(identity, Path(bundle["path"]).parent, ctx.state_root)
-    if not state.needs_revalidation:
-        return
-    attempt = state.last_uncertain_attempt() or {}
-    message = ("Build freshness is unknown for %s. An attempt to change this output did not complete successfully "
-               "(%s); its contents may be partly overwritten." % (bundle["path"], attempt.get("outcome", "unknown")))
-    result.add_warning("ARTIFACT_FRESHNESS_UNKNOWN", message)
-    ctx.log.phase("Warning [ARTIFACT_FRESHNESS_UNKNOWN]: " + message)
+    message = revalidation_warning(identity, Path(bundle["path"]).parent, bundle["path"], ctx.state_root)
+    if message:
+        result.add_warning("ARTIFACT_FRESHNESS_UNKNOWN", message)
+        ctx.log.phase("Warning [ARTIFACT_FRESHNESS_UNKNOWN]: " + message)
 
 
 def cmd_run(ctx):

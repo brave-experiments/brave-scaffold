@@ -287,7 +287,9 @@ launch; they do not scan sources or compare build freshness. `adb` comes from `A
 ## Recovery and limits
 
 - Failed, cancelled, or interrupted builds mark the output for revalidation; an
-  older valid APK can still be installed. Nothing rebuilds or deletes for you.
+  older valid APK can still be installed, and `run` and `deploy` warn
+  (`ARTIFACT_FRESHNESS_UNKNOWN`) before installing one from a marked output. Nothing rebuilds or deletes
+  for you.
 - Clean outputs with `bcore clean android` ([source and cleanup](source-and-cleanup.md)).
 - Release, other architectures, and AAB output are accepted but `limited`.
 - Checked on a real checkout and emulator on 2026-09-30: creating the support

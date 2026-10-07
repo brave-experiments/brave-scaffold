@@ -18,7 +18,7 @@ from ..common.config import save_android_device
 from ..common.procs import run_capture
 from ..common.results import Result, ScaffoldError, repair
 from . import adb, android_deps, steps as step_module
-from .records import output_states, track
+from .records import output_states, revalidation_warning, track
 
 PACKAGE_PREFIX = "com.brave."
 DEFAULT_JAVA_OPTS = "-Xmx10G -Xms1G"
@@ -393,10 +393,17 @@ def run_android(ctx, identity, validated=False):
     artifact = select_apk(ctx, identity, configuration, "arm64")
     if ctx.parsed.get("plan"):
         return run_plan(ctx, identity, artifact)
+    result = Result(command=ctx.command)
+    apk = Path(artifact["path"])
+    message = revalidation_warning(identity, apk.parent.parent if apk.parent.name == "apks" else apk.parent,
+                                   artifact["path"], ctx.state_root)
+    if message:
+        result.add_warning("ARTIFACT_FRESHNESS_UNKNOWN", message)
+        ctx.log.phase("Warning [ARTIFACT_FRESHNESS_UNKNOWN]: " + message)
     with track(ctx, ctx.command, identity, {"target": "android", "artifact": artifact["path"]},
                validated=validated) as op:
         op.start("run", artifact=artifact["path"])
-        return op.complete(restart_apk(ctx, identity, artifact, Result(command=ctx.command), None, op))
+        return op.complete(restart_apk(ctx, identity, artifact, result, None, op))
 
 
 # --- explicit dependency setup ----------------------------------------------------------------

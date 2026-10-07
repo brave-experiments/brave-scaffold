@@ -519,6 +519,33 @@ class DeviceTests(AndroidTestCase):
                 self.assertNotIn("Checking source state", log)
                 self.assertNotIn("applyPatches.sh", log)
 
+    def mark_output_for_revalidation(self):
+        from scaffold.brave.records import OutputState
+        from scaffold.common.config import load_config
+        from scaffold.common.identity import build_identity
+        identity = build_identity(self.core, load_config(self.sandbox.config), "test")
+        state = OutputState(identity, self.src / "out" / "android_Debug_arm64", self.sandbox.config.parent)
+        state.begin_attempt("op-failed-rebuild")
+        state.end_attempt("op-failed-rebuild", "failed")
+        self.assertTrue(OutputState(identity, self.src / "out" / "android_Debug_arm64",
+                                    self.sandbox.config.parent).needs_revalidation)
+
+    def test_run_and_deploy_warn_before_installing_an_output_a_failed_rebuild_may_have_overwritten(self):
+        result, document = self.run_android("android", "--device", "emulator-5554")
+        self.assertNotIn("ARTIFACT_FRESHNESS_UNKNOWN", [w["code"] for w in document["warnings"]])
+        self.mark_output_for_revalidation()
+        for command in ("run", "deploy"):
+            with self.subTest(command=command):
+                self.sandbox.record.unlink(missing_ok=True)
+                result, document = self.run_android("android", "--device", "emulator-5554", command=command)
+                self.assertEqual(result.returncode, 0, "the installed APK is still launchable: " + result.stderr)
+                warning = next(w for w in document["warnings"] if w["code"] == "ARTIFACT_FRESHNESS_UNKNOWN")
+                self.assertIn("partly overwritten", warning["message"])
+                self.assertIn("BraveMonoarm64.apk", warning["message"])
+                self.assertNotIn("freshness", document["data"]["run"], "sources are still not inspected")
+                self.assertTrue([c for c in self.adb_calls() if "install" in c], "the install still happened")
+                self.assertIn("Warning [ARTIFACT_FRESHNESS_UNKNOWN]", result.stderr)
+
     def test_build_run_chooses_the_device_before_building(self):
         self.sandbox.record.unlink(missing_ok=True)
         result, document = self.run_android("android", command="build-run")
