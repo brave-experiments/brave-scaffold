@@ -26,11 +26,14 @@ def resolve_head(repo, log=None):
     return gitstate.head_commit(repo, log)
 
 
-SIGNATURE_FORMAT = "content-sha256-v1"
+SIGNATURE_FORMAT = "content-mode-sha256-v2"
 
 
 def _file_signature(path):
-    """What a changed file holds. Size and timestamp are not evidence: both survive an edit that restores them."""
+    """What a changed file holds: its contents and whether it is executable, which is all Git tracks of its mode.
+
+    Size and timestamp are not evidence: both survive an edit that restores them.
+    """
     try:
         info = os.lstat(path)
     except OSError:
@@ -49,7 +52,7 @@ def _file_signature(path):
                 digest.update(block)
     except OSError:
         return "unreadable"
-    return digest.hexdigest()
+    return digest.hexdigest() + (":exec" if info.st_mode & stat.S_IXUSR else "")
 
 
 def worktree_state(repo, log=None):
@@ -187,6 +190,10 @@ def assess(recorded, current, output_state):
     predating = [key for key in TRACKED if key in current and key not in recorded]
     if predating:
         evidence.append("The recorded build predates the comparison of: " + ", ".join(predating))
+        return {"status": "unknown", "evidence": evidence}
+    if "signature_format" in recorded and recorded["signature_format"] != current.get("signature_format"):
+        evidence.append("The recorded build compared files by a different method (%s); rebuild to compare with "
+                        "the current one." % recorded["signature_format"])
         return {"status": "unknown", "evidence": evidence}
     changed, unchecked = [], []
     for key in TRACKED:

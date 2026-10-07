@@ -122,8 +122,8 @@ their earlier records as history, and does not clean or roll back. An earlier ap
 run with `bcore run ios`.
 `run` warns before installing when an attempt may have partly overwritten the selected
 output, tracked sources changed since its build, or its build freshness cannot be checked.
-Changed files are compared by their contents, not their size or timestamps, so an edit that
-restores a file's timestamp is still noticed. A build recorded before that comparison existed
+Changed files are compared by their contents and executable bit, not their size or timestamps, so an edit that
+restores a file's timestamp, or makes a script non-executable, is still noticed. A build recorded before that comparison existed
 reports its freshness as unknown until it is rebuilt.
 
 ## Run

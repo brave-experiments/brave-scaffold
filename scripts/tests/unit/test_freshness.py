@@ -65,6 +65,16 @@ class TrackedChangesTests(unittest.TestCase):
         self.assertNotEqual(self.state(), tracked)
         self.assertNotEqual(freshness.worktree_state(self.repo), worktree)
 
+    def test_flipping_the_executable_bit_of_an_already_modified_file_changes_the_fingerprint(self):
+        (self.repo / "a.txt").write_text("hello, edited\n")
+        os.chmod(self.repo / "a.txt", 0o644)
+        before = self.state()
+        os.chmod(self.repo / "a.txt", 0o755)
+        executable = self.state()
+        self.assertNotEqual(executable, before)
+        os.chmod(self.repo / "a.txt", 0o644)
+        self.assertEqual(self.state(), before)
+
     def test_an_edit_changes_the_fingerprint_and_reverting_it_restores_it(self):
         before = self.state()
         (self.repo / "a.txt").write_text("hello, edited\n")
@@ -100,6 +110,18 @@ class FileSignatureTests(unittest.TestCase):
         os.utime(path, ns=(ns + 5_000_000_000, ns + 5_000_000_000))
         self.assertEqual(freshness._file_signature(path), before, "a touched but identical file is unchanged")
 
+    def test_the_executable_bit_is_part_of_the_signature_but_other_permissions_are_not(self):
+        path = self.dir / "script.sh"
+        path.write_text("#!/bin/sh\n")
+        os.chmod(path, 0o644)
+        plain = freshness._file_signature(path)
+        os.chmod(path, 0o755)
+        self.assertNotEqual(freshness._file_signature(path), plain)
+        os.chmod(path, 0o664)
+        self.assertEqual(freshness._file_signature(path), plain, "group write depends on the umask, not on Git")
+        os.chmod(path, 0o600)
+        self.assertEqual(freshness._file_signature(path), plain)
+
     def test_missing_files_directories_and_links_have_their_own_signatures(self):
         (self.dir / "d").mkdir()
         (self.dir / "t1.txt").write_text("one")
@@ -130,6 +152,14 @@ class AssessFormatTests(unittest.TestCase):
                                                   "patched_files": "different"}, State())
         self.assertEqual(result["status"], "unknown")
         self.assertIn("signature_format", " ".join(result["evidence"]))
+
+    def test_a_record_made_with_another_comparison_method_is_unknown_not_stale(self):
+        result = freshness.assess({**CURRENT, "signature_format": "content-sha256-v1"},
+                                  {**CURRENT, "signature_format": freshness.SIGNATURE_FORMAT, "patched_files": "x"},
+                                  State())
+        self.assertEqual(result["status"], "unknown")
+        self.assertIn("different method", " ".join(result["evidence"]))
+        self.assertNotEqual(freshness.SIGNATURE_FORMAT, "content-sha256-v1")
 
     def test_the_fingerprint_names_its_signature_format(self):
         self.assertIn("signature_format", freshness.TRACKED)
