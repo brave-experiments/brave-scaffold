@@ -93,6 +93,36 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(self.path.read_text(), before)
         self.assertEqual(len(config_module.load_config(self.path).checkouts), 1, "the file still loads")
 
+    def update_alias(self, text):
+        self.path.write_text(text)
+        outcome = config_module.upsert_checkout(self.path, "/work/a/src/brave", alias="main", direnv_dir="env/main")
+        loaded = config_module.load_config(self.path)
+        self.assertEqual(outcome, "updated")
+        self.assertEqual([(record.alias, str(record.core)) for record in loaded.checkouts],
+                         [("main", "/work/a/src/brave")])
+        self.assertEqual(self.path.read_text().count("[[checkouts]]"), 1)
+        return self.path.read_text()
+
+    def test_a_final_core_line_without_a_newline_is_extended_on_its_own_lines(self):
+        text = self.update_alias('schema_version = 1\n\n[[checkouts]]\ncore = "/work/a/src/brave"')
+        lines = text.splitlines()
+        for assignment in ('core = "/work/a/src/brave"', 'alias = "main"', 'direnv_dir = "env/main"'):
+            self.assertIn(assignment, lines, "each assignment is on a line of its own")
+
+    def test_every_valid_spelling_of_the_core_key_can_be_updated(self):
+        for core in ('"core" = "/work/a/src/brave"', "core='/work/a/src/brave'",
+                     "core   =   \"/work/a/src/brave\"   # my main checkout", "'core' = '/work/a/src/brave'"):
+            with self.subTest(core=core):
+                text = self.update_alias("schema_version = 1\n[[checkouts]]\n%s\n" % core)
+                self.assertIn('alias = "main"', text)
+                self.assertIn(core, text, "the user's own line is kept as written")
+
+    def test_a_block_followed_by_other_tables_and_comments_keeps_them(self):
+        text = self.update_alias('schema_version = 1\n[[checkouts]]\n# my main one\ncore = "/work/a/src/brave"\n'
+                                 '\n[logging]\nverbosity = "verbose"\n')
+        self.assertIn("# my main one\n", text)
+        self.assertTrue(text.endswith('[logging]\nverbosity = "verbose"\n'))
+
     def test_ios_is_a_valid_default_platform(self):
         config = self.load('schema_version = 1\n[defaults]\nplatform = "iOS"\n')
         self.assertEqual(config.default_platform, "ios")

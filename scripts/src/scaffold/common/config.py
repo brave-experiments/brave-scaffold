@@ -242,6 +242,20 @@ def _record_of(block_text):
         return {}
 
 
+def _key_line(lines, start, end, key):
+    """Index of the line that assigns `key` in the table at lines[start:end], else the table's header line.
+
+    Each line is read as TOML, so a quoted key, single quotes, extra spacing, or a trailing comment all count.
+    """
+    for index in range(start + 1, end):
+        try:
+            if key in tomllib.loads(lines[index]):
+                return index
+        except tomllib.TOMLDecodeError:
+            continue
+    return start
+
+
 def write_validated_config(path, text):
     """Replace the configuration only if the new text is still a valid configuration, not merely valid TOML."""
     try:
@@ -338,8 +352,10 @@ def upsert_checkout(path, core, alias=None, direnv_dir=None):
                     % (key, existing, path),
                     details={"file": str(path), "field": key})
             continue
-        core_line = next(i for i in range(start, end) if re.match(r"\s*core\s*=", lines[i]))
-        lines.insert(core_line + 1, "%s = %s\n" % (key, toml_string(value)))
+        anchor = _key_line(lines, start, end, "core")
+        if not lines[anchor].endswith("\n"):
+            lines[anchor] += "\n"  # the last line of a file may have no newline to end it
+        lines.insert(anchor + 1, "%s = %s\n" % (key, toml_string(value)))
         end += 1
         changed = True
     if changed:
