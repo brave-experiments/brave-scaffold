@@ -14,7 +14,7 @@ from pathlib import Path
 from ..common.procs import run_capture, run_streaming
 from ..common.results import ScaffoldError, repair
 from ..common.platforms import host_platform
-from . import android_deps, steps as step_module, support_scripts, sync_scope
+from . import android_deps, rbe_checks, steps as step_module, support_scripts, sync_scope
 from .patchformat import UnknownPatchFormat, parse_patch_targets
 
 TEST_SUPPORT_BRANCH = android_deps.metadata()["default_ref"]
@@ -88,21 +88,37 @@ def results_option(forwarded):
 # --- support branch -----------------------------------------------------------------------------
 
 
+def configured_support_branch(identity):
+    """Read Core's .env, including include_env files, without changing Git state."""
+    path = Path(identity.core) / ".env"
+    if not path.exists():
+        return TEST_SUPPORT_BRANCH
+    try:
+        values = rbe_checks.read_env(path)
+    except (OSError, ValueError):
+        raise ScaffoldError("INVALID_INPUT", "Cannot read Android test support branch settings from %s." % path) from None
+    branch = values.get("android_test_support_branch", TEST_SUPPORT_BRANCH).strip()
+    if not branch or branch.startswith("-"):
+        raise ScaffoldError("INVALID_INPUT", "android_test_support_branch in %s must name a local Git branch." % path)
+    return branch
+
+
 def require_support_branch(identity, log=None):
     """The selected checkout's support working copy must be on the test branch. Nothing is switched."""
+    branch = configured_support_branch(identity)
     wc = android_deps.working_copy(identity)
     facts = android_deps.inspect_working_copy(wc, log)
     if facts is None:
         raise android_deps.missing_working_copy(identity, wc)
-    if facts["branch"] != TEST_SUPPORT_BRANCH:
+    if facts["branch"] != branch:
         current = "branch %s" % facts["branch"] if facts["branch"] else "a detached HEAD (%s)" % (facts["head"] or "unknown")[:12]
         raise ScaffoldError(
             "DEPENDENCY_INCOMPATIBLE",
             "Android tests need the support working copy %s on the %s branch, but it is on %s. "
-            "Nothing was switched, prepared, or built." % (wc, TEST_SUPPORT_BRANCH, current),
-            details={"working_copy": str(wc), "required_branch": TEST_SUPPORT_BRANCH, "branch": facts["branch"],
+            "Nothing was switched, prepared, or built." % (wc, branch, current),
+            details={"working_copy": str(wc), "required_branch": branch, "branch": facts["branch"],
                      "head": facts["head"], "checkout": str(identity.core)},
-            repairs=[repair(["git", "-C", str(wc), "switch", TEST_SUPPORT_BRANCH], requires_user_action=True,
+            repairs=[repair(["git", "-C", str(wc), "switch", branch], requires_user_action=True,
                             note="The scaffold never switches this repository. Run it yourself when the working "
                                  "copy has no changes you need to keep.")])
     return facts
@@ -200,6 +216,9 @@ def prepare_overlay(ctx, execution, op):
     identity = execution.identity
     ctx = execution.context(ctx)
     wc = android_deps.working_copy(identity)
+    facts = require_support_branch(identity, ctx.log)
+    ctx.log.phase("Android test support: %s, local branch %s (%s)."
+                  % (wc, facts["branch"], facts["head"][:12]))
     writes = overlay_scope(identity, wc)
     state = overlay_state(identity, wc, ctx.environ, ctx.log)
     described = overlay_step(identity, wc, state, writes)
@@ -216,7 +235,7 @@ def prepare_overlay(ctx, execution, op):
         return False
     op.start(OVERLAY_STEP, **described.record())
     ctx.log.phase("Starting to apply the Android test overlay from local support branch %s "
-                  "(remote branch: origin/%s)..." % (TEST_SUPPORT_BRANCH, TEST_SUPPORT_BRANCH))
+                  "in %s..." % (facts["branch"], wc))
     ctx.log.phase("Core files:")
     for path in writes:
         ctx.log.phase("  " + path.removeprefix("brave/"))
