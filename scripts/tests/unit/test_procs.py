@@ -34,8 +34,8 @@ def alive(pid):
         os.kill(pid, 0)
     except ProcessLookupError:
         return False
-    return subprocess.run(["ps", "-o", "stat=", "-p", str(pid)], capture_output=True, text=True).stdout.strip() \
-        not in ("", "Z")
+    state = subprocess.run(["ps", "-o", "stat=", "-p", str(pid)], capture_output=True, text=True).stdout.strip()
+    return state != "" and not state.startswith("Z")
 
 
 def wait_for(path, seconds=10):

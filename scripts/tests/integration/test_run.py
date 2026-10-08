@@ -17,13 +17,18 @@ from tests.integration.test_build import BUILD_HOOK, SKIP, BuildTestCase
 from tests.support import SCRIPTS, write_executable
 
 
+def process_state(pid):
+    """The `ps` state of a process ("" when it is gone). Zombies show Z, possibly with flag letters such as Zs."""
+    return subprocess.run(["ps", "-o", "stat=", "-p", str(pid)], capture_output=True, text=True).stdout.strip()
+
+
 def alive(pid):
     try:
         os.kill(pid, 0)
     except ProcessLookupError:
         return False
-    return subprocess.run(["ps", "-o", "stat=", "-p", str(pid)], capture_output=True, text=True).stdout.strip() \
-        not in ("", "Z")
+    state = process_state(pid)
+    return state != "" and not state.startswith("Z")
 
 
 def wait_gone(pid, seconds=10):
@@ -72,7 +77,8 @@ class RunTests(BuildTestCase):
                                                   name="Example")
         result, document = self.run_app()
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertTrue(wait_gone(matching.pid), "the same application from another checkout is restarted")
+        self.assertTrue(wait_gone(matching.pid), "the same application from another checkout is restarted "
+                        "(state %r)" % process_state(matching.pid))
         self.assertTrue(alive(other.pid), "other applications are left alone")
         self.assertEqual(document["data"]["run"]["stopped"], [matching.pid])
         self.assertEqual([r["path"] for r in self.launched()], [str(self.output_app())])
@@ -305,7 +311,7 @@ class RestartEscalationTests(unittest.TestCase):
                 mock.patch.object(macos, "KILL_WAIT_SECONDS", 3):
             steps = macos.stop_instances(bundle, instances, env)
         self.assertEqual(steps, ["quit", "terminate", "kill"])
-        self.assertTrue(wait_gone(process.pid))
+        self.assertTrue(wait_gone(process.pid), "state %r" % process_state(process.pid))
         survivor = mock.Mock(pid=os.getpid())
         with mock.patch.object(macos, "QUIT_WAIT_SECONDS", 0.1), mock.patch.object(macos, "TERM_WAIT_SECONDS", 0.1), \
                 mock.patch.object(macos, "KILL_WAIT_SECONDS", 0.1), mock.patch.object(macos.os, "kill") as kill:
