@@ -1,32 +1,83 @@
 ## Overview
 
-Brave Scaffold gives Brave developers a small command-line API for common
-`brave-core` operations: sync, build, run, and test. It replaces the personal
-scripts and aliases you maintain to select a checkout, assemble platform-specific
-commands, and run the next step after a build.
+Brave Scaffold makes everyday `brave-core` development easier: building and
+restarting the browser, running tests, and switching between checkouts. `bcore`
+provides short commands for these workflows using `brave-core`'s existing tools.
+Use whichever commands help and keep any of your existing workflows.
 
-If you already have a setup you like, start with `bcore test mac`: it finds the
-test files you changed, compiles their suites, and runs them with the right
-filters. You can use the rest as it becomes useful.
-
-Scaffold is optional. **Adopting it requires no changes to Brave Core.** Setup
+Scaffold is optional. **Adopting it requires no changes to `brave-core`.** Setup
 writes no integration files, hooks, Git configuration, or exclusions inside your
-checkouts. Core remains usable on its own with its normal commands. Explicitly
-requested syncs, builds, and tests still make their normal checkout writes.
+checkouts. You can keep using `brave-core` commands directly.
 
-## Features
+Currently runs on **macOS arm64**, with macOS, Android, and iOS Simulator targets.
+See [platform support](#platform-support) for what's been tested.
+
+## Examples
+
+### Build and open the browser after an edit
+
+Consider the case where you've edited your Android code and you're ready to build and run. Assuming no local scripts/aliases, that will look like so for a Debug arm64 build (from `src/brave`, with one device connected):
+
+```sh
+pnpm run build --target_os=android --target_arch=arm64 \
+  -C android_Debug_arm64 Debug --target_android_output_format=apk \
+  --gn=is_component_build:false --gn=enable_android_secondary_abi:false \
+  --gn=use_mold:false --gn=use_system_xcode:false --use_remoteexec=true
+
+adb install -d -r -g ../out/android_Debug_arm64/apks/BraveMonoarm64.apk
+adb shell am force-stop com.brave.browser_default
+adb shell monkey -p com.brave.browser_default 1
+```
+
+Now, with `bcore`:
+
+```sh
+bcore build android
+bcore run android     # installs and opens the app
+```
+
+Or combine them:
+
+```sh
+bcore build-run android
+# Short form: bcore br android
+```
+
+The same workflow works for macOS: `bcore build-run mac` builds and restarts the
+browser. Both default to Debug arm64 builds with remote execution (RBE) enabled.
+
+### `apply_patches`, applied for you
+
+Before compiling, `bcore build` and `bcore test` check `brave-core`'s patches and run
+`apply_patches` when needed. This can change patched source files. If the checks
+find that applying patches could overwrite local work not explained by saved
+patch records, the command stops for review. See
+[patch preparation](docs/source-and-cleanup.md#patch-preparation) for the details.
 
 ### Compile and run the tests you changed
 
-After editing tests, run `bcore test mac` or `bcore test android`. Instead of
-looking up test targets, building each one, and assembling filters, let `bcore`
-select and run the suites for you.
+`bcore test mac` is a handy command that finds the
+test files you changed, compiles their suites, and runs them with the right
+filters.
 
 Suppose you changed a `*_unittest.cc` file with the fixture `ExampleTest` and a
-`*_browsertest.cc` file with `ExampleBrowserTest`:
+`*_browsertest.cc` file with the fixture `ExampleBrowserTest`:
+
+Without `bcore`, you'd identify the suites and fixture names, construct a `--filter`, then build and run each suite. 
+
+For a macOS Debug arm64 build, from `src/brave`:
 
 ```sh
-bcore test mac --plan   # inspect the selection without building or running
+pnpm run test brave_unit_tests --filter='ExampleTest.*' \
+  --target_os=mac --target_arch=arm64 -C Debug_arm64 Debug --use_remoteexec=true
+
+pnpm run test brave_browser_tests --filter='ExampleBrowserTest.*' \
+  --target_os=mac --target_arch=arm64 -C Debug_arm64 Debug --use_remoteexec=true
+```
+
+Now, with `bcore`:
+
+```sh
 bcore test mac          # compile and run both selected suites
 ```
 
@@ -37,142 +88,83 @@ Changed test files          Test target             Run filter
 ```
 
 One command builds the required targets and runs the selected fixtures, saving
-you from running every test in each suite. A test failure in one suite does not
-prevent the other from running; a setup error stops the remaining work.
+you from looking up targets and assembling filters yourself.
 
-Discovery includes commits since your branch diverged from `origin/master`, plus
-staged, unstaged, and untracked files. Use `--base REF` for another base. It selects
-from changed **test files**, not production-code changes. C++ filters include all
-fixtures in each selected file, not only the test cases you edited. Unmapped
-tests are reported; if nothing is selected, nothing runs.
-
-Android uses the same workflow:
-
-```sh
-bcore test android --plan
-bcore test android
-```
-
-Java JUnit files map to host-side `brave_junit_tests`; device Java tests map to
-`brave_java_unit_tests`. Android tests require the
-[Android test support setup](docs/android.md#tests), and device suites need a
-compatible device. These commands are implemented but remain unverified on a
-real checkout. Desktop WebUI tests can also map to their C++ browser-test harness.
-See [test selection](docs/commands.md#test) for supported file patterns and limits.
-
-### `apply_patches` applied automatically
-
-Before compiling, `bcore build` and `bcore test` check Core's patch state and run
-`apply_patches` when preparation is needed. This also applies to combined commands
-such as `bcore br` and `bcore sbr`; commands that sync first check patches after
-sync. You can build after pulling a Core change without running a full sync just
-to apply its updated patches.
-
-If patched files match complete metadata and patch/rewrite inputs are clean,
-the command skips patch application. If applying patches could overwrite local
-work that the saved patch records cannot explain, it stops with
-`PREPARATION_CONFLICT` and lists the files for review. Use `--plan` to preview the
-decision. See [patch preparation](docs/source-and-cleanup.md#patch-preparation)
-for the checks and how to resolve conflicts.
-
-### Check your setup before a long build
-
-`bcore doctor mac` checks the selected checkout's environment, required tools,
-checkout-local Node and package manager, Xcode/SDK readiness, and local Siso/RBE
-configuration. `bcore doctor android` and `bcore doctor ios` check their platforms.
-
-Use `bcore doctor rbe` when remote-build setup is the problem. It checks RBE
-settings, native Siso mode, TLS file availability and certificate expiry, the
-cache directory, and generated sync files. These are local checks; they do not
-verify VPN or service connectivity.
-
-Doctor reports blockers, warnings, and suggested next steps without installing
-or repairing tools. Outside a checkout it checks all registered checkouts;
-`--checkout main` limits it to one.
-
-### Switch checkouts and see where you left off
-
-`bcore cd main` enters the registered checkout's `src/brave` directory. Give each
-checkout a short alias and stop maintaining a separate `cd` alias for every path.
-This requires the optional Bash/Zsh helper in the
-[installation guide](docs/getting-started.md#install); without it, the command
-prints the path.
-
-`bcore status` brings together the current branch, local changes, a short diff stat
-against `master`, previous
-build/test outcomes for that branch, and their log paths. It also flags outputs
-that need revalidation and shows free disk space when it falls below 200 GB.
-Saved outcomes are history, not proof that your current source passes tests.
+Note: selection includes changed **test files** from branch commits and local edits.
+It only looks for changes to test files. If you change the code being tested without changing its tests, those tests aren't selected. See [test selection](docs/commands.md#test) for discovery rules and supported tests.
 
 ### Sync, build, and restart with one command
 
-`bcore sbr mac` runs sync, build, and restart in order. A failed phase stops the
-workflow, and launch requires the verified output from that build. Use
-`bcore br mac` to build and restart without syncing, or `bcore sb mac` to sync and
-build without launching. The same commands accept `android` and `ios` targets.
-Extra arguments on combined commands go to the build phase; send arguments to Core's sync with
-`--sync-arg`, for example `bcore sbr --sync-arg=--force --sync-arg=-D`.
+When you want to sync before building:
 
-Sync runs Core's normal resets, patches, and hooks, which can overwrite local
-changes. Save wanted work before syncing, including through `bcore sbr`.
+```sh
+bcore sync-build-run mac
+# Short form: bcore sbr mac
+```
 
-### Get notified when work finishes
+This runs sync, build, and restart in order. A failed phase stops the workflow,
+and the browser only restarts with the verified output from that build. The same
+command accepts `android` and `ios` targets.
 
-Leave a build or test running without watching the terminal. By default, major
-operations ring the terminal bell once when they finish. Combined commands ring
-once after the final outcome, including a failed launch after a successful build.
-Your terminal settings decide whether the bell makes a sound or flashes.
+Sync runs `brave-core`'s normal resets, patches, and hooks, which can overwrite local
+changes. Save wanted work before syncing. See
+[source operations](docs/source-and-cleanup.md) for details.
 
-Use `--notify=never` to silence a command. Desktop notifications are experimental
-and opt-in; clicking one may open Script Editor rather than your terminal. See
-[completion notifications](docs/commands.md#completion-notifications).
+## See what will run
 
-## Recipes
+Use `--plan` to preview the steps before running them:
 
-Once configured, commands select the checkout containing your current directory.
-From elsewhere, add `--checkout main`; `main` is a checkout alias, not a branch.
+```sh
+bcore build android --plan
+bcore sync-build-run mac --plan
+bcore test mac --plan
+```
+
+During execution, `bcore` shows phases, commands, and live child output. A
+redacted diagnostic log keeps the commands and working directories for later
+inspection. Use `--verbose` to show probes or `--quiet` for less output.
+
+## Other useful commands
 
 | What you want to do | Command |
 | --- | --- |
-| Enter a checkout and see its recent work | `bcore cd main`, then `bcore status` |
-| Check readiness before building | `bcore doctor mac` |
-| Preview which changed tests will run | `bcore test mac --plan` |
-| Compile and run changed tests | `bcore test mac` |
+| Check your setup before a long build | `bcore doctor mac` |
+| Check local RBE/Siso configuration | `bcore doctor rbe` |
+| Switch to a registered checkout | `bcore cd main` |
+| See the branch, local changes, and previous build/test outcomes | `bcore status` |
 | Run tests from one file, changed or not | `bcore test --file components/example/example_unittest.cc` |
 | Run a known browser-test fixture | `bcore test mac brave_browser_tests --filter 'Example.*'` |
-| Build and restart after a source edit | `bcore br mac` |
-| Sync, build, and restart | `bcore sbr mac` |
-| Preview sync/build/restart commands | `bcore sbr mac --plan` |
 | Restart an existing macOS output without rebuilding | `bcore run mac` |
 | Build and install on every connected Android device | `bcore build-run android --all-devices` |
 | Build and launch in an iOS Simulator | `bcore build-run ios` |
-| Call a Core package script with the checkout's own tools | `bpm run <script>` |
+| Call a `brave-core` package script with the checkout's own tools | `bpm run <script>` |
 
-Commands show phases, effective primary commands, and live child output. A
-redacted diagnostic log keeps the exact commands and working directories for
-later inspection. Use `--verbose` to show probes or `--quiet` for less output.
-See the [command reference](docs/commands.md) for options and more workflows.
+`doctor` reports problems and suggested fixes without installing or repairing
+anything; its RBE checks do not test VPN or service connectivity. `cd` needs the
+optional [shell helper](docs/getting-started.md#install) to change directories;
+without it, it prints the path. Saved outcomes in `status` are history, not proof
+that your current source passes tests.
+
+Major operations ring the terminal bell when they finish; use `--notify=never`
+to silence them. See the [command reference](docs/commands.md) for more options
+and workflows.
+
+**Commit signing with 1Password:** Scaffold also includes a Git signing utility.
+Run `bcore doctor signing` to check your setup, then follow the
+[commit signing guide](docs/signing.md).
 
 ## Installation
 
-To have your agent configure it, give it this repository and the locations of
-your existing checkouts:
+Prompt your agent with a version of this:
 
-> Look at this brave-scaffold repository. I have brave-browser checkouts at
-> <insert locations>. Configure Brave Scaffold for those checkouts, including
-> the shell helper for `bcore cd`, and check readiness with `bcore doctor`.
-> Show me the generated environment files and the `direnv allow` commands
-> I need to review and run myself.
+> Read `<repo_path>/docs/getting-started.md`. My `brave-browser` checkouts are at:
+>
+> - `<path/to/brave-browser>`
+>
+> Look at my local setup, explain what installing `brave-scaffold` would involve,
+> and recommend a useful first command. Ask before making changes.
 
-The current host requirement is **macOS arm64**, with Python 3.14+, Git, direnv,
-and an existing full Brave checkout. Scaffold and your checkouts can live in
-separate directories or on different volumes; Git linked worktrees are not
-supported.
-
-For manual setup, prerequisites, and shell configuration, follow
-[Getting started](docs/getting-started.md). Setup and environment approval are
-one-time steps per installation/checkout, with renewed approval when an
-environment file changes.
+Prefer to set it up yourself? See [Getting started](docs/getting-started.md).
 
 ## Where Scaffold and checkouts can live
 
@@ -204,7 +196,7 @@ dev/                        Scaffold repository
 
 For the nested layout, keep browser checkout directories ignored by Scaffold's
 Git configuration. See the [FAQ](#faq) for local ignore rules. No exclusions or
-integration files are needed inside Core.
+integration files are needed inside `brave-core`.
 
 In either layout, put Scaffold's `scripts/` directory on `PATH` and register each
 checkout. With the shell helper loaded, `bcore cd main` enters that checkout's
@@ -269,12 +261,8 @@ that are implemented but unverified.
 | Sync sources, patches, and cleanup | [Source and cleanup](docs/source-and-cleanup.md) |
 | Configure checkouts and environments | [Configuration and environments](docs/configuration-and-environments.md) |
 | Look up commands, options, results, exit codes | [Commands](docs/commands.md) |
-| Manage shared support repositories | [Support repositories](docs/support-repositories.md) |
-| Sign commits | [Commit signing](docs/signing.md) |
 | Diagnose a failure | [Troubleshooting](docs/troubleshooting.md) |
-| Drive the tools from an agent | [Agent workflows](docs/agent-workflows.md) |
 | Change or extend the tools | [Development](docs/development.md) |
-| Project skills for contributors | [Skills](docs/skills.md) |
 
 ## FAQ
 
@@ -297,10 +285,10 @@ If Scaffold lives at `~/dev/brave-scaffold` instead, sibling repositories under
 `~/dev` are outside it and need no Scaffold ignore rule. Unrelated repositories
 do not need to be registered with `bcore`.
 
-### Can I keep using my existing scripts and Core commands?
+### Can I keep using my existing scripts and `brave-core` commands?
 
 Yes. You can adopt individual commands, such as `bcore test mac`, while keeping
-your existing workflow. Scaffold setup leaves Core untouched. Avoid running
+your existing workflow. Scaffold setup leaves `brave-core` untouched. Avoid running
 Scaffold and another build, sync, or test process against the same checkout at
 the same time; Scaffold does not lock checkouts.
 
