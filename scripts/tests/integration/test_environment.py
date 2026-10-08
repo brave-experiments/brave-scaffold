@@ -8,11 +8,28 @@ import os
 import shutil
 import unittest
 
-from tests.support import SandboxTest, SCRIPTS, tree_snapshot
+from tests.support import SandboxTest, SCRIPTS, tree_snapshot, write_executable
 
 
 @unittest.skipUnless(shutil.which("direnv"), "direnv is required")
 class EnvironmentTests(SandboxTest):
+    def test_shell_reports_startup_and_exit_failures(self):
+        self.sandbox.make_checkout("main")
+        self.sandbox.prepare_environment("main")
+        shell = self.sandbox.root / "test-shell"
+        for code in (127, 7, 0):
+            with self.subTest(code=code):
+                if code != 127:
+                    write_executable(shell, "#!/bin/sh\nexit %d\n" % code)
+                result, document = self.sandbox.bcore_json(
+                    "shell", "--checkout", "main", "--config", str(self.sandbox.config),
+                    env=self.sandbox.env(SHELL=str(shell)))
+                self.assertEqual(document["child_exit_code"], code)
+                self.assertEqual(result.returncode, 5 if code else 0)
+                self.assertEqual(document["status"], "error" if code else "ok")
+                if code:
+                    self.assertEqual(document["error"]["code"], "CHILD_FAILED")
+
     def test_init_writes_outside_core_and_never_approves(self):
         core = self.sandbox.make_checkout("main")
         self.sandbox.register("main")

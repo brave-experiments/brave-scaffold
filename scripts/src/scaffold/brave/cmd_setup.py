@@ -21,7 +21,7 @@ from ..common.checks import PASS, display_label
 from ..common.platforms import capability_table
 from ..common.procs import run_capture, run_streaming
 from ..common.results import Result, ScaffoldError
-from . import gitstate, records
+from . import cmd_tools, gitstate, records
 
 MINIMAL_CONFIG = 'schema_version = 1\n\n[logging]\nverbosity = "normal"\n'
 GENERATED_MARKER = env_module.GENERATED_MARKER
@@ -314,4 +314,6 @@ def shell(ctx):
     code = run_streaming([program], str(identity.core), loaded, ctx.log, json_mode=ctx.json_mode, interactive=True)
     result = Result(command="shell", data={"shell": program, "cwd": str(identity.core), "exit": code},
                     child_exit_code=code)
+    if code != 0:
+        cmd_tools.mark_child_failure(result, "Shell", [program], identity.core, code)
     return result
