@@ -27,6 +27,49 @@ def sha(text):
 
 @unittest.skipIf(SKIP, "needs direnv on a macOS host")
 class PatchPreparationTests(BuildTestCase):
+    def check_unrecorded_mode(self, legacy):
+        target = self.src / "base/BUILD.gn"
+        if legacy:
+            result, _ = self.document("build")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            receipt = next((self.sandbox.config.parent / ".bcore/state").rglob("patch-receipt.json"))
+            data = json.loads(receipt.read_text())
+            del data["modes"]
+            receipt.write_text(json.dumps(data))
+        target.chmod(0o755)
+        result, _ = self.document("build")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        # Only the upstream patch changes; do not commit the user's chmod.
+        target.chmod(0o644)
+        content = "new patched content\n"
+        patch = self.core / "patches/base-BUILD.gn.patch"
+        patch.write_text("diff --git a/base/BUILD.gn b/base/BUILD.gn\n-original\n+" + content)
+        patch.with_suffix(".patchinfo").write_text(json.dumps({
+            "schemaVersion": 1,
+            "patchChecksum": hashlib.sha256(patch.read_bytes()).hexdigest(),
+            "appliesTo": [{"path": "base/BUILD.gn", "checksum": hashlib.sha256(content.encode()).hexdigest()}],
+        }))
+        self.sandbox.commit_all("main")
+        target.chmod(0o755)
+        self.hook = self.sandbox.hook(
+            'if "apply_patches" in argv:\n'
+            '    target = os.path.join(os.path.dirname(os.environ["BRAVE_CORE_DIR"]), "base", "BUILD.gn")\n'
+            '    open(target, "w").write("new patched content\\n")\n'
+            '    os.chmod(target, 0o644)\n'
+            'else:\n' + "\n".join("    " + line for line in BUILD_HOOK.splitlines()))
+        result, document = self.document("build")
+        self.assertEqual(
+            (result.returncode, (document.get("error") or {}).get("code"), target.stat().st_mode & 0o777),
+            (4, "PREPARATION_CONFLICT", 0o755),
+            "A build that never patched this file must not adopt a local chmod as its patch baseline.")
+
+    def test_first_receipt_preserves_preexisting_chmod(self):
+        self.check_unrecorded_mode(False)
+
+    def test_legacy_receipt_preserves_preexisting_chmod(self):
+        self.check_unrecorded_mode(True)
+
+
     def apply_calls(self):
         return [r for r in self.node_calls() if "apply_patches" in r["argv"]]
 

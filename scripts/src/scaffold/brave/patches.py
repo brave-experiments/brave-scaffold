@@ -180,14 +180,16 @@ def write_receipt(identity, trees, files, root=None, extra_expected=_CARRY, keep
     """Record patch inputs and file checksums. Expected extra changes are kept unless replaced.
 
     With `keep_modes`, a file already in the receipt keeps its recorded mode: no patch was applied, so
-    the current mode is not evidence of what patching left.
+    the current mode is not evidence of what patching left. Missing modes stay unrecorded so the
+    preparation guard can fall back to Git rather than treating a local chmod as a patch result.
     """
     previous = read_receipt(identity, root) or {}
     if extra_expected is _CARRY:
         extra_expected = previous.get("extra_expected") or {}
     recorded = (previous.get("modes") or {}) if keep_modes else {}
     data = {"patches_tree": trees.get("patches"), "rewrite_tree": trees.get("rewrite"), "files": files,
-            "modes": {path: recorded[path] if path in recorded else is_executable(identity.src / path) for path in files},
+            "modes": ({path: recorded[path] for path in files if path in recorded} if keep_modes else
+                      {path: is_executable(identity.src / path) for path in files}),
             "extra_expected": extra_expected}
     atomic_write(receipt_path(identity, root), json.dumps(data, sort_keys=True, indent=1) + "\n")
 
