@@ -95,10 +95,10 @@ class RbeCheckTests(SandboxTest):
         status = self.status(document)
         self.assertEqual((status["rbe-tls-files"], status["rbe-siso-cache"]), ("blocker", "blocker"))
 
-    def test_missing_services_key_warns_and_secrets_never_appear(self):
+    def test_missing_services_key_blocks_and_secrets_never_appear(self):
         self.write_env(brave_services_key="")
         result, document = self.doctor("mac", "--checkout", "main")
-        self.assertEqual(self.status(document)["services-key"], "warning")
+        self.assertEqual(self.status(document)["services-key"], "blocker")
         self.write_env()
         self.write_sync_artifacts()
         json_result, document = self.doctor("mac", "--checkout", "main")

@@ -4,7 +4,7 @@ Existing-checkout Android workflows on an Apple Silicon Mac: a Debug arm64 APK b
 
 Prerequisites: a registered checkout with an approved environment ([getting started](getting-started.md)), the platform tools (`adb`), and the checkout's Android support working copy (below). `bcore doctor android --checkout <name>` reports each of them without changing anything.
 
-The doctor also checks for a nonempty `brave_services_key` in Core's `.env`, including `include_env=` files. A missing or unreadable file, a missing key, or an empty key is an error. It never prints the value or verifies its validity. Ask an Android team-mate how to obtain the key.
+The doctor also checks for a nonempty `brave_services_key` in Core's `.env`, including `include_env=` files. A missing or unreadable file, a missing key, or an empty key is an error. It never prints the value or verifies its validity. Ask a Brave team-mate how to obtain the key.
 
 ## One-time setup per checkout
 

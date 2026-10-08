@@ -801,9 +801,9 @@ class AndroidDoctorTests(AndroidTestCase):
                     env_file.write_text(contents)
                 result, document = self.doctor("android", "--checkout", "main")
                 self.assertEqual((result.returncode, document["error"]["code"]), (3, "READINESS_BLOCKED"))
-                check = next(c for c in document["checks"] if c["name"] == "android-services-key")
+                check = next(c for c in document["checks"] if c["name"] == "services-key")
                 self.assertEqual((check["status"], check["evidence"]["nonempty"]), ("blocker", False))
-                self.assertIn("Ask an Android team-mate how to obtain the key", check["summary"])
+                self.assertIn("Ask a Brave team-mate how to obtain the key", check["summary"])
 
     def test_services_key_passes_directly_and_through_includes_without_disclosure(self):
         self.setup_support()
@@ -814,11 +814,11 @@ class AndroidDoctorTests(AndroidTestCase):
                 (self.core / ".env").write_text(contents)
                 result, document = self.doctor("android", "--checkout", "main")
                 self.assertEqual(result.returncode, 0, document.get("error"))
-                check = next(c for c in document["checks"] if c["name"] == "android-services-key")
+                check = next(c for c in document["checks"] if c["name"] == "services-key")
                 self.assertEqual((check["status"], check["evidence"]["nonempty"]), ("pass", True))
                 text = self.sandbox.bcore("--config", self.config, "doctor", "android", "--checkout", "main",
                                           env=self.env())
-                self.assertIn("Android Brave services key", text.stdout)
+                self.assertIn("Brave services key", text.stdout)
                 self.assertNotIn(secret, result.stdout + result.stderr + text.stdout + text.stderr)
                 for log in self.sandbox.config.parent.glob(".bcore/logs/**/*"):
                     if log.is_file():
