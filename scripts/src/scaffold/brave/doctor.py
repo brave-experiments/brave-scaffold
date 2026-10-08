@@ -30,7 +30,7 @@ SCOPES = {
     "rbe": ("machine", "rbe"),
     "shell": ("machine", "shell"),
     "signing": ("machine", "signing"),
-    "android": ("machine", "host-mac", "android-machine", "checkout", "android-build", "android-support"),
+    "android": ("machine", "host-mac", "android-machine", "checkout", "android-services-key", "android-build", "android-support"),
     "ios": ("machine", "host-mac", "ios-machine", "checkout", "ios-build"),
 }
 
@@ -168,6 +168,7 @@ def shell_checks(ctx, scope):
 GROUP_FUNCTIONS = {"machine": machine_checks, "host-mac": host_mac_checks, "shell": shell_checks,
                    "mac-build": rbe_checks_module.mac_build_checks, "rbe": rbe_checks_module.rbe_checks,
                    "signing": signing_checks.signing_checks, "android-machine": android_checks.machine_checks,
+                   "android-services-key": android_checks.services_key_checks,
                    "android-build": android_checks.build_checks, "android-support": android_checks.support_checks,
                    "ios-machine": ios_checks.machine_checks, "ios-build": ios_checks.build_checks}
 

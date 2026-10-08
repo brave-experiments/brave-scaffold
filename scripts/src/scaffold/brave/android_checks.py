@@ -49,6 +49,26 @@ def _selected(ctx):
         raise
 
 
+def services_key_checks(ctx, scope):
+    """Check the checkout's services key without exposing its value."""
+    identity, error = _selected(ctx)
+    if identity is None:
+        return [make_check("android-services-key", NOT_CHECKED, error.message, scope,
+                           affects=("services-backed features",), repairs=error.repairs)]
+    env_file = identity.core / ".env"
+    try:
+        nonempty = bool(rbe_checks.read_env(env_file).get("brave_services_key", "").strip())
+        message = ("brave_services_key is nonempty in %s. Its validity is not verified." % env_file
+                   if nonempty else "Set a nonempty brave_services_key in %s." % env_file)
+    except (OSError, ValueError, UnicodeDecodeError):
+        nonempty = False
+        message = "Cannot read %s or its includes." % env_file
+    if not nonempty:
+        message += " Ask an Android team-mate how to obtain the key"
+    return [make_check("android-services-key", PASS if nonempty else BLOCKER, message, scope,
+                       affects=("services-backed features",), nonempty=nonempty)]
+
+
 def build_checks(ctx, scope, remote_required=False):
     """What a build needs before preparation: an Android target in the checkout and, for remote compilation,
     local RBE configuration."""

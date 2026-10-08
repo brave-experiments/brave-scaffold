@@ -4,6 +4,8 @@ Existing-checkout Android workflows on an Apple Silicon Mac: a Debug arm64 APK b
 
 Prerequisites: a registered checkout with an approved environment ([getting started](getting-started.md)), the platform tools (`adb`), and the checkout's Android support working copy (below). `bcore doctor android --checkout <name>` reports each of them without changing anything.
 
+The doctor also checks for a nonempty `brave_services_key` in Core's `.env`, including `include_env=` files. A missing or unreadable file, a missing key, or an empty key is an error. It never prints the value or verifies its validity. Ask an Android team-mate how to obtain the key.
+
 ## One-time setup per checkout
 
 1. Add Android to the checkout's targets: `bcore sync android`. This builds `--target_os` from the union of the checkout's existing `.gclient` values and `android`, and changes the checkout ([source and cleanup](source-and-cleanup.md)). `bcore sync-build android` does this first and then checks the build's readiness (the Android target, and the local RBE configuration unless you compile with `--offline`) again; a standalone `bcore build android` needs the target already.

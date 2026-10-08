@@ -777,12 +777,52 @@ class PackageIdentityTests(AndroidTestCase):
 
 
 class AndroidDoctorTests(AndroidTestCase):
+    def setUp(self):
+        super().setUp()
+        with open(self.core / ".env", "a") as stream:
+            stream.write("brave_services_key=fixture-services-key\n")
+
     def doctor(self, *args, path=None):
         env = self.env()
         if path:
             env["PATH"] = path
         result = self.sandbox.bcore("--json", "--config", self.config, "doctor", *args, env=env)
         return result, json.loads(result.stdout)
+
+    def test_services_key_failures_block_doctor_and_explain_how_to_obtain_it(self):
+        self.setup_support()
+        env_file = self.core / ".env"
+        for contents in (None, "", "brave_services_key=\n", 'brave_services_key="   "\n',
+                         "include_env=missing.env\n"):
+            with self.subTest(contents=contents):
+                if contents is None:
+                    env_file.unlink()
+                else:
+                    env_file.write_text(contents)
+                result, document = self.doctor("android", "--checkout", "main")
+                self.assertEqual((result.returncode, document["error"]["code"]), (3, "READINESS_BLOCKED"))
+                check = next(c for c in document["checks"] if c["name"] == "android-services-key")
+                self.assertEqual((check["status"], check["evidence"]["nonempty"]), ("blocker", False))
+                self.assertIn("Ask an Android team-mate how to obtain the key", check["summary"])
+
+    def test_services_key_passes_directly_and_through_includes_without_disclosure(self):
+        self.setup_support()
+        secret = "private-android-services-value"
+        (self.core / "shared.env").write_text("brave_services_key=%s\n" % secret)
+        for contents in ("brave_services_key=%s\n" % secret, "include_env=shared.env\n"):
+            with self.subTest(contents=contents):
+                (self.core / ".env").write_text(contents)
+                result, document = self.doctor("android", "--checkout", "main")
+                self.assertEqual(result.returncode, 0, document.get("error"))
+                check = next(c for c in document["checks"] if c["name"] == "android-services-key")
+                self.assertEqual((check["status"], check["evidence"]["nonempty"]), ("pass", True))
+                text = self.sandbox.bcore("--config", self.config, "doctor", "android", "--checkout", "main",
+                                          env=self.env())
+                self.assertIn("Android Brave services key", text.stdout)
+                self.assertNotIn(secret, result.stdout + result.stderr + text.stdout + text.stderr)
+                for log in self.sandbox.config.parent.glob(".bcore/logs/**/*"):
+                    if log.is_file():
+                        self.assertNotIn(secret, log.read_text())
 
     def test_a_missing_adb_does_not_block_macos_readiness(self):
         (self.sandbox.bin / "adb").unlink()
