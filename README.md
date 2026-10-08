@@ -117,8 +117,6 @@ During execution, `bcore` shows phases, commands, and live child output. A redac
 | Build and launch in an iOS Simulator | `bcore build-run ios` |
 | Call a `brave-core` package script with the checkout's own tools | `bpm run <script>` |
 
-`bcore doctor`, `bcore doctor mac`, and `bcore doctor android` check for a nonempty `brave_services_key` in Core's `.env` and its `include_env=` files. Missing or unreadable files and missing or empty keys are errors. The value is never shown or validated. Ask a Brave team-mate how to obtain the key. This checks the `.env` configuration, not overrides supplied through GN arguments.
-
 `doctor` reports problems and suggested fixes without installing or repairing anything; its RBE checks do not test VPN or service connectivity. `cd` needs the optional [shell helper](docs/getting-started.md#install) to change directories; without it, it prints the path. Saved outcomes in `status` are history, not proof that your current source passes tests.
 
 Major operations ring the terminal bell when they finish; use `--notify=never` to silence them. See the [command reference](docs/commands.md) for more options and workflows.
