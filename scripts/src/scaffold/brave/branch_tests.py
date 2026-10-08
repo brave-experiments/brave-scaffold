@@ -299,7 +299,7 @@ def find_webui_harnesses(repo, target):
         roots.append(Repo(repo.path.parent, repo.log))
     found = set()
     for root in roots:
-        result = run_capture(["git", "-C", str(root.path), "grep", "-lz", "-F", target, "--", "*_browsertest.cc",
+        result = run_capture(["git", "-C", str(root.path), "grep", "--untracked", "-lz", "-F", target, "--", "*_browsertest.cc",
                               "*_uitest.cc"], str(root.path), None, root.log, timeout=120)
         require_complete(result, "git grep output in %s" % root.path)
         if result.returncode not in (0, 1):

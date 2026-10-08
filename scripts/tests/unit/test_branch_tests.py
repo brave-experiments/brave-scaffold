@@ -237,6 +237,13 @@ class BranchTestsTests(unittest.TestCase):
         self.assertEqual(self.webui_phase(discovery), ["WebUiTest.Alpha", "WebUiTest.Beta"])
         self.assertEqual(discovery.unmapped, [])
 
+    def test_a_webui_harness_that_is_not_yet_tracked_is_found(self):
+        self.git("rm", "-q", "--cached", "test/data/webui_tests_browsertest.cc")
+        self.assertTrue((self.root / "test/data/webui_tests_browsertest.cc").exists())
+        discovery = branch_tests.discover_files(self.root, ["chromium_src/chrome/test/data/webui/settings/x_test.ts"])
+        self.assertEqual(self.webui_phase(discovery), ["WebUiTest.Alpha", "WebUiTest.Beta"])
+        self.assertEqual(discovery.unmapped, [])
+
     def test_a_change_outside_every_suite_selects_all_of_them(self):
         webui = "chromium_src/chrome/test/data/webui/settings/x_test.ts"
         self.write(webui, self.SHARED_WEBUI)

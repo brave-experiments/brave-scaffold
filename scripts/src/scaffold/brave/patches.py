@@ -176,12 +176,18 @@ def is_executable(path):
         return False
 
 
-def write_receipt(identity, trees, files, root=None, extra_expected=_CARRY):
-    """Record patch inputs and file checksums. Expected extra changes are kept unless replaced."""
+def write_receipt(identity, trees, files, root=None, extra_expected=_CARRY, keep_modes=False):
+    """Record patch inputs and file checksums. Expected extra changes are kept unless replaced.
+
+    With `keep_modes`, a file already in the receipt keeps its recorded mode: no patch was applied, so
+    the current mode is not evidence of what patching left.
+    """
+    previous = read_receipt(identity, root) or {}
     if extra_expected is _CARRY:
-        extra_expected = (read_receipt(identity, root) or {}).get("extra_expected") or {}
+        extra_expected = previous.get("extra_expected") or {}
+    recorded = (previous.get("modes") or {}) if keep_modes else {}
     data = {"patches_tree": trees.get("patches"), "rewrite_tree": trees.get("rewrite"), "files": files,
-            "modes": {path: is_executable(identity.src / path) for path in files},
+            "modes": {path: recorded[path] if path in recorded else is_executable(identity.src / path) for path in files},
             "extra_expected": extra_expected}
     atomic_write(receipt_path(identity, root), json.dumps(data, sort_keys=True, indent=1) + "\n")
 

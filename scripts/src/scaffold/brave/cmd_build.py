@@ -145,7 +145,7 @@ def prepare_patches(ctx, execution, op):
             **step_module.patches_step(identity, plan, apply_argv).record())
     if plan.action == "current":
         state = patches.snapshot_files(identity, plan.report)
-        patches.write_receipt(identity, plan.trees, state, ctx.state_root)
+        patches.write_receipt(identity, plan.trees, state, ctx.state_root, keep_modes=True)
         return False, plan
     if plan.action == "conflict":
         raise patches.conflict_error(plan, identity)

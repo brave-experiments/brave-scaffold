@@ -88,6 +88,23 @@ class PatchPreparationTests(BuildTestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(len(self.apply_calls()), 1, "undoing the change lets patch preparation proceed")
 
+    def test_a_build_between_a_local_chmod_and_a_patch_change_keeps_the_chmod_protected(self):
+        self.document("build")
+        target = self.src / "base" / "BUILD.gn"
+        target.chmod(0o755)
+        result, _ = self.document("build")
+        self.assertEqual(result.returncode, 0, "patches are current, so this build proceeds")
+        target.chmod(0o644)  # keep the sandbox commit from recording the local mode
+        self.hook = self.sandbox.hook(APPLY_HOOK)
+        self.update_patch_upstream()
+        target.chmod(0o755)
+        calls = len(self.node_calls())
+        result, document = self.document("build")
+        self.assertEqual((result.returncode, document["error"]["code"]), (4, "PREPARATION_CONFLICT"))
+        self.assertIn("executable bit", document["error"]["details"]["files"][0]["reason"])
+        self.assertEqual(len(self.node_calls()), calls)
+        self.assertEqual(target.stat().st_mode & 0o777, 0o755)
+
     def test_a_receipt_written_before_modes_were_recorded_falls_back_to_the_mode_git_has(self):
         self.document("build")
         receipt = next((self.sandbox.config.parent / ".bcore" / "state").rglob("patch-receipt.json"))
