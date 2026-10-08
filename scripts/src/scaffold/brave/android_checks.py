@@ -32,7 +32,7 @@ def machine_checks(ctx, scope):
     checks.append(make_check(
         "git-lfs", PASS if lfs.returncode == 0 else WARNING,
         "git-lfs is available." if lfs.returncode == 0 else
-        "git-lfs is missing; the support repository's resources are stored with it.", scope, required=False,
+        "git-lfs is missing; older support revisions with bundled resources need it.", scope, required=False,
         affects=("android setup",), version=lfs.stdout.strip(),
         git=shutil.which("git", path=ctx.environ.get("PATH")),
         git_lfs=shutil.which("git-lfs", path=ctx.environ.get("PATH")), repairs=[] if lfs.returncode == 0 else

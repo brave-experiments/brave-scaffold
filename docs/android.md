@@ -21,7 +21,7 @@ Set `android_support_path` in local `brave-scaffold.toml` to choose another loca
 
 Explicit setup adopts an existing workspace copy when the shared location is empty and on the same filesystem. Otherwise, it preserves a real workspace copy as `brave-android-mac-support.previous` before creating the link. It stops if that backup already exists or the workspace links to another location. Existing local changes and commits stay in the adopted or preserved checkout. Old caches are left for separate cleanup. Do not run setup or switch the shared revision while another checkout is building. Concurrent builds have not been verified.
 
-`bcore android setup` is also the only command that fetches large files. It materializes content from the checkout’s LFS store, fetches whatever is missing from the source, and then lists the large files that are still pointers: if any remain, it fails with `CHILD_FAILED` (a plain `git lfs checkout` reports success while leaving pointers), and it verifies an existing working copy the same way when you run it again after an interruption. `bcore doctor android` (`android-support-lfs`) and builds only look: pointers are a blocker or `DEPENDENCY_INCOMPATIBLE` that names `bcore android setup`, and nothing is fetched.
+Chromium 156 support has no LFS resources, so setup skips LFS commands and storage for that revision. `bcore android setup` is also the only command that fetches large files for older revisions. It materializes content from the checkout’s LFS store, fetches whatever is missing from the source, and then lists the large files that are still pointers: if any remain, it fails with `CHILD_FAILED` (a plain `git lfs checkout` reports success while leaving pointers), and it verifies an existing working copy the same way when you run it again after an interruption. `bcore doctor android` (`android-support-lfs`) and builds only look: pointers are a blocker or `DEPENDENCY_INCOMPATIBLE` that names `bcore android setup`, and nothing is fetched.
 
 ```sh
 bcore android setup                     # clone at the default ref
@@ -33,7 +33,9 @@ The scaffold never resets or cleans an existing working copy. `--ref` switches t
 
 ### Compatibility
 
-A stored revision hash proves neither compatibility nor reproducibility, so none is used. The support repository carries its own version gates (Chromium and toolchain versions); `copyMacRes.sh -v` checks them against the checkout without copying anything. A build runs that gate first. If it fails, the command stops with `DEPENDENCY_INCOMPATIBLE`, the gate's own reason, and repairs (list the revisions, then `bcore android setup --ref <ref>`). What is verified: the gate result for this checkout at build time. What is not: that an untested combination builds successfully, or that the gate covers every incompatibility. Sources live in `scripts/src/scaffold/brave/android_support.toml`.
+A stored revision hash proves neither compatibility nor reproducibility, so none is used. For Chromium 156, the support script copies the JDK from the checkout’s synced `third_party/jdk/current/Contents/Home` bundle. The adapter tracks the copied entries and required Linux library aliases; a missing copy or a changed synced JDK needs a refresh. The compatibility gate checks the source bundle layout, so it can pass before that copy exists.
+
+The support repository carries its own version gates (Chromium and toolchain versions); `copyMacRes.sh -v` checks them against the checkout without copying anything. A build runs that gate first. If it fails, the command stops with `DEPENDENCY_INCOMPATIBLE`, the gate's own reason, and repairs (list the revisions, then `bcore android setup --ref <ref>`). What is verified: the gate result for this checkout at build time. What is not: that an untested combination builds successfully, or that the gate covers every incompatibility. Sources live in `scripts/src/scaffold/brave/android_support.toml`.
 
 ### What preparation changes
 

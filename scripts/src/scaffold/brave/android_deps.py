@@ -209,6 +209,8 @@ def materialize_lfs(wc, source, store, log=None):
     `git lfs checkout` succeeds while leaving a pointer for content that is not local, so success is judged
     by listing the files that are still pointers. Fetching uses the network and is only for explicit setup.
     """
+    if not uses_lfs(wc):
+        return
     previous = _git(wc, ["config", "--get", "lfs.storage"], log).stdout.strip()
     if previous:
         previous = Path(previous)
@@ -335,6 +337,29 @@ def resources_current(identity, wc, receipt=None):
                              and not _is_macho(origin / name)), None)
             if sentinel is None or not _same_small_file(origin / sentinel, copied / sentinel):
                 return False, "%s is stale or cannot be compared" % copied.relative_to(identity.src)
+    contract = support_scripts.require_contract(wc, "copyMacRes.sh")
+    for source, destination in contract.get("checkout_resources", []):
+        origin, copied = identity.src / source, identity.src / destination
+        if not resolves_inside(origin, identity.src) or not resolves_inside(copied, identity.src):
+            raise ScaffoldError("PREPARATION_CONFLICT", "The checkout resource leaves its declared location: " + destination)
+        if not origin.exists() or not copied.exists() or copied.is_symlink():
+            return False, destination + " has not been copied from the synced checkout"
+        if origin.is_dir():
+            for path in origin.rglob("*"):
+                if path.is_file():
+                    target = copied / path.relative_to(origin)
+                    # macOS rsync preserves whole seconds, but drops nanoseconds.
+                    if not target.is_file() or (path.stat().st_size, int(path.stat().st_mtime)) != (
+                            target.stat().st_size, int(target.stat().st_mtime)):
+                        return False, destination + " differs from the synced checkout"
+        elif not _identical(origin, copied):
+            return False, destination + " differs from the synced checkout"
+    for relative in contract.get("required_resources", []):
+        path = identity.src / relative
+        if not resolves_inside(path, identity.src):
+            raise ScaffoldError("PREPARATION_CONFLICT", "The resource leaves its declared location: " + relative)
+        if not path.is_file():
+            return False, relative + " is missing"
     return True, None
 
 
@@ -437,6 +462,12 @@ def resource_destinations(identity, wc):
                                 "checkout location; nothing was copied." % copied,
                                 details={"files": [{"path": str(copied), "reason": "linked resource destination"}]})
         found.append((os.path.relpath(copied, identity.src), origin, copied))
+    contract = support_scripts.require_contract(wc, "copyMacRes.sh")
+    for source, destination in contract.get("checkout_resources", []):
+        origin, copied = identity.src / source, identity.src / destination
+        if not resolves_inside(origin, identity.src) or not resolves_inside(copied, identity.src) or copied.is_symlink():
+            raise ScaffoldError("PREPARATION_CONFLICT", "The checkout resource leaves its declared location: " + destination)
+        found.append((destination, origin, copied))
     return found
 
 
