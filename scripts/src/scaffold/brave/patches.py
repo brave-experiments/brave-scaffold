@@ -315,8 +315,11 @@ def write_set_conflicts(identity, stale, known, extra, log, modes=None):
 
 
 def _write_conflict(identity, key, relative, owners, dirty, known, extra, modes=None, git_exec=None):
-    if (identity.src / key).is_symlink():
-        return "local symlink would redirect a patch or version write; save or remove the link first"
+    path = identity.src
+    for component in Path(key).parts:
+        path = path / component
+        if path.is_symlink():
+            return "local symlink would redirect a patch or version write; save or remove the link first"
     # Clean tracked bytes are safe to replace even when old patch metadata names different output.
     # Staged changes were rejected by the caller; symlinks remain protected above.
     if not dirty:

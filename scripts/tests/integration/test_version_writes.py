@@ -91,6 +91,21 @@ if "apply_patches" in argv:
         self.assertEqual(self.version.read_text(), "generated version\n")
         self.assertEqual(self.sidecar.read_text(), "upstream version\n")
 
+    def test_symlinked_parent_of_recorded_versions_stops_before_preparation(self):
+        self.generate()
+        external = self.sandbox.root / "external-chrome"
+        self.version.parent.rename(external)
+        self.version.parent.symlink_to(external, target_is_directory=True)
+        before = {path.name: path.read_bytes() for path in external.iterdir()}
+        result, document = self.document("build", "--offline")
+        self.assertEqual(result.returncode, 4, result.stderr)
+        self.assertEqual(document["error"]["code"], "PREPARATION_CONFLICT")
+        self.assertEqual(self.node_calls(), [], "preparation must not write through the link")
+        self.assertEqual({entry["path"] for entry in document["error"]["details"]["files"]},
+                         {"chrome/VERSION", "chrome/VERSION.chromium"})
+        self.assertEqual({path.name: path.read_bytes() for path in external.iterdir()}, before)
+        self.assertTrue(self.version.parent.is_symlink())
+
     def test_edit_on_known_generated_sidecar_is_preserved(self):
         self.generate()
         self.sidecar.write_text("wanted changed sidecar\n")
