@@ -15,7 +15,7 @@ from .procs import format_duration
 POLICIES = ("always", "major", "never")
 DEFAULT_POLICY = "major"
 DELIVERIES = ("desktop", "bell", "both")
-DEFAULT_DELIVERY = "desktop"
+DEFAULT_DELIVERY = "bell"
 TERMINAL_DEVICE = "/dev/tty"
 BACKEND_VARIABLE = "BCORE_NOTIFY_BACKEND"
 

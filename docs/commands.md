@@ -59,7 +59,9 @@ look, and what the codes mean. Only delivered commands appear here.
   copy is redacted text.
   `bcore shell` keeps direct terminal access, including prompts and output, at every
   verbosity level; its interactive output is not captured. The child receives the
-  original arguments and environment.
+  original arguments and environment. Cancelling Scaffold stops the shell's process
+  group, but jobs in other groups may remain. Cancellation reports
+  `CLEANUP_INCOMPLETE`; inspect shell jobs before retrying an operation.
 - Completion notifications are described under
   [Completion notifications](#completion-notifications); `--notify[=POLICY]` is accepted by
   every command, including `bpm` and `vpython3` before their first program argument.
@@ -417,9 +419,8 @@ returns an error and leaves the current directory unchanged.
 
 ## Completion notifications
 
-`bcore` can post one macOS desktop notification when a command finishes. It uses the
-system `osascript` command: no service runs, nothing is installed, and Brave Core is
-not involved. Choose the policy with `[notifications] policy` in `brave-scaffold.toml`
+`bcore` rings the terminal bell when a command finishes. Desktop notifications are
+experimental and opt-in. Choose the policy with `[notifications] policy` in `brave-scaffold.toml`
 (default `major`) or per invocation with `--notify` (meaning `always`) or
 `--notify=always|major|never` (a following `always`, `major`, or `never` is read as
 the value; any other word is not). The command-line value wins over the file.
@@ -447,9 +448,9 @@ policy and `--notify` only decide when. There is no command-line option for deli
 
 | Delivery | Behavior |
 | --- | --- |
-| `desktop` | The macOS notification described above (default). |
-| `bell` | One terminal bell per notified invocation. |
-| `both` | Each method is attempted once; one failing or being unavailable does not stop the other. |
+| `bell` | One terminal bell per notified invocation (default). |
+| `desktop` | Experimental macOS desktop notification. |
+| `both` | Bell plus experimental desktop notification. Each is attempted once; failure of one does not stop the other. |
 
 The terminal bell is the BEL character (`\a`) written to the controlling terminal
 (`/dev/tty`), never to stdout, stderr, or the saved log, so redirected and JSON output
@@ -458,11 +459,14 @@ the window or tab, or do nothing. With no controlling terminal (for example, in 
 background job without one), the bell is skipped; no other method is substituted. A
 bell that fails to write prints one line on stderr and never changes the exit status.
 
-Notification Center shows the log path as text; it is not clickable. If delivery
-fails (for example, notifications are blocked for the terminal application), the
-exit status and stdout are unchanged and stderr gets one line saying so. macOS
-attributes these notifications to the application that runs `osascript`, so allow
-notifications for your terminal in System Settings. Other hosts send no desktop notification.
+Experimental desktop delivery uses the system `osascript` command. macOS can
+attribute these notifications to Script Editor; clicking can open Script Editor
+instead of the originating terminal tab. Returning to the original tab is not
+supported. Notification Center shows the log path as text, not a clickable link.
+Delivery depends on macOS notification permissions and Focus settings. If the
+sender reports an error, stdout and exit status stay unchanged and stderr gets
+one line saying so. Other hosts send no desktop notification. No extra software
+is required for either delivery method.
 
 ## Checkout status
 

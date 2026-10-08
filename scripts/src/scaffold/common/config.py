@@ -126,7 +126,7 @@ def _validate(path, data):
             delivery = data["notifications"]["delivery"]
             if not isinstance(delivery, str) or delivery not in ("desktop", "bell", "both"):
                 raise _invalid(path, "notifications.delivery", "must be desktop, bell, or both",
-                               '[notifications]\ndelivery = "desktop"')
+                               '[notifications]\ndelivery = "bell"')
             config.notification_delivery = delivery
     if "defaults" in data:
         _expect_table(path, data["defaults"], "defaults", DEFAULT_FIELDS)

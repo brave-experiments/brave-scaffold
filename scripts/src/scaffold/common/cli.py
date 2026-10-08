@@ -35,7 +35,7 @@ COMMON_OPTIONS = (
     Opt("--config", "config", help="Configuration file (default: the installation's brave-scaffold.toml).",
         metavar="FILE"),
     Opt("--notify", "notify", choices=("always", "major", "never"), optional_value=True, metavar="POLICY",
-        help="Desktop notification on completion: bare means always; or always, major, never."),
+        help="Completion alert (terminal bell by default): bare means always; or always, major, never."),
     Opt("--json", "json", takes_value=False, help="Print one JSON result document on stdout."),
     Opt("--format", "format", choices=("json", "text", "bash"),
         help="Output format; 'json' is an alias of --json.", metavar="FORMAT"),

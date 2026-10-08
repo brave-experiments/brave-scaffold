@@ -119,13 +119,12 @@ changes. Save wanted work before syncing, including through `bcore sbr`.
 ### Get notified when work finishes
 
 Leave a build or test running without watching the terminal. By default, major
-operations send a macOS desktop notification with the checkout, elapsed time,
-exit code, and diagnostic log path. Combined commands send one final outcome,
-including a failed launch after a successful build.
+operations ring the terminal bell once when they finish. Combined commands ring
+once after the final outcome, including a failed launch after a successful build.
+Your terminal settings decide whether the bell makes a sound or flashes.
 
-Use `--notify=never` to silence a command. You can choose desktop notifications,
-a terminal bell, or both in configuration. Delivery depends on macOS notification
-permissions and terminal settings. See
+Use `--notify=never` to silence a command. Desktop notifications are experimental
+and opt-in; clicking one may open Script Editor rather than your terminal. See
 [completion notifications](docs/commands.md#completion-notifications).
 
 ## Recipes

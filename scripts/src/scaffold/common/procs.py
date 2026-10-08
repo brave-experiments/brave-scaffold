@@ -341,17 +341,58 @@ def run_streaming(argv, cwd, env, log, json_mode=False, stdin=None, preserve_std
     if interactive:
         # Shell prompts and terminal control need inherited descriptors, not a text tee.
         log.save("Interactive shell output uses the terminal directly and is not captured.\n")
-        try:
-            process = subprocess.Popen(list(argv), cwd=cwd, env=env, stdin=stdin,
-                                       stdout=sys.stderr if json_mode else None, start_new_session=True)
-        except OSError as error:
-            return _report_spawn_failure(log, argv, error)
-        return _forward_and_wait(process)
+        return _run_interactive(argv, cwd, env, stdin, log, json_mode)
     terminal = not json_mode and sys.stdout.isatty() and sys.stderr.isatty()
     try:
         return _stream(argv, cwd, env, log, json_mode, stdin, preserve_stdout, verbose_output, terminal)
     except _SpawnFailed as failed:
         return _report_spawn_failure(log, argv, failed.__cause__)
+
+
+def _set_foreground(terminal_fd, group):
+    # Restoring the caller's group happens while it is in the background. Do not let tcsetpgrp stop it.
+    previous = signal.signal(signal.SIGTTOU, signal.SIG_IGN)
+    try:
+        os.tcsetpgrp(terminal_fd, group)
+    finally:
+        signal.signal(signal.SIGTTOU, previous)
+
+
+def _run_interactive(argv, cwd, env, stdin, log, json_mode):
+    terminal_fd = 0 if stdin is None else stdin if isinstance(stdin, int) else stdin.fileno()
+    try:
+        foreground = os.tcgetpgrp(terminal_fd) if terminal_fd >= 0 and os.isatty(terminal_fd) else None
+    except OSError as error:
+        if error.errno != errno.ENOTTY:
+            raise
+        # A terminal descriptor inherited by a new session need not be its controlling terminal.
+        foreground = None
+    transfer = foreground == os.getpgrp()
+    try:
+        # A separate group permits bounded cancellation without detaching from the controlling terminal.
+        process = subprocess.Popen(list(argv), cwd=cwd, env=env, stdin=stdin,
+                                   stdout=sys.stderr if json_mode else None, process_group=0)
+    except OSError as error:
+        return _report_spawn_failure(log, argv, error)
+    try:
+        if transfer:
+            _set_foreground(terminal_fd, process.pid)
+            # A shell may have stopped itself while waiting for the foreground handoff.
+            _signal_group(process.pid, signal.SIGCONT)
+        return _forward_and_wait(process)
+    except Cancelled as cancelled:
+        # Shell job control creates other process groups. Stopping the shell's group cannot
+        # prove those jobs exited, and signalling the shared session could kill the caller.
+        cancelled.cleanup_incomplete = True
+        log.save("Interactive shell cancellation cannot verify cleanup of separate shell jobs.\n")
+        raise
+    finally:
+        try:
+            if process.poll() is None:
+                terminate_group(process)
+        finally:
+            if transfer:
+                _set_foreground(terminal_fd, foreground)
 
 
 def _stream(argv, cwd, env, log, json_mode, stdin, preserve_stdout, verbose_output, terminal):

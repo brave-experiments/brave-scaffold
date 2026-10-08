@@ -59,8 +59,8 @@ class NotificationTests(unittest.TestCase):
         path.write_text(text)
         return str(path)
 
-    def run_cli(self, argv, policy=None, handler=None, notifier=None, delivery=None, bell=None):
-        """Run bcore.main with the named command's handler replaced; return (code, out, err, notifier)."""
+    def run_cli(self, argv, policy=None, handler=None, notifier=None, delivery="desktop", bell=None):
+        """Use desktop delivery for message/policy assertions; pass None to exercise the real default."""
         notifier = notifier or FakeNotifier()
         argv = list(argv) + ["--config", self.config(policy, delivery)]
         out, err = io.StringIO(), io.StringIO()
@@ -128,7 +128,7 @@ class NotificationTests(unittest.TestCase):
 
     def test_capabilities_honors_configured_policy_without_requiring_configuration(self):
         fake = FakeNotifier()
-        config = self.config("always")
+        config = self.config("always", "desktop")
         code = bcore.main(["capabilities", "--config", config], stdout=io.StringIO(), stderr=io.StringIO(),
                          notifier=fake)
         self.assertEqual((code, len(fake.sent)), (0, 1))
@@ -136,9 +136,10 @@ class NotificationTests(unittest.TestCase):
         bcore.main(["capabilities", "--config", str(self.root / "missing.toml")], stdout=io.StringIO(),
                   stderr=io.StringIO(), notifier=fake)
         self.assertEqual(fake.sent, [])
+        bell = FakeBell()
         bcore.main(["capabilities", "--config", str(self.root / "missing.toml"), "--notify"],
-                  stdout=io.StringIO(), stderr=io.StringIO(), notifier=fake)
-        self.assertEqual(len(fake.sent), 1)
+                  stdout=io.StringIO(), stderr=io.StringIO(), notifier=fake, bell=bell)
+        self.assertEqual((len(fake.sent), bell.rings), (0, 1))
 
     def test_previews_pure_exports_and_help_stay_silent_under_always(self):
         for argv in (["build", "--plan"], ["sb", "--plan"], ["env", "export"], ["clean"], ["run", "--plan"]):
@@ -208,7 +209,7 @@ class NotificationTests(unittest.TestCase):
 
     def test_delivery_configuration_and_default(self):
         self.assertIsNone(load_config(self.config("major")).notification_delivery)
-        self.assertEqual(notify.effective_delivery(load_config(self.config())), "desktop")
+        self.assertEqual(notify.effective_delivery(load_config(self.config())), "bell")
         for delivery in ("desktop", "bell", "both"):
             self.assertEqual(load_config(self.config(delivery=delivery)).notification_delivery, delivery)
         for bad in ("sound", "Desktop", ""):
@@ -220,7 +221,7 @@ class NotificationTests(unittest.TestCase):
             load_config(str(path))
 
     def test_delivery_selects_methods_once_each(self):
-        for delivery, desktop, rings in (("desktop", 1, 0), ("bell", 0, 1), ("both", 1, 1), (None, 1, 0)):
+        for delivery, desktop, rings in (("desktop", 1, 0), ("bell", 0, 1), ("both", 1, 1), (None, 0, 1)):
             with self.subTest(delivery=delivery):
                 bell = FakeBell()
                 fake = self.run_cli(["sbr"], delivery=delivery, bell=bell)[3]
