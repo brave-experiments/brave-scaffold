@@ -7,7 +7,7 @@
 import os
 from pathlib import Path
 
-from ..common.procs import run_capture, run_streaming
+from ..common.procs import git_environment, run_capture, run_streaming
 from ..common.results import Cancelled, Result, ScaffoldError
 from .records import track
 
@@ -16,9 +16,7 @@ def run_rebase(ctx):
     identity = ctx.identity()
     core = str(identity.core)
     argv = ['git', '-C', core]
-    selectors = {'GIT_DIR', 'GIT_WORK_TREE', 'GIT_COMMON_DIR', 'GIT_INDEX_FILE', 'GIT_OBJECT_DIRECTORY',
-                 'GIT_ALTERNATE_OBJECT_DIRECTORIES', 'GIT_PREFIX', 'GIT_NAMESPACE'}
-    env = {key: value for key, value in os.environ.items() if key not in selectors}
+    env = git_environment()
     env.update(GIT_EDITOR='true', GIT_SEQUENCE_EDITOR='true')
 
     def read(*args):

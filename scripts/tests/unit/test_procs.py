@@ -73,6 +73,60 @@ class GroupTestCase(unittest.TestCase):
         return process, pid
 
 
+class GitEnvironmentTests(unittest.TestCase):
+    """A caller's Git repository selectors must never redirect Git into a different repository."""
+
+    def setUp(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.root = Path(directory.name)
+        self.target, self.other = self.root / "target", self.root / "other"
+        for repo in (self.target, self.other):
+            repo.mkdir()
+            for args in (["init", "-q", "-b", repo.name], ["config", "user.email", "t@example.com"],
+                         ["config", "user.name", "T"], ["config", "commit.gpgsign", "false"]):
+                subprocess.run(["git", "-C", str(repo), *args], check=True, capture_output=True)
+            (repo / "file").write_text(repo.name)
+            subprocess.run(["git", "-C", str(repo), "add", "."], check=True, capture_output=True)
+            subprocess.run(["git", "-C", str(repo), "commit", "-qm", repo.name], check=True, capture_output=True)
+        self.selectors = {"GIT_DIR": str(self.other / ".git"), "GIT_WORK_TREE": str(self.other)}
+
+    def test_only_the_repository_selectors_are_removed(self):
+        environ = {**self.selectors, "GIT_INDEX_FILE": "x", "GIT_COMMON_DIR": "y", "GIT_OBJECT_DIRECTORY": "z",
+                   "GIT_ALTERNATE_OBJECT_DIRECTORIES": "a", "GIT_PREFIX": "p", "GIT_NAMESPACE": "n",
+                   "GIT_SSH_COMMAND": "ssh -i key", "GIT_TERMINAL_PROMPT": "0", "PATH": "/usr/bin", "HOME": "/h"}
+        self.assertEqual(procs.git_environment(environ),
+                         {"GIT_SSH_COMMAND": "ssh -i key", "GIT_TERMINAL_PROMPT": "0", "PATH": "/usr/bin", "HOME": "/h"})
+        with mock.patch.dict(os.environ, self.selectors):
+            self.assertNotIn("GIT_DIR", procs.git_environment())
+            self.assertIn("PATH", procs.git_environment())
+
+    def test_a_probe_asked_about_one_repository_is_never_answered_by_another(self):
+        for label, env in (("explicit environment", {**os.environ, **self.selectors}), ("inherited", None)):
+            with self.subTest(label), mock.patch.dict(os.environ, self.selectors if env is None else {}):
+                result = procs.run_capture(["git", "-C", str(self.target), "branch", "--show-current"],
+                                           str(self.target), env)
+                self.assertEqual(result.stdout.strip(), "target")
+
+    def test_a_streamed_command_is_not_redirected_either(self):
+        with tempfile.TemporaryDirectory() as directory:
+            log = procs.CommandLog(stream=io.StringIO(), verbosity="normal")
+            log.open(directory)
+            try:
+                code = procs.run_streaming(["git", "-C", str(self.target), "branch", "--show-current"], str(self.target),
+                                           {**os.environ, **self.selectors}, log, json_mode=True)
+                saved = Path(log.path).read_text()
+            finally:
+                log.close()
+        self.assertEqual(code, 0)
+        self.assertIn("\ntarget\n", saved, "the branch of the repository that was asked about")
+        self.assertNotIn("\nother\n", saved, "never the branch of the repository the environment pointed at")
+
+    def test_other_programs_keep_their_environment(self):
+        result = procs.run_capture(["sh", "-c", 'printf %s "$GIT_DIR"'], str(self.root), {**os.environ, **self.selectors})
+        self.assertEqual(result.stdout, self.selectors["GIT_DIR"])
+
+
 class SpawnFailureTests(unittest.TestCase):
     def test_a_command_that_cannot_start_exits_127_and_is_logged_like_any_other_failure(self):
         for interactive in (False, True):

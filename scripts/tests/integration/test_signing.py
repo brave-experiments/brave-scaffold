@@ -204,13 +204,14 @@ class GitProcedureTests(unittest.TestCase):
 
 
 class SigningDoctorTests(SandboxTest):
-    def doctor(self, gitconfig):
-        config = self.sandbox.root / "gitconfig"
-        config.write_text(gitconfig)
+    def doctor(self, settings, global_config="/dev/null"):
+        """Run the doctor with exactly these Git settings: command-scope values outrank the scaffold repository's own."""
         self.sandbox.write_config([])
-        empty = self.sandbox.root / "empty.git"
-        subprocess.run(["git", "init", "-q", "--bare", str(empty)], check=True)
-        env = self.sandbox.env(GIT_CONFIG_GLOBAL=str(config), GIT_CONFIG_NOSYSTEM="1", GIT_DIR=str(empty))
+        keys = ["gpg.format", "gpg.ssh.program", "user.signingkey", "commit.gpgsign"]
+        env = self.sandbox.env(GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL=str(global_config), GIT_CONFIG_COUNT=str(len(keys)))
+        for index, key in enumerate(keys):
+            env["GIT_CONFIG_KEY_%d" % index] = key
+            env["GIT_CONFIG_VALUE_%d" % index] = settings.get(key, "")
         result = self.sandbox.bcore("--json", "doctor", "signing", "--config", str(self.sandbox.config), env=env)
         return result, json.loads(result.stdout)
 
@@ -218,7 +219,7 @@ class SigningDoctorTests(SandboxTest):
         return {c["name"]: (c["status"], c["required"]) for c in document["checks"]}
 
     def test_missing_user_configuration_blocks_with_named_checks(self):
-        result, document = self.doctor("")
+        result, document = self.doctor({})
         self.assertEqual((result.returncode, document["error"]["code"]), (3, "READINESS_BLOCKED"))
         for name in ("git-signing-format", "signer-program", "signing-key"):
             self.assertEqual(self.statuses(document)[name], ("blocker", True))
@@ -228,15 +229,16 @@ class SigningDoctorTests(SandboxTest):
     def test_configured_signing_passes_and_optional_gaps_only_warn(self):
         program = self.sandbox.root / "signer"
         write_executable(program, "#!/bin/sh\n")
-        result, document = self.doctor("[gpg]\nformat = ssh\n[gpg \"ssh\"]\nprogram = %s\n"
-                                       "[user]\nsigningkey = key::ssh-ed25519 AAAA\n" % program)
+        result, document = self.doctor({"gpg.format": "ssh", "gpg.ssh.program": str(program),
+                                       "user.signingkey": "key::ssh-ed25519 AAAA"})
         self.assertEqual((result.returncode, document["status"]), (0, "ok"))
         self.assertIn("CHECK_WARNING", {w["code"] for w in document["warnings"]})
         self.assertNotIn("AAAA", result.stdout, "key material is not echoed")
 
     def test_doctor_writes_no_git_configuration(self):
         config = self.sandbox.root / "gitconfig"
-        self.doctor("[gpg]\nformat = ssh\n")
+        config.write_text("[gpg]\nformat = ssh\n")
+        self.doctor({}, config)
         self.assertEqual(config.read_text(), "[gpg]\nformat = ssh\n")
 
 

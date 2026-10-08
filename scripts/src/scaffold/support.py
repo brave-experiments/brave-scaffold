@@ -13,7 +13,7 @@ import tomllib
 from pathlib import Path
 
 from .common.identity import discover_core
-from .common.procs import CommandLog, install_signal_handlers, run_capture, run_streaming
+from .common.procs import CommandLog, git_environment, install_signal_handlers, run_capture, run_streaming
 from .common.redaction import redact_url_credentials
 from .common.results import Cancelled, ScaffoldError
 
@@ -21,10 +21,7 @@ from .common.results import Cancelled, ScaffoldError
 class Git:
     def __init__(self, log):
         self.log = log
-        # A caller's Git selectors must not redirect operations into its checkout.
-        selectors = {"GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY",
-                     "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_PREFIX", "GIT_NAMESPACE"}
-        self.env = {key: value for key, value in os.environ.items() if key not in selectors}
+        self.env = git_environment()  # a caller's Git selectors must not redirect operations into its checkout
         self.env.update(GIT_TERMINAL_PROMPT="0", GIT_OPTIONAL_LOCKS="0")
 
     def read(self, directory, *arguments):

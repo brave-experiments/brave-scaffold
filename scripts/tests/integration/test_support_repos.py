@@ -84,6 +84,19 @@ class SupportRepositoriesTests(unittest.TestCase):
         log = next((self.root / ".bcore" / "logs").glob("*.log"))
         self.assertTrue(log.is_file())
 
+    def test_inherited_git_selectors_cannot_aim_a_sync_at_another_repository(self):
+        checkout = self.checkout()
+        bystander = self.root / "bystander"
+        self.git(self.root, "init", "-b", "main", str(bystander))
+        keep = self.commit(bystander, "keep me")
+        (bystander / "tracked").write_text("uncommitted work")
+        after = self.commit(self.source, "upstream")
+        selectors = dict(self.env, GIT_DIR=str(bystander / ".git"), GIT_WORK_TREE=str(bystander))
+        self.command("--discard-local", "--execute", env=selectors)
+        self.assertEqual(self.git(checkout, "rev-parse", "HEAD"), after, "the support repository was updated")
+        self.assertEqual(self.git(bystander, "rev-parse", "HEAD"), keep, "the other repository was not touched")
+        self.assertEqual((bystander / "tracked").read_text(), "uncommitted work")
+
     def test_dirty_files_and_local_commits_survive_normal_sync_and_explicit_discard_resets(self):
         checkout = self.checkout()
         (checkout / "tracked").write_text("local edit")

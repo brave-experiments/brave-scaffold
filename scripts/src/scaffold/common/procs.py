@@ -34,6 +34,23 @@ PIPE_DRAIN_SECONDS = 3
 # Shorter values would replace ordinary words in child output; command lines are redacted by name regardless.
 MIN_SCRUBBED_SECRET_LENGTH = 6
 CANCEL_SIGNALS = {130: signal.SIGINT, 143: signal.SIGTERM}
+# Variables that make Git work on a repository other than the one it was asked about, as when a command runs
+# from a hook, a Git alias, or `git rebase --exec`. They describe the caller's repository, never ours.
+GIT_SELECTORS = frozenset({"GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY",
+                           "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_PREFIX", "GIT_NAMESPACE"})
+
+
+def git_environment(environ=None):
+    """`environ` (default: this process's) without the variables that aim Git at a different repository."""
+    return {key: value for key, value in (os.environ if environ is None else environ).items()
+            if key not in GIT_SELECTORS}
+
+
+def _command_environment(argv, env):
+    """The environment a command should get: Git always gets one that cannot redirect it, others get theirs as given."""
+    if argv and os.path.basename(str(argv[0])) == "git":
+        return git_environment(env)
+    return env
 
 
 def format_command_block(argv, cwd):
@@ -320,6 +337,7 @@ def run_streaming(argv, cwd, env, log, json_mode=False, stdin=None, preserve_std
     All original lines stay in the log; omitted lines stay out of quiet failure tails.
     """
     log.record(argv, cwd, primary=True, display_argv=display_argv)
+    env = _command_environment(argv, env)
     if interactive:
         # Shell prompts and terminal control need inherited descriptors, not a text tee.
         log.save("Interactive shell output uses the terminal directly and is not captured.\n")
@@ -487,6 +505,7 @@ def run_capture(argv, cwd, env, log=None, timeout=60, max_bytes=1_000_000, poll=
     that as unknown, not as the whole answer.
     """
     entry = log.record(argv, cwd, poll) if log is not None else None
+    env = _command_environment(argv, env)
     try:
         process = subprocess.Popen(list(argv), cwd=cwd, env=env, stdout=subprocess.PIPE,
                                    stderr=subprocess.PIPE, start_new_session=True)

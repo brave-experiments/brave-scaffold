@@ -45,6 +45,22 @@ class StatusTests(SandboxTest):
         self.git('-c', 'user.name=T', '-c', 'user.email=t@example.com', '-c', 'commit.gpgsign=false',
                  'commit', '-qm', 'change ' + name)
 
+    def test_inherited_git_selectors_cannot_make_status_describe_another_repository(self):
+        other = self.sandbox.root / 'other-repo'
+        other.mkdir()
+        for args in (['init', '-q', '-b', 'elsewhere'], ['config', 'user.email', 't@example.com'],
+                     ['config', 'user.name', 'T'], ['config', 'commit.gpgsign', 'false']):
+            subprocess.run(['git', '-C', str(other), *args], check=True, capture_output=True)
+        (other / 'x').write_text('x')
+        subprocess.run(['git', '-C', str(other), 'add', '.'], check=True, capture_output=True)
+        subprocess.run(['git', '-C', str(other), 'commit', '-qm', 'other'], check=True, capture_output=True)
+        environment = self.sandbox.env(GIT_DIR=str(other / '.git'), GIT_WORK_TREE=str(other))
+        result, document = self.sandbox.bcore_json('status', '--config', str(self.sandbox.config), cwd=self.core,
+                                                  env=environment)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(document['data']['head'], self.head)
+        self.assertNotEqual(document['data']['branch'], 'elsewhere')
+
     def test_the_branch_diff_against_master_is_shown_as_a_short_stat(self):
         self.git('update-ref', 'refs/heads/master', self.head)
         self.git('switch', '-qc', 'feature')

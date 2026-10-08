@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .config import scaffold_root
-from .procs import run_capture
+from .procs import GIT_SELECTORS, run_capture
 from .redaction import scrub_secrets, secret_values
 from .results import ScaffoldError, repair
 
@@ -156,9 +156,10 @@ def envrc_path(directory):
 
 
 def clean_environ(environ):
-    """Inherited environment without tool-owned selectors and direnv state."""
+    """Inherited environment without tool-owned selectors, direnv state, and Git repository selectors."""
     cleaned = {key: value for key, value in environ.items()
-               if key == "DIRENV_CONFIG" or (key not in OWNED_SELECTORS and not key.startswith("DIRENV_"))}
+               if key == "DIRENV_CONFIG" or (key not in OWNED_SELECTORS and not key.startswith("DIRENV_")
+                                             and key not in GIT_SELECTORS)}
     depot = environ.get("BRAVE_DEPOT_TOOLS_DIR", "")
     if depot:
         cleaned["PATH"] = os.pathsep.join(_remove_entry(environ.get("PATH", ""), depot))

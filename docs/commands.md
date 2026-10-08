@@ -12,6 +12,11 @@ look, and what the codes mean. Only delivered commands appear here.
   different values it fails. Option abbreviations are not accepted.
 - The checkout comes from `--checkout`, otherwise from the current directory.
   See [configuration](configuration-and-environments.md#selecting-a-checkout).
+- Git repository selectors inherited from the shell (`GIT_DIR`, `GIT_WORK_TREE`,
+  `GIT_COMMON_DIR`, `GIT_INDEX_FILE`, `GIT_OBJECT_DIRECTORY`,
+  `GIT_ALTERNATE_OBJECT_DIRECTORIES`, `GIT_PREFIX`, `GIT_NAMESPACE`) are ignored.
+  Every Git command and package tool runs against the selected checkout, never
+  against a repository the caller's environment points at.
 - Text output is the default. With `--json`, stdout holds exactly one result
   document, including for parse errors and child failures. Child output and
   command logs go to stderr.
