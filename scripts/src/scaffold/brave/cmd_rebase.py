@@ -16,9 +16,13 @@ def run_rebase(ctx):
     identity = ctx.identity()
     core = str(identity.core)
     argv = ['git', '-C', core]
+    selectors = {'GIT_DIR', 'GIT_WORK_TREE', 'GIT_COMMON_DIR', 'GIT_INDEX_FILE', 'GIT_OBJECT_DIRECTORY',
+                 'GIT_ALTERNATE_OBJECT_DIRECTORIES', 'GIT_PREFIX', 'GIT_NAMESPACE'}
+    env = {key: value for key, value in os.environ.items() if key not in selectors}
+    env.update(GIT_EDITOR='true', GIT_SEQUENCE_EDITOR='true')
 
     def read(*args):
-        result = run_capture([*argv, *args], core, None, ctx.log)
+        result = run_capture([*argv, *args], core, env, ctx.log)
         if result.returncode or result.timed_out or result.truncated:
             raise ScaffoldError('READINESS_INCOMPLETE', 'Could not inspect Git state; rebase stopped.')
         return result.stdout.strip()
@@ -26,6 +30,9 @@ def run_rebase(ctx):
     def active(names):
         return any((Path(core) / read('rev-parse', '--git-path', name)).exists() for name in names)
 
+    if os.path.realpath(read('rev-parse', '--show-toplevel')) != os.path.realpath(core):
+        raise ScaffoldError('PREPARATION_CONFLICT',
+                            'The selected Core directory is not a Git repository root; rebase stopped.')
     rebase_states = ('rebase-merge', 'rebase-apply')
     if active((*rebase_states, 'MERGE_HEAD', 'CHERRY_PICK_HEAD', 'REVERT_HEAD', 'sequencer', 'BISECT_START')):
         raise ScaffoldError('PREPARATION_CONFLICT', 'Finish or abort the existing Git operation before rebasing.')
@@ -33,7 +40,6 @@ def run_rebase(ctx):
     original = read('rev-parse', 'HEAD')
     if read('status', '--porcelain=v1', '--untracked-files=all'):
         raise ScaffoldError('PREPARATION_CONFLICT', 'Rebase requires a clean checkout, including no untracked files.')
-    env = {**os.environ, 'GIT_EDITOR': 'true', 'GIT_SEQUENCE_EDITOR': 'true'}
 
     def run(*args):
         return run_streaming([*argv, *args], core, env, ctx.log, json_mode=ctx.json_mode)

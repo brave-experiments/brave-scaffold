@@ -77,6 +77,36 @@ class RebaseTests(SandboxTest):
         self.assertEqual(self.git('status', '--porcelain'), '')
         self.assertFalse((self.core / '.git' / 'rebase-merge').exists())
 
+    def test_inherited_git_selectors_cannot_rebase_another_checkout(self):
+        original = self.commit('topic.txt', 'topic\n')
+        upstream = self.advance_remote()
+        other = self.sandbox.root / 'other'
+        subprocess.run(['git', 'clone', str(self.core), str(other)], check=True, capture_output=True)
+
+        def other_git(*args):
+            return subprocess.check_output(['git', '-C', str(other), *args], text=True,
+                                           stderr=subprocess.PIPE).strip()
+
+        other_git('remote', 'set-url', 'origin', str(self.remote))
+        other_git('config', 'user.name', 'Test')
+        other_git('config', 'user.email', 'test@example.invalid')
+        other_git('config', 'commit.gpgsign', 'false')
+        environment = self.sandbox.env(GIT_DIR=str(other / '.git'), GIT_WORK_TREE=str(other))
+        result, document = self.sandbox.bcore_json(
+            'rebase', '--checkout', str(self.core), '--config', str(self.sandbox.config), env=environment)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(other_git('rev-parse', 'HEAD'), original, 'the other checkout must not be rebased')
+        self.assertFalse((other / '.git' / 'FETCH_HEAD').exists(), 'the other checkout must not be fetched')
+        self.assertEqual(self.git('rev-parse', 'HEAD^'), upstream)
+        self.assertEqual(document['data']['head'], self.git('rev-parse', 'HEAD'))
+
+    def test_missing_core_git_directory_does_not_fall_back_to_chromium(self):
+        (self.core / '.git').rename(self.sandbox.root / 'saved-core-git')
+        result, document = self.invoke()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('selected Core directory', document['error']['message'])
+        self.assertFalse((self.core.parent / '.git' / 'FETCH_HEAD').exists())
+
     def test_dirty_checkout_refused_before_fetch(self):
         self.advance_remote()
         for staged in (False, True):
