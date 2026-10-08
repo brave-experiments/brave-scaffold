@@ -4,6 +4,8 @@
 # You can obtain one at https://mozilla.org/MPL/2.0/.
 """Android-on-Mac support stays optional on other host platforms."""
 
+import tempfile
+from pathlib import Path
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -29,6 +31,19 @@ class PlatformTests(unittest.TestCase):
 
 
 class TestBranchTests(unittest.TestCase):
+    def test_invalid_or_unreadable_settings_fail_before_inspecting_git(self):
+        with tempfile.TemporaryDirectory() as directory:
+            core = Path(directory)
+            for value in ("android_test_support_branch=\n", "android_test_support_branch=-bad\n",
+                          "include_env=missing.env\n", "include_env=.env\n"):
+                with self.subTest(value=value):
+                    (core / ".env").write_text(value)
+                    with patch.object(android_tests.android_deps, "inspect_working_copy") as inspect:
+                        with self.assertRaises(ScaffoldError) as caught:
+                            android_tests.require_support_branch(SimpleNamespace(core=core))
+                        self.assertEqual(caught.exception.code, "INVALID_INPUT")
+                        inspect.assert_not_called()
+
     def test_renamed_branch_updates_validation_repair_and_help(self):
         with patch.object(android_tests, "TEST_SUPPORT_BRANCH", "android-test-support"), \
                 patch.object(android_tests.android_deps, "working_copy", return_value="/support"), \

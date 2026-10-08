@@ -45,6 +45,9 @@ class SupportLargeFileTests(AndroidTestCase):
     def test_content_missing_from_the_local_store_is_fetched_and_verified_during_setup(self):
         result = self.setup_support(source=self.url)
         self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(subprocess.run(["git", "-C", str(self.wc()), "config", "--local", "lfs.storage"],
+                                       capture_output=True, text=True).stdout.strip().endswith(
+                                           "brave-android-mac-support/.git/lfs"))
         self.assertEqual(self.large_file().read_bytes(), CONTENT)
         self.assertEqual(self.pointers(), [])
 

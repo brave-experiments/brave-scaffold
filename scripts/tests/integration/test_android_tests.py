@@ -149,7 +149,8 @@ class HostSuiteTests(AndroidTestsTestCase):
             self.assertLess(start, applied)
             self.assertLess(applied, cleanup)
             self.assertLess(cleanup, removed)
-            self.assertIn("origin/" + BRANCH, output[start:applied])
+            self.assertNotIn("remote branch:", output[start:applied])
+            self.assertIn(str(self.wc()), output[start:applied])
             self.assertIn("local support branch " + BRANCH, output[start:applied])
             self.assertIn("will be cleaned up when this run finishes", output[applied:cleanup])
             for path in OVERLAY_FILES:
@@ -443,6 +444,31 @@ class SupportBranchTests(AndroidTestsTestCase):
         self.assertFalse((self.src / "SUPPORT_PATCHED").exists(), "support preparation did not run")
         self.assertFalse((self.src / "out" / "android_tests_Debug_arm64").exists())
         self.assertEqual(self.adb_calls(), [])
+
+    def test_configured_branch_from_include_is_used_and_logged(self):
+        self.on_test_branch()
+        branch = "custom-android-tests"
+        subprocess.run([*GIT, "-C", str(self.wc()), "switch", "-q", "-c", branch], check=True)
+        (self.core / "android-tests.env").write_text("android_test_support_branch=" + branch + "\n")
+        with (self.core / ".env").open("a") as stream:
+            stream.write("\ninclude_env=android-tests.env\n")
+        result, document = self.run_tests("brave_junit_tests")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("local support branch " + branch, result.stderr)
+        self.assertIn(str(self.wc()), result.stderr)
+        self.assertNotIn("remote branch:", result.stderr)
+
+    def test_configured_branch_mismatch_blocks_execution_and_plan(self):
+        self.on_test_branch()
+        with (self.core / ".env").open("a") as stream:
+            stream.write("\nandroid_test_support_branch=custom-android-tests\n")
+        for options in ((), ("--plan",)):
+            result, document = self.run_tests("brave_junit_tests", *options)
+            self.assertEqual(document["error"]["code"], "DEPENDENCY_INCOMPATIBLE")
+            self.assertEqual(document["error"]["details"]["required_branch"], "custom-android-tests")
+            self.assertEqual(document["error"]["repairs"][0]["argv"][-1], "custom-android-tests")
+        self.assertFalse(self.overlay_file.exists())
+        self.assertEqual(self.runner_calls(), [])
 
     def test_a_detached_head_is_refused(self):
         self.assertEqual(self.setup_support(ref="v155").returncode, 0)

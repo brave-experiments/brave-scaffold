@@ -257,8 +257,9 @@ class SupportWorkingCopyTests(AndroidTestCase):
         result = self.setup_support("v155", source=shallow)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.head(self.wc()), self.head(self.support))
-        self.assertTrue(subprocess.run(["git", "-C", str(self.wc()), "config", "lfs.storage"], capture_output=True,
-                                       text=True).stdout.strip().endswith("brave-android-mac-support/.git/lfs"))
+        self.assertEqual(subprocess.run(["git", "-C", str(self.wc()), "config", "--local", "lfs.storage"],
+                                        capture_output=True, text=True).stdout.strip(), "")
+        self.assertFalse((self.wc() / ".git/lfs").exists())
 
     def test_two_checkouts_link_to_one_shared_revision(self):
         other = self.sandbox.make_checkout("other", git=True)
