@@ -4,6 +4,7 @@
 # You can obtain one at https://mozilla.org/MPL/2.0/.
 """Checkout status, with operation history kept separate from source verification."""
 
+import json
 import re
 import shutil
 from datetime import datetime
@@ -38,6 +39,27 @@ def diff_stat(ctx, core):
     for number, word in re.findall(r"(\d+) (file|insertion|deletion)", text):
         counts[{"file": "files", "insertion": "insertions", "deletion": "deletions"}[word]] = int(number)
     return {"base": DIFF_BASE, **counts, "summary": text.strip() or None}
+
+
+def chromium_comparison(ctx, core, head):
+    """Compare committed Chromium pins with the locally available remote base."""
+    versions = []
+    for ref in (head, "refs/remotes/origin/master"):
+        try:
+            text = git(ctx, core, "show", ref + ":package.json", optional=True)
+            version = json.loads(text)["config"]["projects"]["chrome"]["tag"] if text else None
+        except (ScaffoldError, ValueError, KeyError, TypeError):
+            version = None
+        versions.append(version if isinstance(version, str) and re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+", version) else None)
+    current, base = versions
+    status = "unavailable"
+    if current and base:
+        current_parts = tuple(map(int, current.split(".")))
+        base_parts = tuple(map(int, base.split(".")))
+        status = ("major_behind" if current_parts[0] < base_parts[0] else
+                  "version_behind" if current_parts < base_parts else
+                  "current" if current_parts == base_parts else "ahead")
+    return {"base_ref": "origin/master", "branch_version": current, "base_version": base, "status": status}
 
 
 def changes_from_porcelain(text):
@@ -92,6 +114,7 @@ def run_status(ctx):
     if comparison:
         behind, ahead = map(int, comparison.split())
         base = {"ref": "origin/master", "ahead": ahead, "behind": behind}
+    chromium = chromium_comparison(ctx, core, head)
     stat = diff_stat(ctx, core)
     operations = list(records.all_operations(ctx.state_root, core))
     latest = {}
@@ -120,7 +143,7 @@ def run_status(ctx):
     except OSError:
         free = None
     data = {"branch": branch, "head": head, "history_scope": "all-branches" if all_branches else "current-branch",
-            "upstream": upstream.strip() if upstream else None, "base": base,
+            "upstream": upstream.strip() if upstream else None, "base": base, "chromium": chromium,
             "changes": changes, "change_counts": counts, "diff_stat": stat, "history": history,
             "current_test_verification": "unknown", "outputs": outputs, "damaged_output_records": damaged,
             "incomplete_operations": incomplete,
@@ -131,6 +154,14 @@ def run_status(ctx):
                  if base else "  Base       origin/master comparison unavailable")
     lines.append("  Diff       %s...HEAD: %s" % (DIFF_BASE, stat["summary"] or "no changes") if stat
                  else "  Diff       %s...HEAD unavailable (no %s branch to compare with)" % (DIFF_BASE, DIFF_BASE))
+    if chromium["status"] == "unavailable":
+        lines.append("  Chromium   Comparison with origin/master unavailable (missing or invalid committed pin).")
+    else:
+        lines.append("  Chromium   %s (origin/master: %s; local remote ref)" % (
+            chromium["branch_version"], chromium["base_version"]))
+    if chromium["status"] == "version_behind":
+        lines.append("  Notice     Branch Chromium %s is behind origin/master Chromium %s." % (
+            chromium["branch_version"], chromium["base_version"]))
     lines.append("  Changes    %(staged)d staged · %(unstaged)d unstaged · %(untracked)d untracked" % counts)
     lines += ["    %s %s" % (c["status"], repr(c["path"])) for c in changes[:10]]
     if len(changes) > 10:
@@ -155,6 +186,10 @@ def run_status(ctx):
     if not all_branches:
         lines.append("  Use --all-branches to include other branches and older records with unknown branches.")
     attention = ["  ⚠️ Output needs revalidation: %s" % o["path"] for o in outputs if o["needs_revalidation"]]
+    if chromium["status"] == "major_behind":
+        attention.insert(0, "  ⚠️ Branch uses Chromium %s; origin/master uses Chromium %s. "
+                         "The branch is a major Chromium version behind." % (
+                             chromium["branch_version"], chromium["base_version"]))
     attention += ["  ⚠️ Output history is unreadable: %s (the next build or test of that output sets it aside "
                   "and marks it for revalidation)" % path for path in damaged]
     attention += ["  ⚠️ Unfinished %s record %s (%s); process state unknown" % (

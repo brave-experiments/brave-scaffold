@@ -45,6 +45,41 @@ class StatusTests(SandboxTest):
         self.git('-c', 'user.name=T', '-c', 'user.email=t@example.com', '-c', 'commit.gpgsign=false',
                  'commit', '-qm', 'change ' + name)
 
+    def test_chromium_notices_use_committed_numeric_versions(self):
+        original = json.loads((self.core / 'package.json').read_text())
+        def pin(version):
+            data = json.loads(json.dumps(original))
+            data.setdefault('config', {}).setdefault('projects', {}).setdefault('chrome', {})['tag'] = version
+            self.commit_file('package.json', json.dumps(data))
+        pin('156.0.8078.25')
+        self.git('update-ref', 'refs/remotes/origin/master', 'HEAD')
+        for version, expected in [('155.0.8059.40', 'major_behind'), ('156.0.8078.9', 'version_behind'),
+                                  ('156.0.8078.25', 'current'), ('156.0.8078.100', 'ahead'),
+                                  ('157.0.1.0', 'ahead'), ('invalid', 'unavailable')]:
+            with self.subTest(version=version):
+                pin(version)
+                (self.core / 'package.json').write_text(json.dumps(original))
+                self.assertEqual(self.status()['chromium'], {'base_ref': 'origin/master',
+                    'branch_version': version if expected != 'unavailable' else None,
+                    'base_version': '156.0.8078.25', 'status': expected})
+                result = self.sandbox.bcore('status', '--config', str(self.sandbox.config), cwd=self.core)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual('The branch is a major Chromium version behind.' in result.stdout,
+                                 expected == 'major_behind')
+                self.assertEqual('Notice     Branch Chromium' in result.stdout, expected == 'version_behind')
+                self.assertEqual('Comparison with origin/master unavailable' in result.stdout,
+                                 expected == 'unavailable')
+
+    def test_missing_chromium_base_is_nonfatal(self):
+        self.assertEqual(self.status()['chromium']['status'], 'unavailable')
+
+    def test_malformed_chromium_package_is_nonfatal(self):
+        self.commit_file('package.json', '{invalid')
+        self.git('update-ref', 'refs/remotes/origin/master', 'HEAD')
+        (self.core / 'package.json').write_text(self.git('show', 'HEAD~1:package.json'))
+        self.assertEqual(self.status()['chromium'], {'base_ref': 'origin/master',
+                         'branch_version': None, 'base_version': None, 'status': 'unavailable'})
+
     def test_inherited_git_selectors_cannot_make_status_describe_another_repository(self):
         other = self.sandbox.root / 'other-repo'
         other.mkdir()

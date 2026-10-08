@@ -155,6 +155,12 @@ Sync results include the dispatched `argv` and `revisions_before` and `revisions
 
 `bcore capabilities` lists every combination of host, target, operation, configuration, and architecture with a status. A combination is `supported` only after real validation on a checkout; until then it is reported `unverified`. `limited` combinations may work but are outside the validated workflow.
 
+## Chromium version in status
+
+`bcore status` compares the Chromium pin in committed `package.json` at `HEAD` with the pin at the local `origin/master` ref. A lower major version appears as a warning under Needs attention. An older version within the same major appears as a notice in the Git section. Both show the full versions. Equal or newer versions show the comparison without a behind notice. Missing refs or invalid pins make the comparison unavailable without failing status. Status does not fetch; the comparison reflects the last local update of `origin/master`.
+
+JSON includes `data.chromium` with `base_ref`, `branch_version`, `base_version`, and `status`: `major_behind`, `version_behind`, `current`, `ahead`, or `unavailable`.
+
 ## test
 
 `bcore test` selects tests three ways. The selectors are mutually exclusive, and a conflict is refused before any work starts.
