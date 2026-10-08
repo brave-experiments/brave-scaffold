@@ -248,7 +248,7 @@ class Sandbox:
         core.mkdir(parents=True)
         if git:
             for repo in (core, src):
-                subprocess.run(["git", "init", "-q", str(repo)], check=True)
+                subprocess.run(["git", "init", "-q", "-b", "main", str(repo)], check=True)
             (src / ".git" / "info").mkdir(exist_ok=True)
             (src / ".git" / "info" / "exclude").write_text("/brave/\n/out/\n")
         else:
@@ -307,7 +307,7 @@ class Sandbox:
         repo = src.joinpath(*relative.split("/"))
         repo.mkdir(parents=True)
         options = ["-c", "user.name=Test", "-c", "user.email=t@example.com", "-c", "commit.gpgsign=false"]
-        subprocess.run(["git", "init", "-q", str(repo)], check=True)
+        subprocess.run(["git", "init", "-q", "-b", "main", str(repo)], check=True)
         (repo / "test.cc").write_text("upstream\n")
         subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True)
         subprocess.run(["git", "-C", str(repo), *options, "commit", "-q", "-m", "dependency"], check=True)
