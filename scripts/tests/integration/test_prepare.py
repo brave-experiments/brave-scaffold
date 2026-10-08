@@ -367,6 +367,28 @@ class UnrecordedPatchTargetTests(BuildTestCase):
         (self.src / "base" / "made_locally.cc").write_text("mine\n")
         self.assert_stops("staged.cc", "gone.cc", "staged_gone.cc", "moved_to.cc", "made_locally.cc")
 
+    def test_an_ignored_local_file_at_a_target_blocks_too(self):
+        exclude = self.src / ".git" / "info" / "exclude"
+        exclude.parent.mkdir(exist_ok=True)
+        exclude.write_text("base/ignored_target.cc\n")
+        (self.src / "base" / "ignored_target.cc").write_text("my local file\n")
+        self.git("status", "--porcelain")
+        self.add_patch("ignored_target.cc", "keep.cc")
+        self.assert_stops("ignored_target.cc")
+        self.assertEqual((self.src / "base" / "ignored_target.cc").read_text(), "my local file\n")
+
+    def test_an_ignored_file_that_an_earlier_patch_application_recorded_does_not_block(self):
+        exclude = self.src / ".git" / "info" / "exclude"
+        exclude.parent.mkdir(exist_ok=True)
+        exclude.write_text("base/made_by_a_patch.cc\n")
+        self.add_patch("made_by_a_patch.cc")
+        (self.src / "base" / "made_by_a_patch.cc").write_text("applied\n")
+        receipt = next((self.sandbox.config.parent / ".bcore" / "state").rglob("patch-receipt.json"))
+        data = json.loads(receipt.read_text())
+        data["files"]["base/made_by_a_patch.cc"] = hashlib.sha256(b"applied\n").hexdigest()
+        receipt.write_text(json.dumps(data))
+        self.assert_stops(ok=True)
+
     def test_the_old_name_of_a_renamed_file_blocks_too(self):
         self.add_patch("old.cc")
         self.git("mv", "base/old.cc", "base/moved_to.cc")

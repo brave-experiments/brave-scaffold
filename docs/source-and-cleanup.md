@@ -92,7 +92,7 @@ local `chmod` would be reset along with the contents. Otherwise it may hold loca
 and the command stops with `PREPARATION_CONFLICT`, lists the files, and suggests
 `bcore drift --diff`. That covers a file that differs from its metadata and from the
 receipt, a file with no earlier record, and a target a patch gained that has staged
-changes, unstaged edits, a deletion, a rename, or an untracked file at its path. A
+changes, unstaged edits, a deletion, a rename, or an untracked file at its path, even one Git ignores. A
 target nothing claims and Git shows as unchanged does not block. If Git cannot answer,
 a patch's targets cannot be read, or a patch's metadata is unusable (unreadable, another
 schema version, or any entry without a valid relative path and checksum), the command

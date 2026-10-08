@@ -294,10 +294,12 @@ def write_set_conflicts(identity, stale, known, extra, log, modes=None):
             unrecorded = sorted(name for name, key in relatives.items() if key not in modes and name in dirty)
             git_exec = gitstate.tracked_executable_bits(repository.path, unrecorded, log) \
                 if unrecorded and repository.path.exists() else {}
-            if repository == chromium:
-                tracked = gitstate.tracked_paths(repository.path, CORE_WRITTEN, log)
-                dirty |= {path for path in CORE_WRITTEN if path not in tracked
-                          and ((identity.src / path).exists() or (identity.src / path).is_symlink())}
+            if repository.path.exists():
+                # git status never lists an ignored file, so a local file that Git does not track and a patch
+                # (or the version update) is about to write over counts as local work too.
+                tracked = gitstate.tracked_paths(repository.path, sorted(relatives), log)
+                dirty |= {name for name in relatives if name not in tracked
+                          and ((repository.path / name).exists() or (repository.path / name).is_symlink())}
         except ScaffoldError as error:
             conflicts.append({"path": repository.rel or ".", "reason": error.message})
             continue
