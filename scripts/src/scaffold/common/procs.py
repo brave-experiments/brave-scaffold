@@ -24,7 +24,7 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .redaction import SECRET_NAME, URL_CREDENTIALS, header_secret_values, redact_argv, redact_url_credentials
+from .redaction import redact_argv, scrub_secrets, secret_values
 from .results import Cancelled
 from .revision import read_revision
 
@@ -381,19 +381,7 @@ class _StreamOutput:
         self.verbose_output = verbose_output
         self.pending, self.decoders, self.discard = {}, {}, set()
         self.tail = ""
-        secrets = {v for k, v in (env or os.environ).items() if v and SECRET_NAME.search(k)}
-        hide_next = False
-        for arg in map(str, argv):
-            if hide_next:
-                secrets.add(arg)
-            hide_next = arg.startswith("-") and "=" not in arg and bool(SECRET_NAME.search(arg))
-            if "=" in arg and SECRET_NAME.search(arg.partition("=")[0]):
-                secrets.add(arg.partition("=")[2])
-            secrets.update(match.group("secret") for match in URL_CREDENTIALS.finditer(arg))
-            secrets.update(header_secret_values(arg))
-        secrets.update(line for value in list(secrets) for line in value.splitlines() if line)
-        self.secrets = sorted((value for value in secrets if len(value) >= MIN_SCRUBBED_SECRET_LENGTH),
-                              key=len, reverse=True)
+        self.secrets = secret_values(argv, env or os.environ)
 
     def receive(self, stream, chunk):
         if self.preserve_stdout and stream is self.stdout:
@@ -419,9 +407,7 @@ class _StreamOutput:
             self.pending[stream] = remaining
 
     def write(self, stream, text):
-        for secret in self.secrets:
-            text = text.replace(secret, "***")
-        text = redact_url_credentials(text)
+        text = scrub_secrets(text, self.secrets)
         self.log.save(text)
         lines = (self.verbose_output(stream, text)
                  if self.verbose_output and self.log.verbosity != "verbose" else [text])

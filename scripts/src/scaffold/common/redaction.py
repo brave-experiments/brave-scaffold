@@ -53,6 +53,32 @@ def header_secret_values(argument):
     return found
 
 
+MIN_SCRUBBED_SECRET_LENGTH = 6  # shorter values would replace ordinary words; command lines are redacted by name anyway
+
+
+def secret_values(argv, env):
+    """The secret values a command was given, longest first: secret-named variables, arguments, URL passwords, headers."""
+    secrets = {value for name, value in env.items() if value and SECRET_NAME.search(name)}
+    hide_next = False
+    for argument in map(str, argv):
+        if hide_next:
+            secrets.add(argument)
+        hide_next = argument.startswith("-") and "=" not in argument and bool(SECRET_NAME.search(argument))
+        if "=" in argument and SECRET_NAME.search(argument.partition("=")[0]):
+            secrets.add(argument.partition("=")[2])
+        secrets.update(match.group("secret") for match in URL_CREDENTIALS.finditer(argument))
+        secrets.update(header_secret_values(argument))
+    secrets.update(line for value in list(secrets) for line in value.splitlines() if line)
+    return sorted((value for value in secrets if len(value) >= MIN_SCRUBBED_SECRET_LENGTH), key=len, reverse=True)
+
+
+def scrub_secrets(text, secrets):
+    """`text` with each known secret value, and any URL password, replaced."""
+    for secret in secrets:
+        text = text.replace(secret, REDACTED)
+    return redact_url_credentials(text)
+
+
 def redact_argv(argv):
     """Hide secret values in separated and --key=value forms, in headers, and in URLs."""
     result = []

@@ -61,6 +61,26 @@ class EnvironmentTests(SandboxTest):
         self.assertEqual(document["error"]["code"], "ENVIRONMENT_LOAD_FAILED")
         self.assertEqual(self.sandbox.records(), [])
 
+    def test_a_failing_environment_does_not_expose_inherited_secrets_in_its_error(self):
+        self.sandbox.make_checkout("main")
+        self.sandbox.prepare_environment("main", approve=False)
+        envrc = self.sandbox.root / "config" / "environments" / "main" / ".envrc"
+        envrc.write_text('echo "loading with $API_TOKEN and ${DB_PASSWORD} for https://u:pw-in-url-99@host/x" >&2\n'
+                         'echo "visible $HARMLESS_SETTING" >&2\nexit 7\n')
+        self.sandbox.approve("main")
+        secrets = ("tok-supersecret-123456", "hunter2-long-secret")
+        env = self.sandbox.env(API_TOKEN=secrets[0], DB_PASSWORD=secrets[1], HARMLESS_SETTING="plainvalue")
+        result = self.sandbox.bcore("--json", "--checkout", "main", "--config", str(self.sandbox.config), "run",
+                                   tool="bpm", env=env)
+        document = __import__("json").loads(result.stdout)
+        self.assertEqual(document["error"]["code"], "ENVIRONMENT_LOAD_FAILED")
+        logs = "".join(path.read_text() for path in (self.sandbox.root / "config" / ".bcore" / "logs").glob("*.log"))
+        for where, text in (("json", result.stdout), ("console", result.stderr), ("diagnostic log", logs)):
+            for secret in (*secrets, "pw-in-url-99"):
+                self.assertNotIn(secret, text, "%s leaked in the %s" % (secret, where))
+        self.assertIn("visible plainvalue", document["error"]["details"]["stderr"], "ordinary output is kept")
+        self.assertIn("loading with ***", document["error"]["details"]["stderr"])
+
     def test_environment_selecting_another_checkout_conflicts(self):
         self.sandbox.make_checkout("main")
         other = self.sandbox.make_checkout("other")

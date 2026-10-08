@@ -17,6 +17,7 @@ from pathlib import Path
 
 from .config import scaffold_root
 from .procs import run_capture
+from .redaction import scrub_secrets, secret_values
 from .results import ScaffoldError, repair
 
 # Variables owned by the tooling. They are removed from the inherited environment
@@ -253,7 +254,9 @@ def load_environment(identity, environ, log=None, with_pythonpath=False):
             raise ScaffoldError(
                 "ENVIRONMENT_LOAD_FAILED",
                 "The approved environment %s failed to load." % envrc_path(directory),
-                details={"exit_code": result.returncode, "stderr": result.stderr.strip()[-2000:]},
+                # The reviewed .envrc may echo what it inherited; scrub before cutting so no secret is left half-shown.
+                details={"exit_code": result.returncode,
+                         "stderr": scrub_secrets(result.stderr, secret_values(command, {**environ, **base})).strip()[-2000:]},
                 repairs=[repair(["direnv", "exec", str(directory), "true"], requires_user_action=False,
                                 note="Reproduces the load to inspect the failure.")])
         loaded = json.loads(target.read_text(encoding="utf-8"))["environ"]
