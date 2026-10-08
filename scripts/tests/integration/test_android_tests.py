@@ -286,6 +286,28 @@ class DeviceSuiteTests(AndroidTestsTestCase):
             os.close(master)
             os.close(slave)
 
+    def output_state(self):
+        from scaffold.brave.records import OutputState
+        from scaffold.common.config import load_config
+        from scaffold.common.identity import build_identity
+        identity = build_identity(self.core, load_config(self.sandbox.config), "test")
+        return OutputState(identity, self.src / "out" / "android_tests_Debug_arm64", self.sandbox.config.parent)
+
+    @unittest.skipUnless(shutil.which('node'), 'needs Node for the device adapter fixture')
+    def test_all_devices_record_the_attempt_by_the_aggregate_outcome(self):
+        self.on_test_branch()
+        node = shutil.which('node')
+        result, document = self.run_tests('brave_java_unit_tests', '--all-devices', devices=DEVICES_TWO,
+                                          FAKE_ADAPTER_NODE=node, FAKE_MULTI_FAIL_DEVICE='emulator-5554',
+                                          FAKE_MULTI_ZERO_EXIT='1')
+        self.assertEqual((result.returncode, document['error']['code']), (5, 'TEST_FAILED'))
+        self.assertEqual(self.output_state().last_attempt()['outcome'], 'failed',
+                         'a device failed, so the attempt did not succeed')
+        result, document = self.run_tests('brave_java_unit_tests', '--all-devices', devices=DEVICES_TWO,
+                                          FAKE_ADAPTER_NODE=node)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.output_state().last_attempt()['outcome'], 'succeeded')
+
     @unittest.skipUnless(shutil.which('node'), 'needs Node for the device adapter fixture')
     def test_all_devices_zero_exit_failure_and_missing_results_are_reported(self):
         self.on_test_branch()

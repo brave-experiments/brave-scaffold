@@ -20,7 +20,9 @@ PASSING = {"Foo.A": [{"status": "SUCCESS"}], "Foo.B": [{"status": "SUCCESS"}]}
 FAILING = {"Foo.A": [{"status": "SUCCESS"}], "Foo.B": [{"status": "FAILURE"}]}
 
 
-class TestAttemptTests(unittest.TestCase):
+class AttemptFixture(unittest.TestCase):
+    """A clean, successfully built output and the doubles every attempt test needs; defines no tests."""
+
     def setUp(self):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
@@ -33,6 +35,7 @@ class TestAttemptTests(unittest.TestCase):
         clean = self.record()
         clean.record_success("op-build", {"path": "app"}, {})  # a good build, nothing uncertain about it
         self.ctx = mock.MagicMock()
+        self.ctx.state_root = self.root
         self.execution = SimpleNamespace(identity=self.identity, environ={}, checks=[], toolchain=None,
                                          context=lambda ctx: ctx)
         self.effective = SimpleNamespace(target="mac", configuration="Debug", arch="arm64", output_dir=self.output,
@@ -43,7 +46,7 @@ class TestAttemptTests(unittest.TestCase):
     def record(self):
         return OutputState(self.identity, self.output, self.root)
 
-    def runner_writes(self, tests, exit_ok=True):
+    def runner_writes(self, tests):
         """Stand in for the child process only: the attempt record is the real one, begun as run_output_step does."""
         def run_output_step(ctx, execution, effective, op, arguments, phase, extra_env=None, before_child=None):
             state = self.record()
@@ -68,6 +71,8 @@ class TestAttemptTests(unittest.TestCase):
         self.assertTrue(state.needs_revalidation, "a run that did not pass leaves the output marked")
         self.assertEqual(state.success["operation_id"], "op-build", "the earlier success stays as history")
 
+
+class TestAttemptTests(AttemptFixture):
     def test_failed_tests_with_a_zero_exit_leave_the_attempt_failed_and_the_output_marked(self):
         with self.assertRaises(ScaffoldError) as caught:
             self.run_desktop(FAILING)
@@ -127,6 +132,40 @@ class TestAttemptTests(unittest.TestCase):
         self.assertEqual(summary, {"ran": 2})
         self.assertEqual(self.record().last_attempt()["outcome"], "succeeded")
         self.assertFalse(self.record().needs_revalidation)
+
+
+class ConcludeDeviceAttemptTests(AttemptFixture):
+    def begin(self):
+        state = self.record()
+        state.begin_attempt("op-devices", True)
+        return state
+
+    def conclude(self, passed):
+        cmd_build.conclude_device_attempt(self.ctx, self.identity, self.effective, SimpleNamespace(id="op-devices"),
+                                          passed)
+        return self.record()
+
+    def test_a_passing_aggregate_completes_the_attempt(self):
+        self.begin()
+        state = self.conclude(True)
+        self.assertEqual(state.attempt_outcome("op-devices"), "succeeded")
+        self.assertFalse(state.needs_revalidation)
+
+    def test_a_failed_or_unverified_aggregate_leaves_the_attempt_failed_and_the_output_marked(self):
+        self.begin()
+        state = self.conclude(False)
+        self.assertEqual(state.attempt_outcome("op-devices"), "failed")
+        self.assertTrue(state.needs_revalidation)
+
+    def test_an_attempt_the_child_failure_already_closed_is_never_overwritten(self):
+        state = self.begin()
+        state.end_attempt("op-devices", "failed")
+        for passed in (True, False):
+            self.assertEqual(self.conclude(passed).attempt_outcome("op-devices"), "failed")
+            self.assertTrue(self.record().needs_revalidation)
+
+    def test_an_unknown_attempt_is_left_alone(self):
+        self.assertIsNone(self.conclude(True).attempt_outcome("op-devices"))
 
 
 if __name__ == "__main__":

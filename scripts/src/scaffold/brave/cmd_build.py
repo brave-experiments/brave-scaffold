@@ -636,6 +636,17 @@ def finish_test_attempt(state, op, verify):
     return outcome
 
 
+def conclude_device_attempt(ctx, identity, effective, op, passed):
+    """Close the attempt left open by a multi-device run, unless the child's own failure already closed it."""
+    state = OutputState(identity, effective.output_dir, ctx.state_root)
+    if state.attempt_outcome(op.id) != "started":
+        return
+    if passed:
+        state.end_attempt_completed(op.id)
+    else:
+        state.end_attempt(op.id, "failed")
+
+
 def run_test_package(ctx, execution, effective, op, arguments, results=None):
     log_test_phase(ctx, effective)
     op.detail(effective={"target": effective.target, "configuration": effective.configuration,
@@ -743,6 +754,7 @@ def run_android_test_devices(ctx, execution, effective, suite, group):
                                      {"NODE_OPTIONS": options, "SCAFFOLD_ANDROID_TEST_DEVICES": str(config_path)}, report)
         runs = read_device_runs(report)
         if len(runs) != len(devices) or any(run["status"] != "finished" for run in runs):
+            conclude_device_attempt(ctx, identity, effective, op, False)
             raise ScaffoldError("TEST_RESULTS_UNVERIFIED", "The test command did not report a completed run for every selected device.",
                                 details={"devices": runs}, exit_code=5)
         outcomes = list(group.skipped)
@@ -768,6 +780,7 @@ def run_android_test_devices(ctx, execution, effective, suite, group):
                 warnings.append({"code": "TEST_RESULTS_UNVERIFIED", "message": warning,
                                  "details": {"device": run["device"]}})
         failures = [run for run in outcomes if run["status"] == "error"]
+        conclude_device_attempt(ctx, identity, effective, op, not failures)
         result = Result(command="test", checks=[check.to_dict() for check in execution.checks],
                         child_exit_code=failures[0]["child_exit_code"] if failures else 0)
         result.data = {"suite": suite, "argv": argv, "cwd": str(identity.core), "runs_on": "device",
@@ -872,8 +885,7 @@ def run_android_test_with_overlay(ctx, execution, effective, op, known, tail, su
             error.details["results"] = android_tests.summarize_results(results)
         raise
     if report is not None:
-        finish_test_attempt(state, op, lambda: (None, None))
-        return argv, None, None
+        return argv, None, None  # the caller concludes the attempt once it has checked every device
     summary, warning = finish_test_attempt(
         state, op, lambda: android_tests.verify_outcome(effective, suite, results, results is not None))
     return argv, summary, warning

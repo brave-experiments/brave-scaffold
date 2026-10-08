@@ -339,6 +339,10 @@ class OutputState:
     def success(self):
         return self.data["success"]
 
+    def attempt_outcome(self, operation_id):
+        return next((attempt["outcome"] for attempt in self.data["attempts"]
+                     if attempt["operation_id"] == operation_id), None)
+
     def last_attempt(self):
         return self.data["attempts"][-1] if self.data["attempts"] else None
 
