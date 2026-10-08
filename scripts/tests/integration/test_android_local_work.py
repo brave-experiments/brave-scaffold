@@ -215,6 +215,8 @@ class ResourceRefreshTests(AndroidTestCase):
         self.assertNotIn("--skip-support-refresh", str(self.node_calls()))
 
     def test_doctor_uses_the_refresh_decision_without_writing(self):
+        with open(self.core / ".env", "a") as stream:
+            stream.write("brave_services_key=fixture-services-key\n")
         self.release.write_text("local work\n")
         result, document = self.document("doctor", "android")
         self.assertEqual(result.returncode, 0, result.stderr)

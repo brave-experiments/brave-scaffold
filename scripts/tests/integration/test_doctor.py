@@ -21,6 +21,7 @@ class DoctorTests(SandboxTest):
         write_executable(self.sandbox.bin / "xcode-select", "#!/bin/sh\necho /fake/Xcode/Developer\n")
         self.core = self.sandbox.make_checkout("main")
         self.sandbox.prepare_environment("main")
+        (self.core / ".env").write_text("brave_services_key=fixture-services-key\n")
         self.config = str(self.sandbox.config)
 
     def doctor(self, *args, cwd=None, env=None):
@@ -34,11 +35,27 @@ class DoctorTests(SandboxTest):
         result, document = self.doctor("--checkout", "main")
         names = [check["name"] for check in document["checks"]]
         self.assertEqual(len(names), len(set(names)))
+        self.assertEqual(names.count("services-key"), 1)
         rbe = next(check for check in document["checks"] if check["name"] == "rbe-env")
         self.assertTrue(rbe["required"])
         self.assertEqual(rbe["scopes"], ["mac", "rbe"])
         repairs = document["error"]["repairs"]
         self.assertEqual(len(repairs), len({json.dumps(step, sort_keys=True) for step in repairs}))
+
+    def test_default_and_macos_doctor_require_the_shared_services_key(self):
+        for contents in (None, "", "brave_services_key=\n", 'brave_services_key="   "\n'):
+            with self.subTest(contents=contents):
+                env_file = self.core / ".env"
+                if contents is None:
+                    env_file.unlink()
+                else:
+                    env_file.write_text(contents)
+                for scope in ((), ("mac",)):
+                    result, document = self.doctor(*scope, "--checkout", "main")
+                    self.assertEqual(result.returncode, 3)
+                    self.assertIn("services-key", document["error"]["details"]["blocking"])
+                    check = next(c for c in document["checks"] if c["name"] == "services-key")
+                    self.assertIn("Ask a Brave team-mate how to obtain the key", check["summary"])
 
     def test_default_scopes_leave_android_ios_and_signing_opt_in(self):
         result, document = self.doctor("--checkout", "main")
@@ -53,6 +70,7 @@ class DoctorTests(SandboxTest):
     def two_checkouts(self):
         second = self.sandbox.make_checkout("second")
         self.sandbox.prepare_environment("second")
+        (second / ".env").write_text("brave_services_key=fixture-services-key\n")
         self.sandbox.write_config([("main", self.core, "environments/main"),
                                    ("second", second, "environments/second")])
         return second

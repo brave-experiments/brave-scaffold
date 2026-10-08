@@ -110,20 +110,6 @@ def _unchecked(names, scope, error, required, affects):
                        affects=affects, repairs=error.repairs, **error.details) for name in names]
 
 
-def _services_key(identity, scope):
-    env_file = identity.core / ".env"
-    problem = None
-    try:
-        value = read_env(env_file).get("brave_services_key", "")
-    except (OSError, ValueError, UnicodeDecodeError):
-        value, problem = "", "Cannot read %s or its includes." % env_file
-    if value.strip():
-        return make_check("services-key", PASS, "brave_services_key is nonempty in %s. Its validity is not verified."
-                          % env_file, scope, required=False, affects=("services-backed features",), nonempty=True)
-    return make_check("services-key", WARNING, problem or "Set a nonempty brave_services_key in %s." % env_file, scope,
-                      required=False, affects=("services-backed features",), nonempty=False)
-
-
 def _rbe_config(ctx, identity, scope, required):
     """Local RBE/Siso configuration only; no network access."""
     affects = ("rbe build",)
@@ -228,8 +214,8 @@ def mac_build_checks(ctx, scope, remote_required=False):
     identity, error = _selection(ctx)
     checks.append(_disk(scope, identity.src if identity and identity.src.is_dir() else ctx.scaffold_root))
     if identity is None:
-        return checks + _unchecked(("services-key", "rbe-config"), scope, error, False, ("mac build",))
-    return checks + [_services_key(identity, scope)] + _rbe_config(ctx, identity, scope, required=remote_required) \
+        return checks + _unchecked(("rbe-config",), scope, error, False, ("mac build",))
+    return checks + _rbe_config(ctx, identity, scope, required=remote_required) \
         + [_reachability(scope)]
 
 

@@ -26,11 +26,11 @@ from . import rbe_checks as rbe_checks_module
 
 # Each scope lists the check groups it evaluates.
 SCOPES = {
-    "mac": ("machine", "host-mac", "mac-build", "checkout"),
+    "mac": ("machine", "host-mac", "mac-build", "checkout", "services-key"),
     "rbe": ("machine", "rbe"),
     "shell": ("machine", "shell"),
     "signing": ("machine", "signing"),
-    "android": ("machine", "host-mac", "android-machine", "checkout", "android-build", "android-support"),
+    "android": ("machine", "host-mac", "android-machine", "checkout", "services-key", "android-build", "android-support"),
     "ios": ("machine", "host-mac", "ios-machine", "checkout", "ios-build"),
 }
 
@@ -139,6 +139,26 @@ def _environment_check(state, scope):
                   affects=("checkout commands",))
 
 
+def services_key_checks(ctx, scope):
+    """Check the checkout's services key without exposing its value."""
+    identity, error = rbe_checks_module._selection(ctx)
+    if identity is None:
+        return [make_check("services-key", NOT_CHECKED, error.message, scope,
+                           affects=("services-backed features",), repairs=error.repairs)]
+    env_file = identity.core / ".env"
+    try:
+        nonempty = bool(rbe_checks_module.read_env(env_file).get("brave_services_key", "").strip())
+        message = ("brave_services_key is nonempty in %s. Its validity is not verified." % env_file
+                   if nonempty else "Set a nonempty brave_services_key in %s." % env_file)
+    except (OSError, ValueError, UnicodeDecodeError):
+        nonempty = False
+        message = "Cannot read %s or its includes." % env_file
+    if not nonempty:
+        message += " Ask a Brave team-mate how to obtain the key"
+    return [make_check("services-key", PASS if nonempty else BLOCKER, message, scope,
+                       affects=("services-backed features",), nonempty=nonempty)]
+
+
 def shell_checks(ctx, scope):
     checks = []
     shell = ctx.environ.get("SHELL", "")
@@ -168,6 +188,7 @@ def shell_checks(ctx, scope):
 GROUP_FUNCTIONS = {"machine": machine_checks, "host-mac": host_mac_checks, "shell": shell_checks,
                    "mac-build": rbe_checks_module.mac_build_checks, "rbe": rbe_checks_module.rbe_checks,
                    "signing": signing_checks.signing_checks, "android-machine": android_checks.machine_checks,
+                   "services-key": services_key_checks,
                    "android-build": android_checks.build_checks, "android-support": android_checks.support_checks,
                    "ios-machine": ios_checks.machine_checks, "ios-build": ios_checks.build_checks}
 
