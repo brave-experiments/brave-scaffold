@@ -7,6 +7,7 @@
 import unittest
 
 import tests.support  # noqa: F401  (puts the source tree on sys.path)
+from scaffold.brave.bcore import parse_command, resolve_command
 from scaffold.common.cli import CommandSpec, Opt, Positional, parse_leading, parse_tokens
 from scaffold.common.results import ScaffoldError
 
@@ -100,6 +101,34 @@ class ForwardingParserTests(unittest.TestCase):
         tokens = ["", "a b", "-5", "café", "$(x)", "--key=v w"]
         parsed = parse_tokens(FORWARDING, ["mac", "--", *tokens])
         self.assertEqual(parsed.forwarded, tokens)
+
+
+class CommandDiscoveryTests(unittest.TestCase):
+    def test_notification_policy_before_command_or_subcommand(self):
+        for policy in ("always", "major", "never", "NEVER"):
+            for tokens, name, positionals in (
+                    (["--notify", policy, "build", "mac"], "build", ["mac"]),
+                    (["--notify", policy, "env", "check"], "env check", []),
+                    (["env", "--notify", policy, "check"], "env check", [])):
+                with self.subTest(tokens=tokens):
+                    spec, remaining = resolve_command(tokens)
+                    parsed = parse_command(spec, remaining)
+                    self.assertEqual(spec.name, name)
+                    self.assertEqual(parsed.get("notify"), policy.lower())
+                    self.assertEqual(parsed.positionals, positionals)
+                    self.assertEqual(parsed.forwarded, [])
+
+    def test_bare_and_inline_notification_options_preserve_command_words(self):
+        for tokens, name, policy in (
+                (["--notify", "build", "mac"], "build", "always"),
+                (["env", "--notify", "check"], "env check", "always"),
+                (["--notify=never", "build", "mac"], "build", "never")):
+            with self.subTest(tokens=tokens):
+                spec, remaining = resolve_command(tokens)
+                parsed = parse_command(spec, remaining)
+                self.assertEqual(spec.name, name)
+                self.assertEqual(parsed.get("notify"), policy)
+                self.assertEqual(parsed.forwarded, [])
 
 
 class LeadingParserTests(unittest.TestCase):

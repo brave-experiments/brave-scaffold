@@ -17,7 +17,7 @@ from ..common.procs import install_signal_handlers
 from .app import run_command
 from .registry import GROUPS, REGISTRY
 
-VALUE_FLAGS = {option.name for option in COMMON_OPTIONS if option.takes_value and not option.optional_value}
+VALUE_OPTIONS = {option.name: option for option in COMMON_OPTIONS if option.takes_value}
 
 
 def _pop_word(tokens):
@@ -28,8 +28,12 @@ def _pop_word(tokens):
         if token == "--":
             return None, tokens
         name = token.partition("=")[0] if token.startswith("--") else token
-        if name in VALUE_FLAGS:
-            index += 1 if "=" in token else 2
+        if name in VALUE_OPTIONS:
+            option = VALUE_OPTIONS[name]
+            index += 1
+            if "=" not in token and (not option.optional_value or
+                                      index < len(tokens) and tokens[index].lower() in option.choices):
+                index += 1
             continue
         if token.startswith("-"):
             index += 1
