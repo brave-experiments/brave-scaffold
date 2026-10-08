@@ -9,6 +9,7 @@ import os
 import signal
 import subprocess
 import time
+import types
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -354,7 +355,13 @@ class RestartLoggingTests(unittest.TestCase):
         with open(os.path.join(fake_open, "open"), "w") as stream:
             stream.write("#!/bin/sh\nexit 0\n")
         os.chmod(os.path.join(fake_open, "open"), 0o755)
-        with mock.patch.object(macos, "LAUNCH_WAIT_SECONDS", 1.0):
+        elapsed = [0.0]
+
+        def fake_sleep(seconds):
+            elapsed[0] += seconds
+
+        virtual_time = types.SimpleNamespace(monotonic=lambda: elapsed[0], sleep=fake_sleep)
+        with mock.patch.object(macos, "LAUNCH_WAIT_SECONDS", 1.0), mock.patch.object(macos, "time", virtual_time):
             with self.assertRaises(Exception):
                 macos.launch({**bundle, "path": os.path.join(directory, "absent.app")},
                              {"PATH": fake_open + ":/usr/bin:/bin"}, log)
