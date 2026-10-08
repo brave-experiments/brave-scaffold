@@ -152,3 +152,5 @@ succeed. A marker is not a signature and does not bypass push checks.
 Use plain, direct English. Keep facts and technical terms precise. Cut words that
 add no meaning. Describe behavior and evidence without achievement claims or
 agent attribution.
+
+Do not hard-wrap Markdown prose. Write each paragraph or list item on one source line and let the viewer wrap it. Preserve meaningful line breaks in code blocks, tables, and other Markdown structure.

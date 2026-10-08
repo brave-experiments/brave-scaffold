@@ -1,9 +1,6 @@
 # Development
 
-`bcore` handles Brave Core checkout operations: readiness checks, sync, build,
-test, run, and related inspection. It is not the general entry point for Brave
-developer tooling. A feature belongs here because it operates on a Core checkout,
-not merely because Core developers use it.
+`bcore` handles Brave Core checkout operations: readiness checks, sync, build, test, run, and related inspection. It is not the general entry point for Brave developer tooling. A feature belongs here because it operates on a Core checkout, not merely because Core developers use it.
 
 ## Layout
 
@@ -21,8 +18,7 @@ scripts/
   tests/{unit,integration,acceptance}/
 ```
 
-Tooling code, launchers, and tests live under `scripts/`; there is no root
-`src/` or `tests/`.
+Tooling code, launchers, and tests live under `scripts/`; there is no root `src/` or `tests/`.
 
 | Module | Responsibility |
 | --- | --- |
@@ -49,8 +45,7 @@ Tooling code, launchers, and tests live under `scripts/`; there is no root
 | `brave/support_scripts.py`, `brave/support_script_contracts.json` | Reviewed shell identities and complete support write manifests |
 | `brave/records.py`, `brave/steps.py` | Operation records with phase outcomes, per-output history, and the step descriptions shared by plans and records |
 
-Handlers receive a context and return a `Result` or raise `ScaffoldError`; the
-runner turns either into exactly one output document.
+Handlers receive a context and return a `Result` or raise `ScaffoldError`; the runner turns either into exactly one output document.
 
 ## Set up and test
 
@@ -61,109 +56,48 @@ cd scripts
 .venv/bin/python -m tests.run_parallel                # the same tests, modules in parallel
 ```
 
-Tests use only the standard library. Fast suites need no real checkout, SDK,
-credentials, or shell configuration: they build disposable checkouts with fake
-Node, package-manager, and `vpython3` executables, use a temporary `HOME` and
-direnv data directory, and run the real launchers and a real `direnv`. Fixtures
-live in `scripts/tests/support.py`. In a sandbox only, tests approve
-environments with `direnv allow`; nothing approves a real environment.
+Tests use only the standard library. Fast suites need no real checkout, SDK, credentials, or shell configuration: they build disposable checkouts with fake Node, package-manager, and `vpython3` executables, use a temporary `HOME` and direnv data directory, and run the real launchers and a real `direnv`. Fixtures live in `scripts/tests/support.py`. In a sandbox only, tests approve environments with `direnv allow`; nothing approves a real environment.
 
 ### What the fast suite needs
 
-- **A macOS host.** Restart, launch, and application tests use fake `.app` bundles, `ps`,
-  `open`, and `osascript`; the integration classes skip elsewhere.
-- **`direnv`** on `PATH`. Tests run a real `direnv` with a private data directory; without
-  it they skip.
-- **A C compiler (`cc`, from the Xcode command line tools).** Fake applications run a small
-  executable the suite compiles once, because copies of system binaries are killed on
-  macOS. Without a compiler the fake applications cannot stay running and the restart
-  tests fail.
-- **Process inspection.** `ps` must be allowed; a sandbox that denies it fails the restart
-  tests.
-- **Git, and `git-lfs`** for the large-file tests (they skip without it). No network access
-  is needed.
+- **A macOS host.** Restart, launch, and application tests use fake `.app` bundles, `ps`, `open`, and `osascript`; the integration classes skip elsewhere.
+- **`direnv`** on `PATH`. Tests run a real `direnv` with a private data directory; without it they skip.
+- **A C compiler (`cc`, from the Xcode command line tools).** Fake applications run a small executable the suite compiles once, because copies of system binaries are killed on macOS. Without a compiler the fake applications cannot stay running and the restart tests fail.
+- **Process inspection.** `ps` must be allowed; a sandbox that denies it fails the restart tests.
+- **Git, and `git-lfs`** for the large-file tests (they skip without it). No network access is needed.
 - **Python 3.14+** as the scaffold runtime.
 
-The full suite takes about twelve minutes serially. `tests.run_parallel` runs each test module as its own
-process, up to `--jobs N` at a time (default: the core count, at most 8), and finished in about 2½ minutes on an
-8-job run; the longest single module, `test_android`, sets the floor. It takes module names or files
-(`tests.run_parallel --jobs 4 tests/unit/test_buildopts.py`) and `--suite unit|integration`, prints each module as
-it finishes and the output of any that fail, and exits non-zero if any module fails or runs no tests. It leaves
-out `tests/acceptance`, which needs a real checkout. Test sandboxes are disposable and separate, so modules do
-not interfere, and the sandbox environment sets `BCORE_NOTIFY_BACKEND=none`, so no test run raises a desktop
-notification. Run a focused set while you work, for example
-`.venv/bin/python -m unittest tests.integration.test_clean tests.integration.test_plans`, or one
-unit module such as `tests.unit.test_buildopts`; unit tests need no direnv, and integration classes
-name what they need in their skip messages. The one timing-sensitive test is
-`RestartLoggingTests.test_liveness_and_launch_probes_are_logged_with_polling_summarised`: on a heavily
-loaded machine it can see fewer liveness polls than it expects; rerun it alone before treating it as a fault. Each test sandbox stops every process that
-mentions its directory when it finishes, so a run leaves nothing behind. `test_doc_examples`
-runs the command examples from the guides in fixtures; a new example in a guide must be
-added to its table (or listed with the reason it cannot run) or a coverage test fails.
+The full suite takes about twelve minutes serially. `tests.run_parallel` runs each test module as its own process, up to `--jobs N` at a time (default: the core count, at most 8), and finished in about 2½ minutes on an 8-job run; the longest single module, `test_android`, sets the floor. It takes module names or files (`tests.run_parallel --jobs 4 tests/unit/test_buildopts.py`) and `--suite unit|integration`, prints each module as it finishes and the output of any that fail, and exits non-zero if any module fails or runs no tests. It leaves out `tests/acceptance`, which needs a real checkout. Test sandboxes are disposable and separate, so modules do not interfere, and the sandbox environment sets `BCORE_NOTIFY_BACKEND=none`, so no test run raises a desktop notification. Run a focused set while you work, for example `.venv/bin/python -m unittest tests.integration.test_clean tests.integration.test_plans`, or one unit module such as `tests.unit.test_buildopts`; unit tests need no direnv, and integration classes name what they need in their skip messages. The one timing-sensitive test is `RestartLoggingTests.test_liveness_and_launch_probes_are_logged_with_polling_summarised`: on a heavily loaded machine it can see fewer liveness polls than it expects; rerun it alone before treating it as a fault. Each test sandbox stops every process that mentions its directory when it finishes, so a run leaves nothing behind. `test_doc_examples` runs the command examples from the guides in fixtures; a new example in a guide must be added to its table (or listed with the reason it cannot run) or a coverage test fails.
 
-Real-checkout acceptance runs are opt-in, use an explicitly selected checkout,
-and need the user's authorization for the operations involved
-([agent workflows](agent-workflows.md)). Record the checkout, operations, and
-results with the evidence.
+Real-checkout acceptance runs are opt-in, use an explicitly selected checkout, and need the user's authorization for the operations involved ([agent workflows](agent-workflows.md)). Record the checkout, operations, and results with the evidence.
 
 ## Adding a command or check
 
-1. Add a `CommandSpec` to `brave/registry.py` with a summary, positionals,
-   options, side effects, and examples. Help and parsing come from it.
-2. Write the handler. Take the checkout from `ctx.identity()`, load its environment once with
-   `brave/execution.load` (resolve tools with `execution.resolve_tools`), pass that
-   `Execution` to every phase, and run processes through `common/procs` (package commands
-   through `brave/packages.run`) so they are logged and cancellable. Record each phase with
-   `op.start`, `op.succeed`, and `op.fail`.
+1. Add a `CommandSpec` to `brave/registry.py` with a summary, positionals, options, side effects, and examples. Help and parsing come from it.
+2. Write the handler. Take the checkout from `ctx.identity()`, load its environment once with `brave/execution.load` (resolve tools with `execution.resolve_tools`), pass that `Execution` to every phase, and run processes through `common/procs` (package commands through `brave/packages.run`) so they are logged and cancellable. Record each phase with `op.start`, `op.succeed`, and `op.fail`.
 3. Return a `Result`; raise `ScaffoldError` with a stable code and repairs.
-4. Add the command's `data` shape to `schemas/command-data.schema.json` and select it
-   in `schemas/result-envelope.schema.json`; a test fails for a command without one.
-   Add tests through the real launcher, including the failure paths: the suite
-   validates real results (success, unresolved output, error, cancellation, plans)
-   against the schemas and checks that help examples parse.
-5. Update `docs/commands.md`, the troubleshooting entry for new errors, and the
-   capability table.
-6. For a doctor check, add it to a check group and the group to a scope in the tables in
-   `brave/doctor.py`; execution paths reuse the same functions. Groups other than machine,
-   shell, and signing run in the selected checkout's approved environment.
+4. Add the command's `data` shape to `schemas/command-data.schema.json` and select it in `schemas/result-envelope.schema.json`; a test fails for a command without one. Add tests through the real launcher, including the failure paths: the suite validates real results (success, unresolved output, error, cancellation, plans) against the schemas and checks that help examples parse.
+5. Update `docs/commands.md`, the troubleshooting entry for new errors, and the capability table.
+6. For a doctor check, add it to a check group and the group to a scope in the tables in `brave/doctor.py`; execution paths reuse the same functions. Groups other than machine, shell, and signing run in the selected checkout's approved environment.
 
 ## Sync dispatch
 
-`brave/sync.py` runs Core's package `sync` script through `brave/packages.py`.
-Core controls source updates, resets, package installation, patches, and hooks.
-Scaffold selects the checkout, resolves local tools, combines mobile targets,
-forwards arguments, streams output, and records the result. A failed sync stops
-later phases and leaves the checkout as Core left it.
+`brave/sync.py` runs Core's package `sync` script through `brave/packages.py`. Core controls source updates, resets, package installation, patches, and hooks. Scaffold selects the checkout, resolves local tools, combines mobile targets, forwards arguments, streams output, and records the result. A failed sync stops later phases and leaves the checkout as Core left it.
 
-Plans describe the command and general checkout writes. They do not evaluate
-Core's sync implementation or promise preservation of local work. Keep sync
-independent of source hashes, hook inventories, and overwrite approval.
+Plans describe the command and general checkout writes. They do not evaluate Core's sync implementation or promise preservation of local work. Keep sync independent of source hashes, hook inventories, and overwrite approval.
 
-`brave/sync_scope.py` provides dependency discovery and tracked-change snapshots
-for build freshness and Android support checks. Those checks and patch
-preparation guards belong to their respective operations, not the sync phase.
+`brave/sync_scope.py` provides dependency discovery and tracked-change snapshots for build freshness and Android support checks. Those checks and patch preparation guards belong to their respective operations, not the sync phase.
 
-Regression tests exercise dispatch with local changes, changed Core scripts,
-forwarded options, and child failures. Use isolated fake package commands to
-verify that Scaffold passes control to Core without editing the checkout first.
+Regression tests exercise dispatch with local changes, changed Core scripts, forwarded options, and child failures. Use isolated fake package commands to verify that Scaffold passes control to Core without editing the checkout first.
 
 ## Android support branch
 
-`scripts/src/scaffold/brave/android_support.toml` defines the support branch in
-`support.default_ref`. Setup, Android test checks, repair commands, help, and
-overlay messages use that value. Change it there when the branch is renamed;
-update the branch examples in the Android guide, troubleshooting guide, and
-project skills at the same time. Existing support working copies are never
-switched automatically.
+`scripts/src/scaffold/brave/android_support.toml` defines the support branch in `support.default_ref`. Setup, Android test checks, repair commands, help, and overlay messages use that value. Change it there when the branch is renamed; update the branch examples in the Android guide, troubleshooting guide, and project skills at the same time. Existing support working copies are never switched automatically.
 
 ## Evidence for support claims
 
-A combination is `supported` in the capability table only after it has run on a
-real checkout; add it to `VALIDATED` in `common/platforms.py` in the change that
-records that evidence. Fixture results never justify `supported`.
+A combination is `supported` in the capability table only after it has run on a real checkout; add it to `VALIDATED` in `common/platforms.py` in the change that records that evidence. Fixture results never justify `supported`.
 
 ## Headers and commits
 
-New first-party source, tests, scripts, and comment-capable configuration carry
-the MPL header shown in [AGENTS.md](../AGENTS.md). Commits use Conventional
-Commits and follow the signing procedure there.
+New first-party source, tests, scripts, and comment-capable configuration carry the MPL header shown in [AGENTS.md](../AGENTS.md). Commits use Conventional Commits and follow the signing procedure there.
