@@ -80,6 +80,20 @@ class StatusTests(SandboxTest):
         self.assertEqual(self.status()['chromium'], {'base_ref': 'origin/master',
                          'branch_version': None, 'base_version': None, 'status': 'unavailable'})
 
+    def test_branch_diff_uses_remote_ancestor_when_local_master_is_stale(self):
+        self.git('update-ref', 'refs/heads/master', self.head)
+        self.commit_file('upstream.cc', 'upstream\n')
+        ancestor = self.git('rev-parse', 'HEAD').strip()
+        self.git('update-ref', 'refs/remotes/origin/master', ancestor)
+        self.commit_file('branch.cc', 'branch\n')
+        self.assertEqual(self.status()['diff_stat'], {'base': ancestor, 'files': 1,
+                         'insertions': 1, 'deletions': 0,
+                         'summary': '1 file changed, 1 insertion(+)'})
+        result = self.sandbox.bcore('status', '--config', str(self.sandbox.config), cwd=self.core)
+        self.assertNotIn('behind origin/master', result.stdout)
+        result = self.sandbox.bcore('status', '--show-origin', '--config', str(self.sandbox.config), cwd=self.core)
+        self.assertIn('0 behind origin/master; 1 ahead', result.stdout)
+
     def test_inherited_git_selectors_cannot_make_status_describe_another_repository(self):
         other = self.sandbox.root / 'other-repo'
         other.mkdir()
@@ -105,18 +119,18 @@ class StatusTests(SandboxTest):
         (self.core / 'uncommitted.cc').write_text('not counted\n')
         (self.core / 'other.cc').write_text('a\nb\nc\n')
         data = self.status()
-        self.assertEqual(data['diff_stat'], {'base': 'master', 'files': 2, 'insertions': 3, 'deletions': 0,
+        self.assertEqual(data['diff_stat'], {'base': self.head, 'files': 2, 'insertions': 3, 'deletions': 0,
                                              'summary': '2 files changed, 3 insertions(+)'})
         result = self.sandbox.bcore('status', '--config', str(self.sandbox.config), cwd=self.core)
-        self.assertIn('Diff       master...HEAD: 2 files changed, 3 insertions(+)', result.stdout)
+        self.assertIn('Diff       ' + self.head[:12] + '..HEAD: 2 files changed, 3 insertions(+)' , result.stdout)
 
     def test_a_branch_with_nothing_beyond_master_says_so(self):
         self.git('update-ref', 'refs/heads/master', self.head)
         data = self.status()
-        self.assertEqual(data['diff_stat'], {'base': 'master', 'files': 0, 'insertions': 0, 'deletions': 0,
+        self.assertEqual(data['diff_stat'], {'base': self.head, 'files': 0, 'insertions': 0, 'deletions': 0,
                                              'summary': None})
         result = self.sandbox.bcore('status', '--config', str(self.sandbox.config), cwd=self.core)
-        self.assertIn('Diff       master...HEAD: no changes', result.stdout)
+        self.assertIn('Diff       ' + self.head[:12] + '..HEAD: no changes', result.stdout)
 
     def test_a_missing_master_is_reported_not_an_error(self):
         self.assertEqual(self.git('branch', '--list', 'master').strip(), '')
@@ -124,7 +138,7 @@ class StatusTests(SandboxTest):
         self.assertIsNone(data['diff_stat'])
         result = self.sandbox.bcore('status', '--config', str(self.sandbox.config), cwd=self.core)
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn('Diff       master...HEAD unavailable', result.stdout)
+        self.assertIn('Diff       Branch comparison unavailable', result.stdout)
 
     def test_deleted_lines_are_counted(self):
         self.commit_file('doomed.cc', '1\n2\n3\n')
@@ -134,7 +148,7 @@ class StatusTests(SandboxTest):
         self.git('-c', 'user.name=T', '-c', 'user.email=t@example.com', '-c', 'commit.gpgsign=false',
                  'commit', '-qm', 'remove it')
         data = self.status()
-        self.assertEqual(data['diff_stat'], {'base': 'master', 'files': 1, 'insertions': 0, 'deletions': 3,
+        self.assertEqual(data['diff_stat'], {'base': self.git('rev-parse', 'master').strip(), 'files': 1, 'insertions': 0, 'deletions': 3,
                                              'summary': '1 file changed, 3 deletions(-)'})
 
     def test_a_damaged_output_record_is_called_out_rather_than_hidden(self):
