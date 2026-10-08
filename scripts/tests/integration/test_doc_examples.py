@@ -199,6 +199,7 @@ for index, (example, (state, expected)) in enumerate(ANDROID_EXAMPLES.items()):
 class GettingStartedExamples(SandboxTest):
     def test_the_first_steps_work_in_order_from_a_fresh_installation(self):
         core = self.sandbox.make_checkout("main")
+        (core / ".env").write_text("brave_services_key=fixture-services-key\n")
         config = str(self.sandbox.root / "config" / "fresh.toml")
         self.config = config
         for command in GETTING_STARTED:
