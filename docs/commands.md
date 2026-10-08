@@ -155,6 +155,12 @@ Sync results include the dispatched `argv` and `revisions_before` and `revisions
 
 `bcore capabilities` lists every combination of host, target, operation, configuration, and architecture with a status. A combination is `supported` only after real validation on a checkout; until then it is reported `unverified`. `limited` combinations may work but are outside the validated workflow.
 
+## Chromium version in status
+
+`bcore status` compares the Chromium pin in committed `package.json` at `HEAD` with the pin at the local `origin/master` ref. A lower major version appears as a warning under Needs attention. An older version within the same major appears as a notice in the Git section. Both show the full versions. Equal or newer versions show the comparison without a behind notice. Missing refs or invalid pins make the comparison unavailable without failing status. Status does not fetch; the comparison reflects the last local update of `origin/master`.
+
+JSON includes `data.chromium` with `base_ref`, `branch_version`, `base_version`, and `status`: `major_behind`, `version_behind`, `current`, `ahead`, or `unavailable`.
+
 ## test
 
 `bcore test` selects tests three ways. The selectors are mutually exclusive, and a conflict is refused before any work starts.
@@ -227,7 +233,7 @@ Experimental desktop delivery uses the system `osascript` command. macOS can att
 
 ## Checkout status
 
-Run `bcore status` inside a checkout, or `bcore status --checkout main`. Use `--json` for all changed paths and structured history. Status reads local Git refs without fetching and does not load direnv, run doctor, or change checkout files. It reports Core's branch, HEAD, upstream, staged/unstaged/untracked changes, and ahead/behind counts against local `origin/master` when available. A `Diff` line shows `git diff --shortstat master...HEAD`: the files, insertions, and deletions this branch has committed since it left the local `master` branch (JSON: `diff_stat`, or `null` when there is no local `master`). Staged, unstaged, and untracked changes are counted under `Changes`, not in this line.
+Run `bcore status` inside a checkout, or `bcore status --checkout main`. Use `--json` for all changed paths and structured history. Status reads local Git refs without fetching and does not load direnv, run doctor, or change checkout files. It reports Core's branch, HEAD, upstream, and staged/unstaged/untracked changes. The branch base is the common ancestor of `HEAD` and local `origin/master`, falling back to local `master` when needed. The `Diff` line shows committed files, insertions, and deletions from that SHA to `HEAD` (JSON: `diff_stat.base` contains the full SHA). Local edits are counted under `Changes`. Git does not always retain the original branch creation point; rebases and merges can move this common ancestor. Use `--show-origin` to show ahead/behind commit counts against local `origin/master`; JSON retains these counts in `base`.
 
 By default, operation history includes only runs recorded on the current branch. Use `bcore status --all-branches` to include other branches and older records whose branch is unknown. The latest outcome is shown per branch, platform, and suite. Branches are recorded when operations start; commit ancestry is not used to guess missing branch names. Detached HEAD has no current-branch history; use `--all-branches` to inspect saved runs. Output revalidation warnings remain visible across branches because output directories are shared.
 

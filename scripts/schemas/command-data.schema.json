@@ -1456,6 +1456,17 @@
         "change_counts": {
           "type": "object"
         },
+        "chromium": {
+          "type": "object",
+          "required": ["base_ref", "branch_version", "base_version", "status"],
+          "properties": {
+            "base_ref": {"const": "origin/master"},
+            "branch_version": {"type": ["string", "null"]},
+            "base_version": {"type": ["string", "null"]},
+            "status": {"enum": ["major_behind", "version_behind", "current", "ahead", "unavailable"]}
+          },
+          "additionalProperties": false
+        },
         "diff_stat": {
           "type": [
             "object",
