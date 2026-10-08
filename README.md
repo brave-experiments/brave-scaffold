@@ -206,45 +206,33 @@ Scaffold by default. See [Getting started](docs/getting-started.md) for setup.
 
 ## Platform support
 
-Rows show the machine running Scaffold; columns show the `brave-core` target.
-✅ means the listed operations have run on a real checkout, using Debug
-arm64 builds.
+The columns show the machine running Scaffold. The target is the platform you're
+building Brave for. ✅ means the command has run on a real checkout with
+Debug arm64 builds.
 
-<table>
-  <thead>
-    <tr>
-      <th scope="col">Host</th>
-      <th scope="col">macOS</th>
-      <th scope="col">Android</th>
-      <th scope="col">iOS</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <th scope="row">macOS arm64</th>
-      <td>✅ Sync, build, test, run</td>
-      <td>✅ Build, run, deploy (APK)<br>Sync and tests unverified</td>
-      <td>✅ Sync, build, run (Simulator only)<br>Tests unavailable</td>
-    </tr>
-    <tr>
-      <th scope="row">Windows</th>
-      <td>Untested</td>
-      <td>Untested</td>
-      <td>Untested</td>
-    </tr>
-    <tr>
-      <th scope="row">Linux</th>
-      <td>Untested</td>
-      <td>Untested</td>
-      <td>Untested</td>
-    </tr>
-  </tbody>
-</table>
+| Target | Command | macOS (arm64) | Linux | Windows |
+| --- | --- | --- | --- | --- |
+| macOS | `sync` | ✅ | Untested | Untested |
+| &nbsp; | `build` | ✅ | Untested | Untested |
+| &nbsp; | `test` | ✅ | Untested | Untested |
+| &nbsp; | `run` | ✅ | Untested | Untested |
+| &nbsp; | `doctor` | ✅ | Untested | Untested |
+| Android | `sync` | ✅ | Untested | Untested |
+| &nbsp; | `build` | ✅ | Untested | Untested |
+| &nbsp; | `test` | ✅ | Untested | Untested |
+| &nbsp; | `run` | ✅ | Untested | Untested |
+| &nbsp; | `doctor` | ✅ | Untested | Untested |
+| iOS | `sync` | ✅ | N/A | N/A |
+| &nbsp; | `build` | ✅ | N/A | N/A |
+| &nbsp; | `test` | Not implemented | N/A | N/A |
+| &nbsp; | `run` | ✅ | N/A | N/A |
+| &nbsp; | `doctor` | ✅ | Untested | Untested |
 
-**Windows and Linux host support PRs are welcome.** These hosts are untested and
-not currently supported by Scaffold; the table does not imply that every target
-can be built on them. The CLI currently accepts macOS, Android, and iOS targets,
-not Windows or Linux targets.
+Note: iOS builds and runs have currently only been verified on the iOS Simulator.
+
+**Linux and Windows host support PRs are welcome.** Both hosts are untested.
+The CLI accepts macOS, Android, and iOS targets; Linux and Windows targets are
+not available.
 
 Fresh checkout creation is not supported. `bcore capabilities` lists the full
 status by operation, configuration, and architecture, including combinations

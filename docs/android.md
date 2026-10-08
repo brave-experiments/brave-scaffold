@@ -295,8 +295,9 @@ launch; they do not scan sources or compare build freshness. `adb` comes from `A
 - Checked on a real checkout and emulator on 2026-09-30: creating the support
   working copy from a local clone, the compatibility gate, support preparation, a
   Debug arm64 build through RBE/Siso, and deploying to the only connected device
-  without naming it. Not yet verified: `bcore sync android`, cleanup, a second
-  checkout at a different support revision, and physical devices.
+  without naming it. Android `sync` and `test` have also been verified on a real
+  checkout. Not yet verified: cleanup, a second checkout at a different support
+  revision, and physical devices.
 
 `android setup --json` uses result schema version 2. Its data reports
 `shared_checkout`, `workspace_link`, and `preserved_copy` instead of bare-cache
