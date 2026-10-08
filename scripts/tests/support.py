@@ -23,6 +23,23 @@ SCRIPTS = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SCRIPTS / "src"))
 os.environ["BCORE_NOTIFY_BACKEND"] = "none"
 
+
+def quiet_git_maintenance(environ):
+    """Stop Git from starting background maintenance after a fixture commit.
+
+    Maintenance holds objects/maintenance.lock while it runs, which a test that compares the tree before and
+    after an operation can see appear and vanish.
+    """
+    count = int(environ.get("GIT_CONFIG_COUNT", "0") or 0)
+    for key, value in (("maintenance.auto", "false"), ("gc.auto", "0")):
+        environ["GIT_CONFIG_KEY_%d" % count] = key
+        environ["GIT_CONFIG_VALUE_%d" % count] = value
+        count += 1
+    environ["GIT_CONFIG_COUNT"] = str(count)
+
+
+quiet_git_maintenance(os.environ)
+
 PYTHON = sys.executable
 FAKE_NODE = """#!%(python)s
 import json, os, sys
@@ -248,7 +265,7 @@ class Sandbox:
         core.mkdir(parents=True)
         if git:
             for repo in (core, src):
-                subprocess.run(["git", "init", "-q", str(repo)], check=True)
+                subprocess.run(["git", "init", "-q", "-b", "main", str(repo)], check=True)
             (src / ".git" / "info").mkdir(exist_ok=True)
             (src / ".git" / "info" / "exclude").write_text("/brave/\n/out/\n")
         else:
@@ -307,7 +324,7 @@ class Sandbox:
         repo = src.joinpath(*relative.split("/"))
         repo.mkdir(parents=True)
         options = ["-c", "user.name=Test", "-c", "user.email=t@example.com", "-c", "commit.gpgsign=false"]
-        subprocess.run(["git", "init", "-q", str(repo)], check=True)
+        subprocess.run(["git", "init", "-q", "-b", "main", str(repo)], check=True)
         (repo / "test.cc").write_text("upstream\n")
         subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True)
         subprocess.run(["git", "-C", str(repo), *options, "commit", "-q", "-m", "dependency"], check=True)
