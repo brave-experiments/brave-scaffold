@@ -21,6 +21,9 @@ from ..common.results import ScaffoldError
 
 ANDROID_GN_ARGS = (("is_component_build", "false"), ("enable_android_secondary_abi", "false"),
                    ("use_mold", "false"), ("use_system_xcode", "false"))
+# Chromium's arm.gni turns branch protection off whenever the build host is an arm64 Mac, which strips it from
+# Android arm64 targets. Without BTI landing pads in V8's builtins, every renderer dies with SIGILL on BTI phones.
+ANDROID_ARM64_GN_ARGS = (("arm_control_flow_integrity", '"standard"'),)
 CONFIG_TOKENS = ("Debug", "Release", "Component", "Static")
 OS_ALIASES = {"mac": "mac", "macos": "mac", "android": "android", "ios": "ios", "linux": "linux",
               "win": "win", "windows": "win"}
@@ -225,7 +228,7 @@ def resolve_effective(src, forwarded_tokens, target, configuration, explicit_tar
     if effective_target == "android":
         if fwd.output_format is None:
             generated.append("--target_android_output_format=apk")
-        for key, value in ANDROID_GN_ARGS:
+        for key, value in ANDROID_GN_ARGS + (ANDROID_ARM64_GN_ARGS if arch == "arm64" else ()):
             if key not in fwd.gn_keys:
                 generated.append("--gn=%s:%s" % (key, value))
     if effective_configuration == "Release" and fwd.channel is None:
