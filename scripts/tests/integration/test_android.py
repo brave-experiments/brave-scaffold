@@ -172,6 +172,8 @@ class AndroidBuildTests(AndroidTestCase):
                                                        "use_mold", "use_remoteexec", "android_static_analysis")},
                          {"is_component_build": "false", "enable_android_secondary_abi": "false", "use_mold": "false",
                           "use_remoteexec": "true", "android_static_analysis": '"off"'})
+        self.assertEqual(final["arm_control_flow_integrity"], '"standard"',
+                         "arm64 Android builds keep BTI even though Chromium disables it on arm64 Mac hosts")
 
     def test_accepted_gn_options_reach_the_final_settings(self):
         self.setup_support()

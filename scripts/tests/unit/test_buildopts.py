@@ -123,6 +123,12 @@ class EffectiveTests(unittest.TestCase):
         effective = resolve([], target="android")
         self.assertIn("--target_android_output_format=apk", effective.generated)
         self.assertIn("--gn=use_mold:false", effective.generated)
+        self.assertIn('--gn=arm_control_flow_integrity:"standard"', effective.generated)
+        forwarded = resolve(["--gn=arm_control_flow_integrity:pac"], target="android")
+        self.assertNotIn('--gn=arm_control_flow_integrity:"standard"', forwarded.generated)
+        x64 = resolve(["--target_arch=x64"], target="android")
+        self.assertFalse([item for item in x64.generated if "arm_control_flow_integrity" in item],
+                         "branch protection is an arm64 setting")
         forwarded = resolve(["--gn", "use_mold:true", "--gn=is_component_build:true"], target="android")
         self.assertNotIn("--gn=use_mold:false", forwarded.generated)
         self.assertNotIn("--gn=is_component_build:false", forwarded.generated)

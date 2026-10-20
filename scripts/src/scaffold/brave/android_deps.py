@@ -656,9 +656,10 @@ BEGIN = "# BEGIN scaffold Android-on-Mac overrides"
 END = "# END scaffold Android-on-Mac overrides"
 OVERRIDES = ("is_component_build=false", "enable_android_secondary_abi=false", "use_remoteexec=true",
              "use_mold=false", 'android_static_analysis="off"')
+ARM64_OVERRIDES = ('arm_control_flow_integrity="standard"',)
 
 
-def ensure_args_gn(identity, output_dir, chosen=()):
+def ensure_args_gn(identity, output_dir, chosen=(), arch=None):
     """Keep a marked block of GN overrides in the output's args.gn; other content is untouched.
 
     The block follows Core's generated arguments, so it would win over them; settings the caller chose
@@ -683,7 +684,8 @@ def ensure_args_gn(identity, output_dir, chosen=()):
         lines = [header, ""] + lines
     while lines and not lines[-1]:
         lines.pop()
-    overrides = [item for item in OVERRIDES if item.partition("=")[0] not in chosen]
+    wanted = OVERRIDES + (ARM64_OVERRIDES if arch == "arm64" else ())
+    overrides = [item for item in wanted if item.partition("=")[0] not in chosen]
     updated = "\n".join([*lines, "", BEGIN, *overrides, END]) + "\n"
     if updated != text:
         atomic_write(args, updated)
