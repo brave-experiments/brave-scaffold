@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import os
+import re
 import shutil
 
 from ..common.checks import BLOCKER, NOT_CHECKED, PASS, WARNING, make_check
@@ -40,6 +41,42 @@ def machine_checks(ctx, scope):
     return checks
 
 
+MINIMUM_JAVA = 21
+
+
+def java_major(version_output):
+    """The major version in `java -version` output, or None. Handles "1.8.0_x" and "21.0.3"."""
+    match = re.search(r'version "(\d+)(?:\.(\d+))?', version_output)
+    if match is None:
+        return None
+    major = int(match.group(1))
+    return int(match.group(2) or 0) if major == 1 else major
+
+
+def java_runtime_check(ctx, scope, identity):
+    """The Java that Core's Java formatter runs on. Builds use the checkout's own JDK, so this only warns."""
+    home = ctx.environ.get("JAVA_HOME")
+    java = os.path.join(home, "bin", "java") if home else shutil.which("java", path=ctx.environ.get("PATH"))
+    bundled = identity.src / "third_party" / "jdk" / "current"
+    hint = " The checkout's bundled JDK at %s can be used by setting JAVA_HOME to it." % bundled \
+        if bundled.is_dir() else ""
+    affects = ("java formatting",)
+    if not java or not os.access(java, os.X_OK):
+        return make_check("java-runtime", WARNING, "No Java runtime was found (JAVA_HOME %s). Java %d or newer is "
+                          "required to format Java files.%s" % ("is set to a path without bin/java" if home else
+                                                               "is unset and java is not on PATH", MINIMUM_JAVA, hint),
+                          scope, required=False, affects=affects, java_home=home)
+    result = run_capture([java, "-version"], os.getcwd(), ctx.environ, ctx.log, timeout=30)
+    major = java_major(result.stderr + result.stdout) if result.returncode == 0 else None
+    if major is not None and major >= MINIMUM_JAVA:
+        return make_check("java-runtime", PASS, "Java %d at %s." % (major, java), scope, required=False,
+                          affects=affects, java=java, java_home=home, major=major)
+    found = "Java %d" % major if major is not None else "an unrecognized Java"
+    return make_check("java-runtime", WARNING, "%s at %s; Java %d or newer is required to format Java files.%s" % (
+        found, java, MINIMUM_JAVA, hint), scope, required=False, affects=affects, java=java, java_home=home,
+        major=major)
+
+
 def _selected(ctx):
     try:
         return ctx.identity(required=True, validate=False), None
@@ -65,6 +102,7 @@ def build_checks(ctx, scope, remote_required=False):
                          "This checkout is not configured for Android (target_os: %s)." % (
                              ", ".join(targets) if targets else "missing or unreadable"),
                          scope, affects=("android build",), repairs=[] if ok else [sync], target_os=targets)]
+    checks.append(java_runtime_check(ctx, scope, identity))
     return checks + rbe_checks._rbe_config(ctx, identity, scope, required=remote_required)
 
 

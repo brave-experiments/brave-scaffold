@@ -6,6 +6,8 @@ Prerequisites: a registered checkout with an approved environment ([getting star
 
 The doctor also checks for a nonempty `brave_services_key` in Core's `.env`, including `include_env=` files. A missing or unreadable file, a missing key, or an empty key is an error. It never prints the value or verifies its validity. Ask a Brave team-mate how to obtain the key.
 
+The doctor also reports the Java runtime (`java-runtime`): `JAVA_HOME` from the approved environment, else `java` on PATH. Core's Java formatter needs Java 21 or newer (the current google-java-format jar is Java 21 bytecode). An older or missing runtime is a warning, not a blocker, because builds use the checkout's own JDK. When the checkout has `third_party/jdk/current`, the warning names it as a `JAVA_HOME` value you can set in the environment's `.envrc`.
+
 ## One-time setup per checkout
 
 1. Add Android to the checkout's targets: `bcore sync android`. This builds `--target_os` from the union of the checkout's existing `.gclient` values and `android`, and changes the checkout ([source and cleanup](source-and-cleanup.md)). `bcore sync-build android` does this first and then checks the build's readiness (the Android target, and the local RBE configuration unless you compile with `--offline`) again; a standalone `bcore build android` needs the target already.
