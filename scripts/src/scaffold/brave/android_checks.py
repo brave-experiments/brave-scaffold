@@ -54,7 +54,7 @@ def java_major(version_output):
 
 
 def java_runtime_check(ctx, scope, identity):
-    """The Java that Core's Java formatter runs on. Builds use the checkout's own JDK, so this only warns."""
+    """The Java that Core's Java formatter runs on; older than the minimum blocks."""
     home = ctx.environ.get("JAVA_HOME")
     java = os.path.join(home, "bin", "java") if home else shutil.which("java", path=ctx.environ.get("PATH"))
     bundled = identity.src / "third_party" / "jdk" / "current"
@@ -62,18 +62,18 @@ def java_runtime_check(ctx, scope, identity):
         if bundled.is_dir() else ""
     affects = ("java formatting",)
     if not java or not os.access(java, os.X_OK):
-        return make_check("java-runtime", WARNING, "No Java runtime was found (JAVA_HOME %s). Java %d or newer is "
+        return make_check("java-runtime", BLOCKER, "No Java runtime was found (JAVA_HOME %s). Java %d or newer is "
                           "required to format Java files.%s" % ("is set to a path without bin/java" if home else
                                                                "is unset and java is not on PATH", MINIMUM_JAVA, hint),
-                          scope, required=False, affects=affects, java_home=home)
+                          scope, affects=affects, java_home=home)
     result = run_capture([java, "-version"], os.getcwd(), ctx.environ, ctx.log, timeout=30)
     major = java_major(result.stderr + result.stdout) if result.returncode == 0 else None
     if major is not None and major >= MINIMUM_JAVA:
-        return make_check("java-runtime", PASS, "Java %d at %s." % (major, java), scope, required=False,
+        return make_check("java-runtime", PASS, "Java %d at %s." % (major, java), scope,
                           affects=affects, java=java, java_home=home, major=major)
     found = "Java %d" % major if major is not None else "an unrecognized Java"
-    return make_check("java-runtime", WARNING, "%s at %s; Java %d or newer is required to format Java files.%s" % (
-        found, java, MINIMUM_JAVA, hint), scope, required=False, affects=affects, java=java, java_home=home,
+    return make_check("java-runtime", BLOCKER, "%s at %s; Java %d or newer is required to format Java files.%s" % (
+        found, java, MINIMUM_JAVA, hint), scope, affects=affects, java=java, java_home=home,
         major=major)
 
 

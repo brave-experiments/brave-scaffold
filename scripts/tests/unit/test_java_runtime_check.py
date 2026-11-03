@@ -45,20 +45,20 @@ class JavaRuntimeCheckTests(unittest.TestCase):
         home = fake_jdk(self.root, "jdk21", 'openjdk version "21.0.3" 2024-04-16')
         check = self.check(JAVA_HOME=str(home))
         self.assertEqual(check.status, "pass")
-        self.assertFalse(check.required)
+        self.assertTrue(check.required)
 
-    def test_java_17_warns_and_names_the_bundled_jdk(self):
+    def test_java_17_blocks_and_names_the_bundled_jdk(self):
         home = fake_jdk(self.root, "jdk17", 'openjdk version "17.0.9" 2023-10-17')
         (self.src / "third_party" / "jdk" / "current").mkdir(parents=True)
         check = self.check(JAVA_HOME=str(home))
-        self.assertEqual(check.status, "warning")
-        self.assertFalse(check.required)
+        self.assertEqual(check.status, "blocker")
+        self.assertTrue(check.required)
         self.assertIn("Java 17", check.summary)
         self.assertIn("third_party/jdk/current", check.summary)
 
-    def test_missing_java_warns(self):
+    def test_missing_java_blocks(self):
         check = self.check()
-        self.assertEqual(check.status, "warning")
+        self.assertEqual(check.status, "blocker")
         self.assertIn("No Java runtime", check.summary)
 
 
