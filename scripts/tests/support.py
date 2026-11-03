@@ -214,6 +214,7 @@ class Sandbox:
         write_executable(self.bin / "xcrun", "#!/bin/sh\necho 15.0\n")
         write_executable(self.bin / "osascript", FAKE_OSASCRIPT)
         write_executable(self.bin / "open", FAKE_OPEN)
+        write_executable(self.bin / "java", "#!/bin/sh\necho 'openjdk version \"21.0.3\" 2024-04-16' >&2\n")
 
     def start_app(self, directory, bundle_id=None, name="Brave Browser Development",
                   program=None, arguments=("300",)):

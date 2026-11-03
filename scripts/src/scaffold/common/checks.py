@@ -25,7 +25,7 @@ DISPLAY_LABELS = {
     "shell-hook": "Shell setup", "bcore-on-path": "bcore on PATH",
     "ios-xcodebuild": "Xcode", "ios-simulator-sdk": "iOS Simulator SDK", "ios-gclient-target": "iOS target_os",
     "ios-project": "iOS project", "ios-bootstrap": "iOS bootstrap files", "ios-simulator": "iOS Simulator",
-    "android-gclient-target": "Android target_os",
+    "android-gclient-target": "Android target_os", "java-runtime": "Java runtime",
     "android-support-working-copy": "Android support repository",
     "android-support-lfs": "Android support downloads",
     "android-support-compatibility": "Android support compatibility",
