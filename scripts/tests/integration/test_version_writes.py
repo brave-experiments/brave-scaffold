@@ -9,6 +9,13 @@ import unittest
 from tests.integration.test_build import BUILD_HOOK, SKIP, BuildTestCase
 from tests.integration.test_sync_scope import git
 
+APPLY_HOOK = '''
+if "apply_patches" in argv:
+    chrome = os.path.join(os.path.dirname(os.environ["BRAVE_CORE_DIR"]), "chrome")
+    open(os.path.join(chrome, "VERSION"), "w").write("generated version\\n")
+    open(os.path.join(chrome, "VERSION.chromium"), "w").write("upstream version\\n")
+'''
+
 
 @unittest.skipIf(SKIP, "needs direnv on a macOS host")
 class VersionWriteTests(BuildTestCase):
@@ -19,12 +26,7 @@ class VersionWriteTests(BuildTestCase):
         self.version.write_text("upstream version\n")
         self.sidecar = self.version.with_name("VERSION.chromium")
         self.sandbox.commit_all("main")
-        self.hook = self.sandbox.hook('''
-if "apply_patches" in argv:
-    chrome = os.path.join(os.path.dirname(os.environ["BRAVE_CORE_DIR"]), "chrome")
-    open(os.path.join(chrome, "VERSION"), "w").write("generated version\\n")
-    open(os.path.join(chrome, "VERSION.chromium"), "w").write("upstream version\\n")
-''' + BUILD_HOOK)
+        self.hook = self.sandbox.hook(APPLY_HOOK + BUILD_HOOK)
 
     def require_preparation(self):
         rewrite = self.core / "rewrite"
@@ -105,6 +107,41 @@ if "apply_patches" in argv:
                          {"chrome/VERSION", "chrome/VERSION.chromium"})
         self.assertEqual({path.name: path.read_bytes() for path in external.iterdir()}, before)
         self.assertTrue(self.version.parent.is_symlink())
+
+    def sync_writing_versions(self, *arguments):
+        self.hook = self.sandbox.hook('''
+if "sync" in argv:
+    chrome = os.path.join(os.path.dirname(os.environ["BRAVE_CORE_DIR"]), "chrome")
+    open(os.path.join(chrome, "VERSION"), "w").write("synced version\\n")
+    open(os.path.join(chrome, "VERSION.chromium"), "w").write("upstream version\\n")
+''' + APPLY_HOOK + BUILD_HOOK)
+        result, _ = self.document("sync", *arguments)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.require_preparation()
+
+    def test_versions_written_by_sync_hooks_can_be_written_again(self):
+        self.generate()
+        self.sync_writing_versions()
+        result, _ = self.document("build", "--offline")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.version.read_text(), "generated version\n")
+
+    def test_sync_hooks_record_versions_on_a_checkout_never_built(self):
+        self.sync_writing_versions()
+        result, _ = self.document("build", "--offline")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.version.read_text(), "generated version\n")
+
+    def test_versions_changed_by_sync_without_hooks_are_preserved(self):
+        self.generate()
+        self.sync_writing_versions("--nohooks")
+        self.assert_preserved(self.version)
+
+    def test_edit_after_sync_hooks_is_preserved(self):
+        self.generate()
+        self.sync_writing_versions()
+        self.version.write_text("wanted edit after sync\n")
+        self.assert_preserved(self.version)
 
     def test_edit_on_known_generated_sidecar_is_preserved(self):
         self.generate()

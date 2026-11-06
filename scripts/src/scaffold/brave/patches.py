@@ -214,6 +214,13 @@ def record_extra_expected(identity, root=None):
     atomic_write(receipt_path(identity, root), json.dumps(receipt, sort_keys=True, indent=1) + "\n")
 
 
+def record_core_output(identity, root=None):
+    """After Core's sync hooks rewrote its version files, remember what they wrote there."""
+    receipt = read_receipt(identity, root) or {}
+    receipt["extra_expected"] = {**(receipt.get("extra_expected") or {}), **core_output(identity)}
+    atomic_write(receipt_path(identity, root), json.dumps(receipt, sort_keys=True, indent=1) + "\n")
+
+
 @dataclass
 class PatchPlan:
     action: str  # "current" | "apply" | "conflict"
