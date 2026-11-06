@@ -10,7 +10,7 @@ import ast
 
 from ..common import tools as tools_module
 from ..common.results import ScaffoldError
-from . import freshness, ios, packages, steps as step_module
+from . import freshness, ios, packages, patches, steps as step_module
 
 
 def gclient_targets(identity):
@@ -85,6 +85,9 @@ def do_sync_phase(ctx, execution, op, target, forwarded):
                                 "missing (%d, for example %s)." % (len(missing), missing[0]),
                                 details={"missing": [str(path) for path in missing], "phase": "sync"},
                                 repairs=[ios.bootstrap_repair(identity)])
+    if "--nohooks" not in forwarded:
+        # Core's hooks regenerate chrome/VERSION; later patch preparation may write it again.
+        patches.record_core_output(identity, ctx.state_root)
     op.succeed("sync", exit=0, revisions_before=before, revisions_after=after)
     return {"argv": argv, "revisions_before": before, "revisions_after": after}
 
