@@ -138,5 +138,75 @@
       "third_party/jdk/current/lib/libawt_xawt.so",
       "third_party/jdk/current/lib/libjsvml.so"
     ]
+  },
+  "6029735ba27afe178d37f80916508ab080f038424d32e27945e8b22722837469": {
+    "script": "copyMacRes.sh",
+    "patches": [],
+    "direct": [],
+    "resources": [
+      [
+        "build/config/siso",
+        "res/siso/brave_siso_config.star"
+      ],
+      [
+        "third_party/android_build_tools/protoc/cipd",
+        "res/protoc-v28/protoc"
+      ],
+      [
+        "third_party/android_sdk/public/build-tools",
+        "res/android-sdk/public/build-tools/37.0.0"
+      ]
+    ],
+    "checkout_resources": [
+      [
+        "third_party/jdk/current/Contents/Home/bin",
+        "third_party/jdk/current/bin"
+      ],
+      [
+        "third_party/jdk/current/Contents/Home/conf",
+        "third_party/jdk/current/conf"
+      ],
+      [
+        "third_party/jdk/current/Contents/Home/include",
+        "third_party/jdk/current/include"
+      ],
+      [
+        "third_party/jdk/current/Contents/Home/legal",
+        "third_party/jdk/current/legal"
+      ],
+      [
+        "third_party/jdk/current/Contents/Home/lib",
+        "third_party/jdk/current/lib"
+      ],
+      [
+        "third_party/jdk/current/Contents/Home/man",
+        "third_party/jdk/current/man"
+      ],
+      [
+        "third_party/jdk/current/Contents/Home/NOTICE",
+        "third_party/jdk/current/NOTICE"
+      ],
+      [
+        "third_party/jdk/current/Contents/Home/release",
+        "third_party/jdk/current/release"
+      ]
+    ],
+    "required_resources": [
+      "third_party/jdk/current/bin/java.chromium",
+      "third_party/jdk/current/lib/libawt.so",
+      "third_party/jdk/current/lib/libjava.so",
+      "third_party/jdk/current/lib/libjimage.so",
+      "third_party/jdk/current/lib/libjli.so",
+      "third_party/jdk/current/lib/libmanagement.so",
+      "third_party/jdk/current/lib/libmanagement_ext.so",
+      "third_party/jdk/current/lib/libnet.so",
+      "third_party/jdk/current/lib/libnio.so",
+      "third_party/jdk/current/lib/libverify.so",
+      "third_party/jdk/current/lib/libzip.so",
+      "third_party/jdk/current/lib/server/libjvm.so",
+      "third_party/jdk/current/lib/libawt_headless.so",
+      "third_party/jdk/current/lib/libawt_xawt.so",
+      "third_party/jdk/current/lib/libjsvml.so"
+    ]
   }
 }
