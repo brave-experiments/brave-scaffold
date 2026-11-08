@@ -257,8 +257,6 @@ def perform_build(ctx, execution, effective, op, force_gn=False):
         is_android = effective.target == "android"
         if is_android:
             refreshed = android.prepare_support(ctx, execution, op, effective)
-            if refreshed:
-                patches.record_extra_expected(identity, ctx.state_root)
             changed = refreshed or changed
     arguments = build_arguments(effective, "build", (), force_gn or changed)
     if is_android:
@@ -831,13 +829,10 @@ def android_test_plan(ctx, identity, effective, kind, results_tail):
 
 
 def run_android_test(ctx, execution, effective, op, known, tail, suite, results, extra_env=None, report=None):
-    identity = execution.identity
     log_test_phase(ctx, effective)
     with ctx.log.measure("Source preparation"):
         changed, _ = prepare_patches(ctx, execution, op)
         refreshed = android.prepare_support(ctx, execution, op, effective)
-        if refreshed:
-            patches.record_extra_expected(identity, ctx.state_root)
         applied = android_tests.prepare_overlay(ctx, execution, op)
     failure = None
     try:

@@ -53,6 +53,8 @@ Use `bcore build android --skip-support-refresh` to stop if refresh is needed. T
 
 After execution, a tracked change outside the declared scope is an adapter failure: the build stops, records nothing as prepared, and leaves the files for review.
 
+Support scripts can change files that Brave Core's patches also target, such as `build/config/BUILDCONFIG.gn`. The scaffold records what they wrote there, so Core patch preparation accepts those files while they still hold that content. It records this even when a script fails or is interrupted partway, but only for files the script declares it writes. The next build then runs the refresh again and reports the script's own failure, instead of stopping at patch preparation with `PREPARATION_CONFLICT`. Later edits to those files still count as local work.
+
 The build also keeps a marked block of GN overrides (no component build, no secondary ABI, `use_mold=false`, `android_static_analysis="off"`, remote execution, and for arm64 `arm_control_flow_integrity="standard"`) at the end of the output's `args.gn`, after the import of Core's generated arguments, so the block wins over them. A setting you forward for that build (`--gn=<key>:<value>` or `--use_remoteexec=...`) is left out of the block and takes effect; the next build without it returns to the defaults. Everything outside the block is left alone. Chromium turns branch protection off whenever the build host is an arm64 Mac, which also strips it from Android arm64 targets. A build made that way crashes every renderer with `SIGILL` on phones with BTI hardware (for example a Pixel 10 Pro) and each page shows "Aw, Snap!", so the scaffold sets `arm_control_flow_integrity="standard"` for arm64 builds. Emulators without BTI do not show the problem.
 
 ## Build
