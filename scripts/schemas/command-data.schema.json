@@ -138,6 +138,28 @@
         },
         "revisions_after": {
           "type": "object"
+        },
+        "moved_dependencies": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "path",
+              "pinned",
+              "moved_to"
+            ],
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "pinned": {
+                "type": "string"
+              },
+              "moved_to": {
+                "type": "string"
+              }
+            }
+          }
         }
       }
     },
