@@ -156,7 +156,7 @@ def plan_build(ctx, command, identity, build, sync_first, run_after):
     toolchain, steps = cmd_build.common_plan_steps(ctx, identity, "ios", "sync" if sync_first else "build", False)
     last = "readiness"
     if sync_arguments is not None:
-        steps.append(sync_module.plan_step(identity, sync_arguments, toolchain, ["readiness"]))
+        steps.append(sync_module.plan_step(ctx, identity, sync_arguments, toolchain, ["readiness"]))
         steps.append(step_module.Step(
             "readiness-after-sync", "Check tools and build readiness again once the sync has changed the checkout.",
             "unresolved", needs=["sync"], on_failure="The build does not start.",

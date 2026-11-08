@@ -10,7 +10,7 @@ import ast
 
 from ..common import tools as tools_module
 from ..common.results import ScaffoldError
-from . import freshness, ios, packages, patches, steps as step_module
+from . import dependency_moves, freshness, ios, packages, patches, steps as step_module
 
 
 def gclient_targets(identity):
@@ -68,9 +68,21 @@ def do_sync_phase(ctx, execution, op, target, forwarded):
     arguments = sync_arguments(ctx, target, forwarded, identity)
     before = {"core_head": freshness.resolve_head(identity.core, ctx.log),
               "chromium_head": freshness.resolve_head(identity.src, ctx.log)}
-    op.start("sync", arguments=arguments, before=before,
+    moved = dependency_moves.move_aside(ctx, identity, dependency_moves.find(identity, ctx.log))
+    op.start("sync", arguments=arguments, before=before, moved_dependencies=moved,
              **step_module.sync_step(identity, arguments, tools_module.package_argv(execution.toolchain, arguments)).record())
     argv, code = packages.run(ctx, execution, arguments)
+    if code != 0 and freshness.resolve_head(identity.src, ctx.log) == before["chromium_head"]:
+        # Core's sync may fetch the pinned tag only now, so a dependency in the way can show up after a failure.
+        retry = dependency_moves.find(identity, ctx.log)
+        if retry:
+            try:
+                moved += dependency_moves.move_aside(ctx, identity, retry)
+            except ScaffoldError:
+                op.fail("sync", exit=code, moved_dependencies=moved)
+                raise
+            ctx.log.phase("Running the sync again now that Chromium's files have room...")
+            argv, code = packages.run(ctx, execution, arguments)
     if code != 0:
         op.fail("sync", exit=code)
         raise ScaffoldError("CHILD_FAILED", "The sync command exited with status %d." % code,
@@ -88,11 +100,27 @@ def do_sync_phase(ctx, execution, op, target, forwarded):
     if "--nohooks" not in forwarded:
         # Core's hooks regenerate chrome/VERSION; later patch preparation may write it again.
         patches.record_core_output(identity, ctx.state_root)
-    op.succeed("sync", exit=0, revisions_before=before, revisions_after=after)
-    return {"argv": argv, "revisions_before": before, "revisions_after": after}
+    op.succeed("sync", exit=0, revisions_before=before, revisions_after=after, moved_dependencies=moved)
+    result = {"argv": argv, "revisions_before": before, "revisions_after": after}
+    if moved:
+        result["moved_dependencies"] = moved
+    return result
 
 
-def plan_step(identity, arguments, toolchain, needs=()):
+def plan_step(ctx, identity, arguments, toolchain, needs=()):
     """Describe dispatch; Core decides which repositories, patches, and hooks to update."""
-    return step_module.sync_step(identity, arguments,
+    step = step_module.sync_step(identity, arguments,
         tools_module.package_argv(toolchain, arguments) if toolchain else None, needs)
+    moves = dependency_moves.find(identity)
+    if not moves:
+        return step
+    tag = dependency_moves.target_tag(identity)
+    if any(move.problem for move in moves):
+        step.status = "blocked"
+        step.detail = dependency_moves.blocked_error(identity, moves, ctx.state_root).message
+        return step
+    base = dependency_moves.destination_root(identity, ctx.state_root)
+    step.writes += [str(identity.src / move.path) for move in moves] + [str(base)]
+    step.detail += (" First moves %d unchanged dependency checkout(s) that Chromium %s replaces with its own "
+                    "files to %s: %s." % (len(moves), tag, base, ", ".join(move.path for move in moves)))
+    return step
