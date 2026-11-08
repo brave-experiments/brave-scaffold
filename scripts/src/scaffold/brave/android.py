@@ -17,7 +17,7 @@ from ..common.platforms import host_architecture, host_platform
 from ..common.config import save_android_device
 from ..common.procs import run_capture
 from ..common.results import Result, ScaffoldError, repair
-from . import adb, android_deps, steps as step_module
+from . import adb, android_deps, patches, steps as step_module
 from .records import output_states, revalidation_warning, track
 
 PACKAGE_PREFIX = "com.brave."
@@ -114,8 +114,16 @@ def prepare_support(ctx, execution, op, effective):
     refreshed = False
     if plan.action == "refresh":
         op.start("android-support-refresh", scripts=list(plan.scripts), **described)
-        refresh = android_deps.refresh(ctx, identity, execution.environ, plan, ctx.log)
+        try:
+            refresh = android_deps.refresh(ctx, identity, execution.environ, plan, ctx.log)
+        except BaseException:
+            # A script that stops partway may already have edited Core-patched files it declares; without a
+            # record, the next build would report those edits as unexplained instead of retrying the refresh.
+            patches.record_extra_expected(identity, ctx.state_root,
+                                          within=[os.path.relpath(path, identity.src) for path in plan.declared])
+            raise
         op.succeed("android-support-refresh", recorded=refresh["recorded"])
+        patches.record_extra_expected(identity, ctx.state_root)
         refreshed = True
     return refreshed
 

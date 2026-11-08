@@ -202,15 +202,24 @@ def core_output(identity):
     return {path: digest for path in CORE_WRITTEN if (digest := sha256_or_none(identity.src / path))}
 
 
-def record_extra_expected(identity, root=None):
-    """After a verified step changed patched files, remember exactly what it wrote there."""
+def record_extra_expected(identity, root=None, within=None):
+    """After a verified step changed patched files, remember exactly what it wrote there.
+
+    `within` (source-relative paths) limits the update to the files a step that did not finish declared it writes.
+    """
     receipt = read_receipt(identity, root)
     if receipt is None:
         return
     report = collect_drift(identity)
-    receipt["extra_expected"] = {**core_output(identity),
-                                 **{repo_path: sha256_or_none(identity.src / repo_path)
-                                    for repo_path, entry in report.files.items() if entry.reasons == {SOURCE_CHANGED}}}
+    written = {repo_path: sha256_or_none(identity.src / repo_path)
+               for repo_path, entry in report.files.items() if entry.reasons == {SOURCE_CHANGED}}
+    if within is None:
+        receipt["extra_expected"] = {**core_output(identity), **written}
+    else:
+        def inside(repo_path):
+            return any(repo_path == path or repo_path.startswith(path + "/") for path in within)
+        kept = {path: digest for path, digest in (receipt.get("extra_expected") or {}).items() if not inside(path)}
+        receipt["extra_expected"] = {**kept, **{path: digest for path, digest in written.items() if inside(path)}}
     atomic_write(receipt_path(identity, root), json.dumps(receipt, sort_keys=True, indent=1) + "\n")
 
 

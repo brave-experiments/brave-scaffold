@@ -4,6 +4,7 @@
 # You can obtain one at https://mozilla.org/MPL/2.0/.
 """Android build, support dependencies, devices, and install/restart with fakes."""
 
+import hashlib
 import json
 import os
 import pty
@@ -11,7 +12,7 @@ import subprocess
 import unittest
 from pathlib import Path
 
-from tests.android_fixtures import GIT, install_fake_aapt2, install_fake_adb, make_support_repo, script_contracts
+from tests.android_fixtures import APPLY_SCRIPT, GIT, install_fake_aapt2, install_fake_adb, make_support_repo, script_contracts
 from tests.integration.test_build import SKIP, BuildTestCase
 from tests.schema_validation import Validator
 
@@ -250,6 +251,34 @@ class SupportPatchedFileTests(AndroidTestCase):
             stream.write("my own experiment\n")
         result, document = self.build_android()
         self.assertEqual(document["error"]["code"], "PREPARATION_CONFLICT")
+
+    def replace_apply_script(self, text):
+        manifest = self.sandbox.scripts / "src/scaffold/brave/support_script_contracts.json"
+        contracts = json.loads(manifest.read_text())
+        reviewed = contracts[hashlib.sha256(APPLY_SCRIPT.encode()).hexdigest()]
+        contracts[hashlib.sha256(text.encode()).hexdigest()] = reviewed
+        manifest.write_text(json.dumps(contracts))
+        (self.wc() / "applyPatches.sh").write_text(text)
+        subprocess.run([*GIT, "-C", str(self.wc()), "commit", "-qam", "change applyPatches.sh"], check=True,
+                       capture_output=True)
+
+    def test_a_refresh_that_stops_partway_is_retried_rather_than_reported_as_local_edits(self):
+        self.assertEqual(self.setup_support("v155").returncode, 0)
+        self.assertEqual(self.build_android()[1]["status"], "ok")
+        target = self.src / "base" / "BUILD.gn"
+        self.replace_apply_script(APPLY_SCRIPT.replace(
+            "cp patches/marker", 'echo "partial support edit" >> "$src_root/base/BUILD.gn"\nexit 1\ncp patches/marker'))
+        for attempt in range(2):
+            result, document = self.build_android()
+            self.assertEqual(document["error"]["code"], "CHILD_FAILED", (attempt, result.stderr))
+            self.assertEqual(document["error"]["message"], "applyPatches.sh failed (exit 1).")
+        self.assertIn("partial support edit", target.read_text())
+        self.replace_apply_script(APPLY_SCRIPT)
+        result, document = self.build_android()
+        self.assertEqual(document["status"], "ok", result.stderr)
+        with open(target, "a") as stream:
+            stream.write("my own experiment\n")
+        self.assertEqual(self.build_android()[1]["error"]["code"], "PREPARATION_CONFLICT")
 
 
 class SupportWorkingCopyTests(AndroidTestCase):
