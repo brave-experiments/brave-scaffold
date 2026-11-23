@@ -14,7 +14,6 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ..common.platforms import host_architecture, host_platform
-from ..common.config import save_android_device
 from ..common.procs import run_capture
 from ..common.results import Result, ScaffoldError, repair
 from . import adb, android_deps, patches, steps as step_module
@@ -135,31 +134,30 @@ def write_gn_overrides(identity, effective):
 # --- devices and run --------------------------------------------------------------------------
 
 
+def check_physical(parsed):
+    if parsed.get("physical") and (parsed.get("device") or parsed.get("all_devices")):
+        raise ScaffoldError("SELECTOR_CONFLICT", "--physical cannot be combined with --device or --all-devices.")
+
+
 def preflight_device(ctx, allow_all=False):
     """Select the device before anything is stopped or built."""
+    check_physical(ctx.parsed)
+    physical = bool(ctx.parsed.get("physical"))
     adapter = adb.require_adb(ctx.environ)
     devices = adb.list_devices(adapter, ctx.environ, ctx.log)
     try:
-        device, source = adb.choose_device(devices, ctx.parsed.get("device"), ctx.config.default_android_device)
+        device, source = adb.choose_device(devices, ctx.parsed.get("device"), ctx.config.default_android_device,
+                                           physical)
     except ScaffoldError as error:
         interactive = not ctx.json_mode and not ctx.parsed.get("plan") and sys.stdin.isatty() and sys.stderr.isatty()
         if error.code != "DEVICE_AMBIGUOUS" or not interactive:
             raise
+        if physical:
+            devices = [item for item in devices if not adb.is_emulator(item)]
         device = adb.pick_device(adapter, devices, ctx.environ, ctx.log, allow_all=allow_all)
         if device is None:
             return DeviceGroup(adapter, devices, [])
         source = "interactive"
-        print("Remember this device in %s? [y/N]: " % ctx.config.path,
-              end="", file=sys.stderr, flush=True)
-        if sys.stdin.readline().strip().lower() in ("y", "yes"):
-            try:
-                save_android_device(ctx.config.path, device["id"])
-            except (OSError, ScaffoldError) as save_error:
-                print("Could not save the default: %s. Using this device for this command." % save_error,
-                      file=sys.stderr)
-            else:
-                ctx.config.default_android_device = device["id"]
-                print("Saved default device: %s." % device["id"], file=sys.stderr)
     return adapter, device, source
 
 
