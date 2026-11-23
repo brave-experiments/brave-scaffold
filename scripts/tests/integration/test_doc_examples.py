@@ -71,6 +71,7 @@ ANDROID_EXAMPLES = {
     "bcore build-run android --device <id>": (ANDROID, {0}),
     "bcore build-run android --all-devices": (ANDROID, {0}),
     "bcore run android --all-devices": (ANDROID_BUILT, {0}),
+    "bcore build-run android --physical": (ANDROID, {0}),
 }
 GETTING_STARTED = ["scripts/bcore setup", "scripts/bcore checkout add main /work/browser/_bad_scm/workspace/src/brave",
                    "scripts/bcore env init --checkout main", "scripts/bcore doctor mac --checkout main",
@@ -178,16 +179,17 @@ def _android_test(command, state, expected):
         if state == ANDROID_BUILT:
             self.assertEqual(self.document("build", "android")[0].returncode, 0)
         self.sandbox.record.unlink(missing_ok=True)
-        env_devices = "emulator-5554,device"
-        self.env_extra = {"FAKE_ADB_DEVICES": env_devices}
+        self.devices = "emulator-5554,device;R58M1234,device" if "--physical" in command else "emulator-5554,device"
         run_example(self, command, expected, substitutions)
     return test
 
 
 @unittest.skipIf(SKIP, "needs direnv on a macOS host")
 class AndroidExamples(AndroidTestCase):
+    devices = "emulator-5554,device"
+
     def env(self, **extra):
-        return super().env(FAKE_ADB_DEVICES="emulator-5554,device", **extra)
+        return super().env(FAKE_ADB_DEVICES=self.devices, **extra)
 
 
 for index, (example, (state, expected)) in enumerate(ANDROID_EXAMPLES.items()):

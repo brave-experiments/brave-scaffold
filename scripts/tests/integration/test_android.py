@@ -426,17 +426,18 @@ class DeviceTests(AndroidTestCase):
         self.assertIn("--device", document["error"]["details"]["example"])
         self.assertFalse([c for c in self.adb_calls() if "install" in c])
 
-    def test_terminal_picker_names_devices_and_remembers_the_choice(self):
-        stdout, terminal = self.terminal_run(b'2\ny\n')
+    def test_terminal_picker_names_devices_and_leaves_the_configuration_alone(self):
+        original = Path(self.config).read_bytes()
+        stdout, terminal = self.terminal_run(b'2\n')
         self.assertIn('on R58M1234', stdout)
         self.assertIn('Pixel_API_35 (emulator) - emulator-5554', terminal)
         self.assertIn('Pixel (physical device) - R58M1234', terminal)
-        from scaffold.common.config import load_config
-        self.assertEqual(load_config(self.config).default_android_device, 'R58M1234')
+        self.assertNotIn('Remember', terminal)
+        self.assertEqual(Path(self.config).read_bytes(), original)
 
     def test_terminal_picker_enter_uses_first_and_all_deploys_to_both(self):
         original = Path(self.config).read_bytes()
-        stdout, terminal = self.terminal_run(b'\nn\n')
+        stdout, terminal = self.terminal_run(b'\n')
         self.assertIn('on emulator-5554', stdout)
         self.assertIn('Enter for 1', terminal)
         self.assertEqual([call[1] for call in self.adb_calls() if 'install' in call], ['emulator-5554'])
@@ -503,6 +504,18 @@ class DeviceTests(AndroidTestCase):
         self.assertIn("USB debugging", document["error"]["details"]["recovery"])
         result, document = self.run_android("android", "--device", "nope")
         self.assertEqual(document["error"]["code"], "DEVICE_UNAVAILABLE")
+
+    def test_physical_selects_the_only_physical_device(self):
+        self.sandbox.config.write_text(self.sandbox.config.read_text() + '\n[defaults]\nandroid_device = "emulator-5554"\n')
+        result, document = self.run_android("android", "--physical")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(document["data"]["run"]["device"], "R58M1234")
+        result, document = self.run_android("android", "--physical", devices="emulator-5554,device")
+        self.assertEqual((result.returncode, document["error"]["code"]), (3, "DEVICE_UNAVAILABLE"))
+        result, document = self.run_android("android", "--physical", "--device", "R58M1234")
+        self.assertEqual(document["error"]["code"], "SELECTOR_CONFLICT")
+        result, document = self.run_android("mac", "--physical")
+        self.assertEqual(document["error"]["code"], "INVALID_INPUT")
 
     def test_one_usable_device_among_unusable_ones_is_used(self):
         result, document = self.run_android("android", devices="R58M1234,offline;emulator-5554,device")

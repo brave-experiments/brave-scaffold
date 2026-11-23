@@ -114,6 +114,7 @@ During execution, `bcore` shows phases, commands, and live child output. A redac
 | Run a known browser-test fixture | `bcore test mac brave_browser_tests --filter 'Example.*'` |
 | Restart an existing macOS output without rebuilding | `bcore run mac` |
 | Build and install on every connected Android device | `bcore build-run android --all-devices` |
+| Build and install on the one connected physical Android device | `bcore build-run android --physical` |
 | Build and launch in an iOS Simulator | `bcore build-run ios` |
 | Call a `brave-core` package script with the checkout's own tools | `bpm run <script>` |
 

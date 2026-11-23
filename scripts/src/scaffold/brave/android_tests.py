@@ -45,8 +45,10 @@ def suite_kind(suite):
 def check_options(parsed, kind):
     if parsed.get("all_devices") and parsed.get("device"):
         raise ScaffoldError("SELECTOR_CONFLICT", "Use either --device or --all-devices, not both.")
-    if kind == HOST and parsed.get("all_devices"):
-        raise ScaffoldError("INVALID_INPUT", "--all-devices applies to device-backed Android tests only.")
+    if parsed.get("physical") and (parsed.get("device") or parsed.get("all_devices")):
+        raise ScaffoldError("SELECTOR_CONFLICT", "--physical cannot be combined with --device or --all-devices.")
+    if kind == HOST and (parsed.get("all_devices") or parsed.get("physical")):
+        raise ScaffoldError("INVALID_INPUT", "--all-devices and --physical apply to device-backed Android tests only.")
     if kind == HOST and parsed.get("device"):
         raise ScaffoldError("INVALID_INPUT", "--device does not apply to %s: it runs on this Mac and uses no device."
                             % parsed.get("suite"), details={"example": "bcore test android %s" % parsed.get("suite")})

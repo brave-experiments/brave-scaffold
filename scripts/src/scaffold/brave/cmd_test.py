@@ -27,7 +27,7 @@ def is_test_outcome(error):
 def phase_context(ctx, phase, device):
     values = {**ctx.parsed.values, "suite": phase.suite, "target": phase.target, "filter": phase.filter,
               "base": None, "file": None, "device": device if phase.suite == "brave_java_unit_tests" else None}
-    values["all_devices"] = False
+    values["all_devices"] = values["physical"] = False
     values["device_group"] = device if isinstance(device, android.DeviceGroup) and phase.suite == "brave_java_unit_tests" else None
     if isinstance(device, android.DeviceGroup):
         values["device"] = None
@@ -134,6 +134,7 @@ def cmd_test_discovered(ctx):
     parsed = ctx.parsed
     if parsed.get("all_devices") and parsed.get("device"):
         raise ScaffoldError("SELECTOR_CONFLICT", "Use either --device or --all-devices, not both.")
+    android.check_physical(parsed)
     identity, effective = cmd_build.select_build(ctx, parsed.get("target"), parsed.forwarded, tests=True)
     selected_target = bool(parsed.get("target")) or effective.sources["target"] == "forwarded"
     if parsed.get("file"):

@@ -41,7 +41,7 @@ Terminal errors show paths, reasons, and suggested commands, with a short limit 
 | `bcore checkout list` | Show registrations, environment state, invalid entries | None |
 | `bcore clean [target]` | Preview generated build outputs of the selected checkout; `--execute` deletes them ([details](source-and-cleanup.md)) | Preview writes nothing; `--execute` deletes directories under `src/out` |
 | `bcore context` | Resolved checkout, selection source, environment, tools | None |
-| `bcore deploy android` | Install the APK and launch it; same as `run android`; `--all-devices` selects all compatible devices ([Android](android.md)) | Installs over the existing app and restarts the package on selected devices |
+| `bcore deploy android` | Install the APK and launch it; same as `run android`; `--all-devices` selects all compatible devices and `--physical` the only physical device ([Android](android.md)) | Installs over the existing app and restarts the package on selected devices |
 | `bcore doctor [scope]` | Named readiness checks (`mac`, `android`, `ios`, `rbe`, `shell`, `signing`) | None |
 | `bcore drift [--diff]` | Compare patched Chromium files with patch metadata | None |
 | `bcore env check` | Compare the loaded environment and tools to the checkout | None; evaluates the approved `.envrc` |
@@ -58,7 +58,7 @@ Terminal errors show paths, reasons, and suggested commands, with a short limit 
 | `bcore sync-build-run [target]` (`sbr`) | Sync, build, then restart the browser with the built output; extras go to the build phase (`--sync-arg` for sync) | Effects of each phase |
 | `bcore test [target]` | Run the tests changed on this branch or in the working tree ([details](#test)) | Reads Git state; effects of each suite it runs |
 | `bcore test [target] --file PATH` | Run the tests in one file, changed or not ([details](#test)) | Same |
-| `bcore test [target] <suite>` | Compile if needed and run one suite ([macOS](macos.md), [Android](android.md#tests)); `--device` or `--all-devices` for Android device suites | Writes build output; runs tests; Android temporarily applies the support test overlay to Core's `build/commands`; preserves an existing overlay |
+| `bcore test [target] <suite>` | Compile if needed and run one suite ([macOS](macos.md), [Android](android.md#tests)); `--device`, `--all-devices`, or `--physical` for Android device suites | Writes build output; runs tests; Android temporarily applies the support test overlay to Core's `build/commands`; preserves an existing overlay |
 | `bcore tools setup` | Explicit repair of checkout-local Node/package-manager payloads | Runs the checkout's payload installer inside the checkout |
 | `bcore vpython3 [options] [--] <args>` | Checkout-local Python | Whatever the program does |
 

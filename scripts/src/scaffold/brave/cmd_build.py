@@ -456,9 +456,13 @@ def do_build(ctx, command, sync_first=False, run_after=False):
             raise ScaffoldError("INVALID_INPUT", "--all-devices applies to Android build-run and sync-build-run only.")
         if parsed.get("device"):
             raise ScaffoldError("SELECTOR_CONFLICT", "Use either --device or --all-devices, not both.")
+    if parsed.get("physical"):
+        if not run_after:
+            raise ScaffoldError("INVALID_INPUT", "--physical applies to Android build-run and sync-build-run only.")
+        android.check_physical(parsed)
     if effective_target(target_token, ctx.config)[0] == "ios":
-        if parsed.get("all_devices"):
-            raise ScaffoldError("INVALID_INPUT", "--all-devices applies to Android only.")
+        if parsed.get("all_devices") or parsed.get("physical"):
+            raise ScaffoldError("INVALID_INPUT", "--all-devices and --physical apply to Android only.")
         from . import cmd_ios
         return cmd_ios.do_build(ctx, command, sync_first, run_after)
     identity, effective = select_build(ctx, target_token, parsed.forwarded)
@@ -469,8 +473,8 @@ def do_build(ctx, command, sync_first=False, run_after=False):
             "-C true|false as \"force or skip the Chromium sync\"; to send that to the sync phase, use "
             "--sync-arg=-C --sync-arg=%s." % (effective.build_dir_arg, effective.build_dir_arg, effective.build_dir_arg),
             details={"example": "bcore %s --sync-arg=-C --sync-arg=%s" % (command, effective.build_dir_arg)})
-    if parsed.get("all_devices") and effective.target != "android":
-        raise ScaffoldError("INVALID_INPUT", "--all-devices applies to Android only.")
+    if (parsed.get("all_devices") or parsed.get("physical")) and effective.target != "android":
+        raise ScaffoldError("INVALID_INPUT", "--all-devices and --physical apply to Android only.")
     if parsed.get("skip_support_refresh") and effective.target != "android":
         raise ScaffoldError("INVALID_INPUT", "--skip-support-refresh applies to Android only.")
     if parsed.get("device") and effective.target != "android":
@@ -561,8 +565,8 @@ def cmd_test(ctx):
     identity, effective = select_build(ctx, parsed.get("target"), parsed.forwarded, tests=True)
     if effective.target == "android":
         return cmd_android_test(ctx, identity, effective)
-    if parsed.get("all_devices"):
-        raise ScaffoldError("INVALID_INPUT", "--all-devices applies to device-backed Android tests only.")
+    if parsed.get("all_devices") or parsed.get("physical"):
+        raise ScaffoldError("INVALID_INPUT", "--all-devices and --physical apply to device-backed Android tests only.")
     if parsed.get("device"):
         raise ScaffoldError("INVALID_INPUT", "--device applies to Android only.")
     script_args = [parsed.get("suite")]
@@ -993,6 +997,10 @@ def cmd_run(ctx):
             raise ScaffoldError("INVALID_INPUT", "--all-devices applies to Android only.")
         if parsed.get("device"):
             raise ScaffoldError("SELECTOR_CONFLICT", "Use either --device or --all-devices, not both.")
+    if parsed.get("physical"):
+        if target != "android":
+            raise ScaffoldError("INVALID_INPUT", "--physical applies to Android only.")
+        android.check_physical(parsed)
     require_available_target(target, "run")
     if parsed.get("device") and target not in ("android", "ios"):
         raise ScaffoldError("INVALID_INPUT", "--device applies to Android and iOS only.")

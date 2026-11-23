@@ -60,10 +60,17 @@ def _listing(devices):
     return ["%s (%s)" % (item["id"], item["state"]) for item in devices]
 
 
-def choose_device(devices, requested=None, configured=None):
-    """Pick a device only when the choice is unambiguous."""
-    wanted = requested or configured
+def is_emulator(device):
+    return device["id"].startswith("emulator-")
+
+
+def choose_device(devices, requested=None, configured=None, physical=False):
+    """Pick a device only when the choice is unambiguous; `physical` considers only non-emulators."""
+    wanted = None if physical else requested or configured
     source = "flag" if requested else "configuration"
+    if physical:
+        devices = [item for item in devices if not is_emulator(item)]
+    kind = "physical " if physical else ""
     if wanted:
         found = next((item for item in devices if item["id"] == wanted), None)
         if found is None:
@@ -73,14 +80,14 @@ def choose_device(devices, requested=None, configured=None):
         return _require_usable(found), source
     usable = [item for item in devices if item["state"] == "device"]
     if len(usable) == 1:
-        return usable[0], "only-device"
+        return usable[0], "physical" if physical else "only-device"
     if len(usable) > 1:
         raise ScaffoldError(
-            "DEVICE_AMBIGUOUS", "More than one device is available. Add one of these options to your command.",
+            "DEVICE_AMBIGUOUS", "More than one %sdevice is available. Add one of these options to your command." % kind,
             details={"devices": _listing(devices), "example": "--device %s" % usable[0]["id"],
                      "device_options": [["--device", item["id"]] for item in usable]})
     raise ScaffoldError(
-        "DEVICE_UNAVAILABLE", "No usable Android device is connected.",
+        "DEVICE_UNAVAILABLE", "No usable %sAndroid device is connected." % kind,
         details={"devices": _listing(devices), "recovery": sorted({RECOVERY[i["state"]] for i in devices
                                                                   if i["state"] in RECOVERY})},
         repairs=[repair(["adb", "devices"])])
@@ -102,7 +109,7 @@ def select_device(adb, environ, requested, configured, log=None):
 def device_label(adb, device, environ, log=None):
     model = _adb(adb, device["id"], ["shell", "getprop", "ro.product.model"], environ, log, timeout=10)
     name = model.stdout.strip().replace("\n", " ") if model.returncode == 0 else ""
-    kind = "emulator" if device["id"].startswith("emulator-") else "physical device"
+    kind = "emulator" if is_emulator(device) else "physical device"
     if kind == "emulator":
         avd = _adb(adb, device["id"], ["emu", "avd", "name"], environ, log, timeout=10)
         if avd.returncode == 0:
