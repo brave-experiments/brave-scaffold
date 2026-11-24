@@ -24,6 +24,38 @@ sys.path.insert(0, str(SCRIPTS / "src"))
 os.environ["BCORE_NOTIFY_BACKEND"] = "none"
 
 
+def macho_bytes(dylibs=(), rpaths=(), filetype=6, cputype=0x0100000C):
+    """A minimal 64-bit Mach-O with the given dylib references ((name, command) or names) and run paths."""
+    import struct
+    commands = b""
+    count = 0
+    for entry in dylibs:
+        name, cmd = (entry, 0xC) if isinstance(entry, str) else entry
+        encoded = name.encode() + b"\0"
+        encoded += b"\0" * (-(24 + len(encoded)) % 8)
+        commands += struct.pack("<IIIIII", cmd, 24 + len(encoded), 24, 2, 0, 0) + encoded
+        count += 1
+    for path in rpaths:
+        encoded = path.encode() + b"\0"
+        encoded += b"\0" * (-(12 + len(encoded)) % 8)
+        commands += struct.pack("<III", 0x8000001C, 12 + len(encoded), 12) + encoded
+        count += 1
+    return struct.pack("<IiiIIIII", 0xFEEDFACF, cputype, 0, filetype, count, len(commands), 0, 0) + commands
+
+
+def fat_macho_bytes(slices):
+    """A universal file from (cputype, thin Mach-O bytes) pairs."""
+    import struct
+    header = struct.pack(">II", 0xCAFEBABE, len(slices))
+    offset, body, entries = 4096, b"", b""
+    for cputype, data in slices:
+        entries += struct.pack(">iiIII", cputype, 0, offset, len(data), 12)
+        body += data + b"\0" * (4096 - len(data) % 4096)
+        offset += len(data) + 4096 - len(data) % 4096
+    head = header + entries
+    return head + b"\0" * (4096 - len(head)) + body
+
+
 def quiet_git_maintenance(environ):
     """Stop Git from starting background maintenance after a fixture commit.
 

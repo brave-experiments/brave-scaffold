@@ -9,6 +9,7 @@ Prerequisites: a registered checkout with an approved environment ([getting star
 ```sh
 bcore build                      # Debug arm64 with RBE/Siso
 bcore build --offline            # compile locally instead
+bcore build --standalone         # an app you can copy to another Apple Silicon Mac
 bcore build --plan               # show the steps; runs nothing
 bcore build -C Custom            # forwarded: output goes to <src>/out/Custom
 ```
@@ -31,6 +32,32 @@ Forwarded options that decide what is built are also read for planning, output s
 | Output identified but missing or unusable | `ARTIFACT_MISSING` or `ARTIFACT_MISMATCH`, exit 5 |
 
 Nothing falls back to another artifact. A build that exits without compiling keeps the earlier build record for that output unchanged (`--prepare_only`, and Ninja dry runs, help, and version); modes that may write into the output directory (`--xcode_gen`, `--ninja t:<tool>` such as `clean`) mark it as needing revalidation. A forwarded `--gn target_os:<value>` or `--gn target_cpu:<value>` that differs from the build's target or architecture also leaves the output identity unresolved, because the build is then not the one its output directory and record describe; against an explicit target argument it is a `SELECTOR_CONFLICT`.
+
+## Standalone builds for another Mac
+
+```sh
+bcore build mac --standalone
+bcore build-run mac --standalone
+bcore run mac --standalone
+```
+
+A Debug build is a component build by default. Its app loads several hundred libraries from the output directory through `@rpath` entries such as `@loader_path/../../../../../..`, so a copied `.app` stops at launch with `dyld` errors. `--standalone` adds the generated argument `--gn=is_component_build:false`, after Core's own defaults, so those libraries are linked into the app bundle. `build`, `build-run`, `sync-build`, and `sync-build-run` accept it. Forwarding `-- --gn=is_component_build:false` yourself builds the same app, but in the normal output directory, without the bundle check, and recorded as an ordinary build that `bcore run mac --standalone` does not select.
+
+- **Output directory.** A standalone Debug build has its own directory, `out/Debug_standalone_arm64`, so component builds and `bcore test mac`, which use `out/Debug_arm64`, never switch it back. Release is already a non-component build, so `--standalone --configuration release` keeps `out/Release_arm64` and adds only the bundle check. A forwarded `-C` still wins. A second output costs as much disk as the first; to reuse the component directory instead, forward `-C Debug_arm64`.
+- **Switching an existing directory.** Changing a directory between component and standalone builds rebuilds almost everything in it. Before the build starts, the console shows a `Full rebuild:` line when the directory's `args_generated.gni` records the other mode, and `--plan` shows the same notice on its build step. Lines you add to `args.gn` yourself are not read; if one forces a component build, the bundle check fails a `--standalone` build afterwards. As with every build, the directory's previous success record is marked as needing revalidation before the package command starts; it stays as history.
+- **Running it.** `bcore run mac` selects arm64 builds and runs the component one; for another architecture, pass `--artifact`. `bcore run mac --standalone` runs a standalone build that passed the bundle check, found from its build record; if several match, choose one with `--artifact` instead (the two options cannot be combined). Each output directory's build record decides its mode, so after `--standalone -C Debug_arm64`, plain `bcore run mac` does not pick that app.
+- **Conflicts.** A forwarded `--gn=is_component_build:true` with `--standalone` is a `SELECTOR_CONFLICT`, and nothing runs. A forwarded `--gn=is_component_build:false` is accepted and not repeated.
+- **Other targets.** Android and iOS builds are already non-component builds, so `--standalone` with `android`, `ios`, or a forwarded `--target_os=android` is rejected with `INVALID_INPUT`, for `run` as well as the build commands.
+- **Verification.** After the build, output verification reads the load commands (`LC_LOAD_DYLIB` and related, and `LC_RPATH`) of every Mach-O file in the bundle. If a library reference other than a system library under `/System/` or `/usr/lib/` resolves outside the bundle, or resolves nowhere (a weakly linked library may be missing, because dyld skips it), the build fails with `ARTIFACT_MISMATCH` and lists the references; `build-run` then launches nothing. `@rpath` references are searched with the run paths of the file that loads them and of the bundle's executables, which approximates `dyld`. A verified standalone artifact has `"standalone": true`.
+
+The ad-hoc signature the linker adds is not tied to one Mac. Moving the app:
+
+1. Archive it with `ditto`, which keeps the bundle's symbolic links, permissions, and extended attributes; plain `zip` stores copies in place of the framework's symbolic links, which breaks the bundle's signature: `ditto -c -k --keepParent "out/Debug_standalone_arm64/Brave Browser Development.app" BraveDevelopment.zip`.
+2. On the other Mac, unpack it with `ditto -x -k BraveDevelopment.zip .` or Finder.
+3. If the archive arrived through a browser, AirDrop, or a chat app, clear the quarantine attribute first: `xattr -dr com.apple.quarantine "Brave Browser Development.app"`.
+4. If you change anything inside the bundle, re-sign it ad hoc: `codesign --force --deep -s - "Brave Browser Development.app"`.
+
+The default build is arm64, so the receiving Mac must be Apple Silicon. A build for another architecture, such as `-- --target_arch=x64`, is checked the same way but runs with `--artifact`.
 
 ## Test
 

@@ -55,7 +55,7 @@ def matches(name, target, config, arch):
         # Xcode's derived data holds products for every architecture, so a narrower selection leaves it alone.
         return not name.endswith("_xcode_derived_data") and (found.group(1) or "x64") == arch
     if target == "mac":
-        return any(_with_arch(name, label + sku, arch) for sku in ("", "Origin"))
+        return any(_with_arch(name, label + sku, arch) for sku in ("", "Origin", "_standalone"))
     bases = ("android_" + label, "android_tests_" + label, "android_%sOrigin" % label,
              "android_Origin_" + label)
     return any(_with_arch(name, base, arch) for base in bases)

@@ -11,7 +11,7 @@ import sys
 import unittest
 from pathlib import Path
 
-from tests.support import SandboxTest, write_executable
+from tests.support import SandboxTest, macho_bytes, write_executable
 
 BUILD_HOOK = """
 if "build" not in argv:
@@ -32,7 +32,9 @@ if os.environ.get("FAKE_NO_APP"):
     pass
 else:
     out = build_dir if os.path.isabs(build_dir) else os.path.join(src, "out", build_dir)
-    make_app(out)
+    app = make_app(out)
+    if os.environ.get("FAKE_EXTRA_MACHO"):
+        shutil.copy(os.environ["FAKE_EXTRA_MACHO"], os.path.join(app, "Contents", "MacOS", "helper"))
 # Decoys in places a wrong interpretation would choose.
 if os.environ.get("FAKE_DECOYS") and build_dir not in ("Debug_arm64",):
     make_app(os.path.join(core, build_dir), bundle_id="com.brave.ScaffoldTest.decoy")
@@ -274,6 +276,199 @@ class BuildTests(BuildTestCase):
         self.assertEqual(record["checkout"], str(self.core))
         self.assertFalse(list(self.core.glob(".bcore*")))
 
+
+
+class StandaloneBuildTests(BuildTestCase):
+    def output_states(self):
+        directory = self.sandbox.config.parent / ".bcore" / "outputs"
+        return [json.loads(path.read_text()) for path in sorted(directory.glob("*/*.json"))]
+
+    def write_args(self, component, name="Debug_arm64"):
+        out = self.src / "out" / name
+        out.mkdir(parents=True, exist_ok=True)
+        (out / "args.gn").write_text('import("//out/%s/args_generated.gni")\n' % name)
+        (out / "args_generated.gni").write_text("is_component_build=%s\n" % ("true" if component else "false"))
+
+    def test_standalone_builds_into_its_own_output_and_records_the_mode(self):
+        for command in ("build", "build-run", "sync-build"):
+            with self.subTest(command=command):
+                self.sandbox.record.unlink(missing_ok=True)
+                result, document = self.document(command, "mac", "--standalone")
+                self.assertEqual(result.returncode, 0, result.stderr)
+                argv = self.build_argv()
+                self.assertIn("--gn=is_component_build:false", argv)
+                self.assertEqual(argv[argv.index("-C") + 1], "Debug_standalone_arm64")
+                build = document["data"]["build"]
+                self.assertEqual((build["effective"]["standalone"], build["effective"]["component_build"]), (True, False))
+                self.assertEqual(document["artifacts"][0]["path"], str(self.output_app("Debug_standalone_arm64")))
+                self.assertIs(document["artifacts"][0]["standalone"], True)
+                self.assertIn("Standalone: non-component build", result.stderr)
+        self.assertFalse(self.output_app().exists(), "the component output is untouched")
+
+    def test_a_forwarded_output_directory_wins(self):
+        result, document = self.document("build", "--standalone", "-C", "Portable")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(document["artifacts"][0]["output_dir"], str(self.src / "out" / "Portable"))
+        self.assertEqual(self.build_argv().count("-C"), 1)
+
+    def test_conflicts_and_other_targets_fail_before_anything_runs(self):
+        for command, args, code in (("build", ["--standalone", "--gn=is_component_build:true"], "SELECTOR_CONFLICT"),
+                                    ("build", ["android", "--standalone"], "INVALID_INPUT"),
+                                    ("build", ["--standalone", "--target_os=android"], "INVALID_INPUT"),
+                                    ("build", ["ios", "--standalone"], "INVALID_INPUT"),
+                                    ("run", ["android", "--standalone"], "INVALID_INPUT"),
+                                    ("run", ["ios", "--standalone"], "INVALID_INPUT")):
+            for extra in ([], ["--plan"]):
+                with self.subTest(command=command, args=args, extra=extra):
+                    result, document = self.document(command, *args, *extra)
+                    self.assertEqual((result.returncode, document["error"]["code"]), (2, code), result.stderr)
+        self.assertEqual(self.sandbox.records(), [])
+        self.assertFalse((self.src / "out").exists())
+
+    def test_run_chooses_the_component_or_the_standalone_build(self):
+        self.assertEqual(self.document("build")[0].returncode, 0)
+        result, document = self.document("run", "mac", "--plan")
+        self.assertEqual(document["error"], None, result.stderr)
+        result, document = self.document("run", "mac", "--standalone", "--plan")
+        self.assertEqual(document["error"]["code"], "ARTIFACT_MISSING")
+        self.assertIn("--standalone", document["error"]["repairs"][0]["argv"])
+        self.assertEqual(self.document("build", "--standalone")[0].returncode, 0)
+        self.assertEqual(self.document("build", "--standalone", "-C", "Portable")[0].returncode, 0)
+        for args, expected in ((["mac"], [self.output_app()]),
+                               (["mac", "--standalone"], [self.output_app("Debug_standalone_arm64"),
+                                                          self.output_app("Portable")])):
+            with self.subTest(args=args):
+                result, document = self.document("run", *args, "--plan")
+                if len(expected) == 1:
+                    self.assertIsNone(document["error"], result.stderr)
+                    self.assertIn(str(expected[0]), result.stdout)
+                else:
+                    self.assertEqual(document["error"]["code"], "ARTIFACT_AMBIGUOUS")
+                    self.assertEqual(sorted(document["error"]["details"]["candidates"]), sorted(map(str, expected)))
+
+    def test_run_follows_the_recorded_mode_of_the_default_directory(self):
+        self.assertEqual(self.document("build", "--standalone", "-C", "Debug_arm64")[0].returncode, 0)
+        result, document = self.document("run", "mac", "--plan")
+        self.assertEqual(document["error"]["code"], "ARTIFACT_MISSING", "the component run does not pick it")
+        result, document = self.document("run", "mac", "--standalone", "--plan")
+        self.assertIsNone(document["error"], result.stderr)
+        self.assertIn(str(self.output_app()), result.stdout)
+
+    def test_run_standalone_needs_an_app_that_passed_the_standalone_check(self):
+        library = self.src / "out" / "Debug_standalone_arm64" / "libbase.dylib"
+        library.parent.mkdir(parents=True)
+        library.write_bytes(macho_bytes())
+        helper = self.sandbox.root / "helper"
+        helper.write_bytes(macho_bytes(["@rpath/libbase.dylib"], ["@loader_path/../../.."], filetype=2))
+        result, document = self.document("build", "--standalone", env=self.env(FAKE_EXTRA_MACHO=str(helper)))
+        self.assertEqual(document["error"]["code"], "ARTIFACT_MISMATCH")
+        self.assertTrue(self.output_app("Debug_standalone_arm64").exists())
+        result, document = self.document("run", "mac", "--standalone", "--plan")
+        self.assertEqual(document["error"]["code"], "ARTIFACT_MISSING", "the app on disk was never verified")
+
+    def test_a_standalone_release_build_is_also_the_plain_release_build(self):
+        self.hook = self.sandbox.hook(BUILD_HOOK.replace("app = make_app(out)", 'app = make_app(out, name="Brave Browser")'))
+        result, document = self.document("build", "--standalone", "--configuration", "release")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        app = self.src / "out" / "Release_arm64" / "Brave Browser.app"
+        self.assertEqual(document["artifacts"][0]["path"], str(app))
+        for extra in ([], ["--standalone"]):
+            with self.subTest(extra=extra):
+                result, document = self.document("run", "mac", "--configuration", "release", *extra, "--plan")
+                self.assertIsNone(document["error"], result.stdout)
+                self.assertIn(str(app), result.stdout)
+        result, document = self.document("run", "mac", "--standalone", "--plan")
+        self.assertEqual(document["error"]["details"]["searched"], "verified standalone build records")
+
+    def test_run_standalone_warns_when_a_later_standalone_build_failed_the_check(self):
+        self.assertEqual(self.document("build", "--standalone")[0].returncode, 0)
+        library = self.src / "out" / "Debug_standalone_arm64" / "libbase.dylib"
+        library.write_bytes(macho_bytes())
+        helper = self.sandbox.root / "helper"
+        helper.write_bytes(macho_bytes(["@rpath/libbase.dylib"], ["@loader_path/../../.."], filetype=2))
+        result, document = self.document("build", "--standalone", env=self.env(FAKE_EXTRA_MACHO=str(helper)))
+        self.assertEqual(document["error"]["code"], "ARTIFACT_MISMATCH")
+        result, document = self.document("run", "mac", "--standalone")
+        self.assertIsNone(document["error"], result.stderr)
+        self.assertIn("ARTIFACT_FRESHNESS_UNKNOWN", [item["code"] for item in document["warnings"]],
+                      "the older verified build may run, with a warning")
+    def test_plain_run_points_at_the_standalone_build_when_only_that_exists(self):
+        self.assertEqual(self.document("build", "--standalone")[0].returncode, 0)
+        result, document = self.document("run", "mac", "--plan")
+        self.assertEqual(document["error"]["code"], "ARTIFACT_MISSING")
+        self.assertIn("--standalone", document["error"]["message"])
+        self.assertIn("--standalone", document["error"]["repairs"][0]["argv"])
+        self.assertEqual(document["error"]["repairs"][0]["argv"][:3], ["bcore", "run", "mac"])
+
+    def test_standalone_and_an_explicit_artifact_are_not_combined(self):
+        self.assertEqual(self.document("build")[0].returncode, 0)
+        for extra in ([], ["--plan"]):
+            with self.subTest(extra=extra):
+                result, document = self.document("run", "mac", "--standalone", "--artifact", str(self.output_app()),
+                                                 *extra)
+                self.assertEqual((result.returncode, document["error"]["code"]), (2, "INVALID_INPUT"))
+                self.assertIn("--artifact", document["error"]["message"])
+
+    def test_switching_an_output_warns_first_and_marks_the_previous_success_before_the_child_writes(self):
+        result, _ = self.document("build")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.write_args(component=True)
+        seen = self.sandbox.root / "seen.json"
+        self.hook = self.sandbox.hook(
+            'import glob, json\n'
+            'if "build" in argv:\n'
+            '    states = [json.load(open(path)) for path in glob.glob(%r)]\n'
+            '    json.dump([state["needs_revalidation"] for state in states], open(%r, "w"))\n'
+            '    raise SystemExit(1)\n' % (str(self.sandbox.config.parent / ".bcore" / "outputs" / "*" / "*.json"),
+                                          str(seen)))
+        result, document = self.document("build", "--standalone", "-C", "Debug_arm64")
+        self.assertEqual(document["error"]["code"], "CHILD_FAILED")
+        self.assertEqual(json.loads(seen.read_text()), [True])
+        notice = result.stderr.index("Full rebuild:")
+        self.assertIn("was last generated as a component build", result.stderr)
+        self.assertLess(notice, result.stderr.index("$ pnpm run build"))
+        (state,) = self.output_states()
+        self.assertTrue(state["needs_revalidation"])
+        self.assertIsNotNone(state["success"], "the earlier record stays as history")
+
+    def test_the_notice_covers_the_reverse_switch_and_plans_but_not_an_unchanged_mode(self):
+        self.write_args(component=False)
+        result, document = self.document("build")
+        self.assertIn("non-component build and this is a component build", result.stderr)
+        self.write_args(component=True)
+        result, document = self.document("build", "--standalone", "-C", "Debug_arm64", "--plan")
+        build = next(step for step in document["data"]["plan"]["steps"] if step["name"] == "build")
+        self.assertIn("full rebuild", build["detail"])
+        self.assertTrue(document["data"]["plan"]["effective"]["standalone"])
+        result, document = self.document("build", "--standalone", "--plan")
+        build = next(step for step in document["data"]["plan"]["steps"] if step["name"] == "build")
+        self.assertNotIn("full rebuild", build["detail"] or "", "the standalone output is its own directory")
+        self.write_args(component=False, name="Debug_standalone_arm64")
+        result, _ = self.document("build", "--standalone")
+        self.assertNotIn("Full rebuild:", result.stderr)
+
+    def test_verification_rejects_a_standalone_app_that_loads_libraries_from_the_output(self):
+        for name in ("Debug_arm64", "Debug_standalone_arm64"):
+            library = self.src / "out" / name / "libbase.dylib"
+            library.parent.mkdir(parents=True)
+            library.write_bytes(macho_bytes())
+        helper = self.sandbox.root / "helper"
+        helper.write_bytes(macho_bytes(["@rpath/libbase.dylib"], ["@loader_path/../../.."], filetype=2))
+        env = self.env(FAKE_EXTRA_MACHO=str(helper))
+        result, document = self.document("build", env=env)
+        self.assertEqual(result.returncode, 0, "a component build may load them")
+        self.assertNotIn("standalone", document["artifacts"][0])
+        result, document = self.document("build", "--standalone", env=env)
+        self.assertEqual((result.returncode, document["error"]["code"]), (5, "ARTIFACT_MISMATCH"))
+        self.assertIn("not standalone", document["error"]["message"])
+        self.assertEqual(document["error"]["details"]["outside_references"][0]["dylib"], "@rpath/libbase.dylib")
+        standalone_state = next(state for state in self.output_states()
+                                if state["output_dir"].endswith("Debug_standalone_arm64"))
+        self.assertIsNone(standalone_state["success"])
+        self.sandbox.record.unlink(missing_ok=True)
+        result, document = self.document("build-run", "--standalone", env=env)
+        self.assertEqual(document["error"]["code"], "ARTIFACT_MISMATCH")
+        self.assertEqual([r for r in self.sandbox.records() if r["tool"] != "node"], [], "nothing is launched")
 
 
 class NinjaOutputTests(BuildTestCase):

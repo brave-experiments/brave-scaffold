@@ -142,5 +142,59 @@ class EffectiveTests(unittest.TestCase):
         self.assertEqual(resolve(["--target", "brave"]).unresolved, [])
 
 
+class StandaloneTests(unittest.TestCase):
+    def standalone(self, tokens, **kwargs):
+        kwargs.setdefault("target", "mac")
+        return buildopts.resolve_effective(SRC, tokens, kwargs.pop("target"), kwargs.pop("configuration", "Debug"),
+                                           kwargs.pop("explicit_target", None), None, False, standalone=True)
+
+    def test_standalone_adds_the_non_component_argument_and_builds_in_its_own_output(self):
+        effective = self.standalone([])
+        self.assertEqual(effective.generated, ["--target_os=mac", "--target_arch=arm64", "-C", "Debug_standalone_arm64",
+                                               "Debug", "--gn=is_component_build:false", "--use_remoteexec=true"])
+        self.assertEqual(effective.output_dir, SRC / "out" / "Debug_standalone_arm64")
+        self.assertEqual(self.standalone(["--target_arch=x64"]).output_dir, SRC / "out" / "Debug_standalone")
+        self.assertEqual(self.standalone([], configuration="Release").output_dir, SRC / "out" / "Release_arm64",
+                         "Release is already a non-component build, so it keeps its directory")
+        self.assertEqual(resolve([]).output_dir, SRC / "out" / "Debug_arm64", "component builds keep their directory")
+        self.assertEqual((effective.standalone, effective.component_build), (True, False))
+        self.assertNotIn("--gn=is_component_build:false", resolve([]).generated)
+
+    def test_a_forwarded_output_directory_still_wins(self):
+        effective = self.standalone(["-C", "Debug_arm64"])
+        self.assertEqual(effective.output_dir, SRC / "out" / "Debug_arm64")
+        self.assertNotIn("-C", effective.generated)
+        self.assertIn("--gn=is_component_build:false", effective.generated)
+
+    def test_a_matching_forwarded_value_is_not_repeated_and_a_contrary_one_conflicts(self):
+        for tokens in (["--gn=is_component_build:false"], ["--gn", 'is_component_build:"false"']):
+            with self.subTest(tokens=tokens):
+                self.assertNotIn("--gn=is_component_build:false", self.standalone(tokens).generated)
+        for tokens in (["--gn=is_component_build:true"], ["--gn", "is_component_build:true"],
+                       ["--gn=is_component_build:false", "--gn=is_component_build:true"]):
+            with self.subTest(tokens=tokens), self.assertRaises(ScaffoldError) as caught:
+                self.standalone(tokens)
+            self.assertEqual(caught.exception.code, "SELECTOR_CONFLICT")
+            self.assertIn("example", caught.exception.details)
+
+    def test_android_and_ios_are_rejected_because_they_are_never_component_builds(self):
+        for kwargs, tokens in (({"target": "android"}, []), ({"target": "ios"}, []), ({}, ["--target_os=android"])):
+            with self.subTest(kwargs=kwargs, tokens=tokens), self.assertRaises(ScaffoldError) as caught:
+                self.standalone(tokens, **kwargs)
+            self.assertEqual(caught.exception.code, "INVALID_INPUT")
+            self.assertIn("macOS only", caught.exception.message)
+        with self.assertRaises(ScaffoldError) as caught:
+            self.standalone(["--target_os=linux"])
+        self.assertNotIn("non-component", caught.exception.message)
+
+    def test_the_expected_component_mode_follows_core_and_forwarded_values(self):
+        self.assertIs(resolve([]).component_build, True)
+        self.assertIs(resolve([], configuration="Release").component_build, False)
+        self.assertIs(resolve(["--gn=is_component_build:false"]).component_build, False)
+        self.assertIsNone(resolve(["--gn=is_component_build:is_debug"]).component_build, "computed by GN")
+        self.assertIs(resolve([], target="android").component_build, False)
+        self.assertIs(self.standalone([], configuration="Release").component_build, False)
+
+
 if __name__ == "__main__":
     unittest.main()

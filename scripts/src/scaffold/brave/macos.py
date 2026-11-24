@@ -66,6 +66,19 @@ def read_bundle(path):
             "version": info.get("CFBundleShortVersionString")}
 
 
+COMPONENT_SETTING = re.compile(r"^\s*is_component_build\s*=\s*(true|false)\b", re.MULTILINE)
+
+
+def recorded_component_build(output_dir):
+    """Whether Core last generated the output directory as a component build, or None when it cannot be told."""
+    try:
+        text = (Path(output_dir) / "args_generated.gni").read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+    found = COMPONENT_SETTING.findall(text)
+    return (found[-1] == "true") if found else None
+
+
 # --- restart -------------------------------------------------------------------
 
 

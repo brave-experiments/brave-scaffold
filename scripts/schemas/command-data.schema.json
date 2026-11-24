@@ -322,6 +322,15 @@
             },
             "sources": {
               "type": "object"
+            },
+            "standalone": {
+              "type": "boolean"
+            },
+            "component_build": {
+              "type": [
+                "boolean",
+                "null"
+              ]
             }
           }
         },

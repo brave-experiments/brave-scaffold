@@ -19,8 +19,8 @@ from ..common.checks import readiness_error
 from ..common.platforms import RECOGNIZED_TARGETS, effective_target, normalize_target
 from ..common.procs import run_capture
 from ..common.results import Cancelled, Result, ScaffoldError, repair
-from . import (android, android_deps, android_tests, buildopts, execution as execution_module, freshness, macos,
-               packages, patches, steps as step_module, sync as sync_module)
+from . import (android, android_deps, android_tests, buildopts, execution as execution_module, freshness, macho,
+               macos, packages, patches, steps as step_module, sync as sync_module)
 from .records import OutputState, output_states, revalidation_warning, track
 
 SUITE_PATTERN = re.compile(r"[A-Za-z][A-Za-z0-9_]*_tests?")
@@ -44,7 +44,7 @@ def select_build(ctx, target_token, forwarded, tests=False):
     configuration = requested_configuration(ctx)
     effective = buildopts.resolve_effective(
         identity.src, forwarded, target, configuration or "Debug", explicit, configuration,
-        bool(ctx.parsed.get("offline")), tests=tests)
+        bool(ctx.parsed.get("offline")), tests=tests, standalone=bool(ctx.parsed.get("standalone")))
     if effective.target == "ios" and target != "ios" and not tests:
         raise ScaffoldError(
             "SELECTOR_CONFLICT", "--target_os=ios in the forwarded arguments cannot select an iOS build here; "
@@ -176,9 +176,35 @@ def verify_mac_artifact(effective):
         return None, "; ".join(effective.unresolved)
     path = macos.app_path(effective.output_dir, effective.configuration, effective.channel)
     bundle = macos.read_bundle(path)
+    if effective.standalone:
+        require_self_contained(path, effective.arch)
+        bundle["standalone"] = True
     bundle.update(kind="app", target="mac", configuration=effective.configuration, arch=effective.arch,
                   output_dir=str(effective.output_dir), verified=True)
     return bundle, None
+
+
+def require_self_contained(path, arch="arm64"):
+    """A standalone app must not load libraries from outside its bundle, or it fails to start on another Mac."""
+    outside = macho.outside_references(path, arch)
+    if outside:
+        first = outside[0]
+        raise ScaffoldError(
+            "ARTIFACT_MISMATCH", "%s is not standalone: %d library reference(s) resolve outside the bundle, for "
+            "example %s from %s." % (path, len(outside), first["dylib"], first["file"]),
+            details={"path": str(path), "outside_references": outside[:20], "outside_count": len(outside)})
+
+
+def component_mode_notice(effective):
+    """Console notice when this build switches the output between component and non-component builds."""
+    if effective.target != "mac" or effective.output_dir is None or effective.component_build is None:
+        return None
+    previous = macos.recorded_component_build(effective.output_dir)
+    if previous is None or previous == effective.component_build:
+        return None
+    names = {True: "component", False: "non-component"}
+    return ("%s was last generated as a %s build and this is a %s build, so almost everything in it will be "
+            "rebuilt." % (effective.output_dir, names[previous], names[effective.component_build]))
 
 
 def artifact_for(effective, identity, environ, log=None):
@@ -252,6 +278,11 @@ def perform_build(ctx, execution, effective, op, force_gn=False):
     ctx.log.phase("Output directory: %s" % (effective.output_dir or "unresolved"))
     mode = "local (remote execution disabled)" if effective.offline else "online (RBE/Siso requested)"
     ctx.log.phase("Build mode: " + mode)
+    if effective.standalone:
+        ctx.log.phase("Standalone: non-component build; libraries are linked into the app bundle")
+    notice = component_mode_notice(effective)
+    if notice:
+        ctx.log.phase("Full rebuild: " + notice)
     with ctx.log.measure("Source preparation"):
         changed, plan = prepare_patches(ctx, execution, op)
         is_android = effective.target == "android"
@@ -306,7 +337,8 @@ def build_data(outcome, identity):
             "argv": outcome.argv, "cwd": str(identity.core),
             "effective": {"target": effective.target, "configuration": effective.configuration,
                           "arch": effective.arch, "output_dir": str(effective.output_dir) if effective.output_dir else None,
-                          "sources": effective.sources},
+                          "sources": effective.sources, "standalone": effective.standalone,
+                          "component_build": effective.component_build},
             "patches_applied": outcome.prepared_patches,
             "verified_output": outcome.artifact["output_dir"] if outcome.artifact else None,
             "explanation": None if outcome.artifact else
@@ -345,7 +377,8 @@ def plan_result(command, effective, steps):
     result = Result(command=command)
     result.data = {"plan": {"steps": [step.to_dict() for step in steps], "effective": {
         "target": effective.target, "configuration": effective.configuration, "arch": effective.arch,
-        "output_dir": str(effective.output_dir) if effective.output_dir else None, "sources": effective.sources}}}
+        "output_dir": str(effective.output_dir) if effective.output_dir else None, "sources": effective.sources,
+        "standalone": effective.standalone, "component_build": effective.component_build}}}
     result.text = step_module.render_plan(command, steps)
     return result
 
@@ -402,6 +435,9 @@ def build_plan_steps(ctx, identity, effective, subcommand="build", script_args=(
     needs = [last, *(["sync"] if sync_args is not None else [])]
     steps.append(step_module.build_step(identity, effective, subcommand, arguments, package(arguments), needs,
                                         conditional))
+    notice = component_mode_notice(effective)
+    if notice:
+        steps[-1].detail = "; ".join(filter(None, [steps[-1].detail, "full rebuild: " + notice]))
     if subcommand == "build":
         steps.append(step_module.verify_step(effective, [subcommand]))
     if run_after:
@@ -461,6 +497,8 @@ def do_build(ctx, command, sync_first=False, run_after=False):
             raise ScaffoldError("INVALID_INPUT", "--physical applies to Android build-run and sync-build-run only.")
         android.check_physical(parsed)
     if effective_target(target_token, ctx.config)[0] == "ios":
+        if parsed.get("standalone"):
+            raise buildopts.standalone_not_mac("ios")
         if parsed.get("all_devices") or parsed.get("physical"):
             raise ScaffoldError("INVALID_INPUT", "--all-devices and --physical apply to Android only.")
         from . import cmd_ios
@@ -558,6 +596,9 @@ def log_test_phase(ctx, effective):
     ctx.log.phase("Output directory: %s" % (effective.output_dir or "unresolved"))
     ctx.log.phase("Build mode: " + ("local (remote execution disabled)" if effective.offline
                                    else "online (RBE/Siso requested)"))
+    notice = component_mode_notice(effective)
+    if notice:
+        ctx.log.phase("Full rebuild: " + notice)
 
 
 def cmd_test(ctx):
@@ -893,17 +934,27 @@ def run_android_test_with_overlay(ctx, execution, effective, op, known, tail, su
 # --- run --------------------------------------------------------------------------------
 
 
-def run_candidates(ctx, identity, target, configuration, arch):
-    """Valid application bundles for this checkout, target, configuration, and architecture."""
+def run_candidates(ctx, identity, target, configuration, arch, standalone=False):
+    """Valid application bundles for this checkout, target, configuration, architecture, and build mode."""
     found = {}
     default = identity.src / "out" / buildopts.default_build_dir(target, configuration, arch)
-    paths = [macos.app_path(default, configuration)]
+    # A standalone app is offered only from a record of a build that passed the standalone check.
+    paths = [] if standalone else [macos.app_path(default, configuration)]
+    other_mode = set()
     for state in output_states(identity, ctx.state_root):
         success = state.get("success") or {}
         artifact = success.get("artifact") or {}
         if artifact.get("target") == target and artifact.get("configuration") == configuration \
                 and artifact.get("arch") == arch:
-            paths.append(Path(artifact["path"]))
+            # A configuration Core already builds without components (Release) is the same build either way.
+            if bool(artifact.get("standalone")) == standalone or \
+                    (not standalone and not buildopts.component_build(target, configuration, {})):
+                paths.append(Path(artifact["path"]))
+            else:
+                # The default directory may hold the other mode, for example after --standalone -C Debug_arm64.
+                other_mode.add(os.path.realpath(artifact["path"]))
+    if paths and not standalone and os.path.realpath(paths[0]) in other_mode:
+        paths.pop(0)
     for path in paths:
         try:
             bundle = macos.read_bundle(path)
@@ -915,18 +966,31 @@ def run_candidates(ctx, identity, target, configuration, arch):
 
 def select_artifact(ctx, identity, target, configuration, arch):
     explicit = ctx.parsed.get("artifact")
+    if explicit and ctx.parsed.get("standalone"):
+        raise ScaffoldError("INVALID_INPUT", "--artifact names the application to run; --standalone only chooses one "
+                            "when no --artifact is given. Use one of them.",
+                            details={"example": "bcore run mac --standalone"})
     if explicit:
         path = Path(os.path.expanduser(explicit))
         path = path if path.is_absolute() else Path(ctx.cwd) / path
         return macos.read_bundle(Path(os.path.normpath(path)))
-    candidates = run_candidates(ctx, identity, target, configuration, arch)
+    standalone = bool(ctx.parsed.get("standalone"))
+    candidates = run_candidates(ctx, identity, target, configuration, arch, standalone)
     if not candidates:
+        mode = ["--standalone"] if standalone else []
+        message = "No %s %s %s%s application was found for this checkout." % (
+            target, configuration, arch, " standalone" if standalone else "")
+        repairs = [repair(["bcore", "build", target, *mode, "--checkout", str(identity.core)]),
+                   repair(["bcore", "build-run", target, *mode, "--checkout", str(identity.core)])]
+        if not standalone and run_candidates(ctx, identity, target, configuration, arch, standalone=True):
+            message += " A standalone build exists; run it with --standalone."
+            repairs.insert(0, repair(["bcore", "run", target, "--standalone", "--checkout",
+                                      str(identity.core)]))
         raise ScaffoldError(
-            "ARTIFACT_MISSING", "No %s %s %s application was found for this checkout." % (
-                target, configuration, arch),
-            details={"searched": str(identity.src / "out" / buildopts.default_build_dir(target, configuration, arch))},
-            repairs=[repair(["bcore", "build", target, "--checkout", str(identity.core)]),
-                     repair(["bcore", "build-run", target, "--checkout", str(identity.core)])])
+            "ARTIFACT_MISSING", message,
+            details={"searched": "verified standalone build records" if standalone else
+                     str(identity.src / "out" / buildopts.default_build_dir(target, configuration, arch))},
+            repairs=repairs)
     if len(candidates) > 1:
         raise ScaffoldError(
             "ARTIFACT_AMBIGUOUS", "More than one application matches; choose one with --artifact.",
@@ -1002,6 +1066,8 @@ def cmd_run(ctx):
             raise ScaffoldError("INVALID_INPUT", "--physical applies to Android only.")
         android.check_physical(parsed)
     require_available_target(target, "run")
+    if parsed.get("standalone") and target != "mac":
+        raise buildopts.standalone_not_mac(target)
     if parsed.get("device") and target not in ("android", "ios"):
         raise ScaffoldError("INVALID_INPUT", "--device applies to Android and iOS only.")
     if target == "ios":
