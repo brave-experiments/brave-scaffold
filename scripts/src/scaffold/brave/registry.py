@@ -19,6 +19,12 @@ CONFIGURATION = Opt("--configuration", "configuration", choices=("debug", "relea
 OFFLINE = Opt("--offline", "offline", takes_value=False,
               help="Compile locally instead of using remote build execution (RBE/Siso, the default).")
 FORCE_GN = Opt("--force-gn", "force_gn", takes_value=False, help="Regenerate GN files even if they exist.")
+STANDALONE = Opt("--standalone", "standalone", takes_value=False,
+                 help="macOS only: build without component libraries (adds --gn=is_component_build:false) so the "
+                      "app can be copied to another Apple Silicon Mac. A Debug build uses its own output directory, "
+                      "such as out/Debug_standalone_arm64.")
+RUN_STANDALONE = Opt("--standalone", "standalone", takes_value=False,
+                     help="macOS only: run the standalone build instead of the component build.")
 PLAN = Opt("--plan", "plan", takes_value=False, help="Show the steps without running any that change anything.")
 SKIP_SUPPORT_REFRESH = Opt("--skip-support-refresh", "skip_support_refresh", takes_value=False,
                            help="Stop an Android build if support patches or resources need refreshing.")
@@ -38,6 +44,8 @@ DIFF = Opt("--diff", "diff", takes_value=False, help="Print the Git diff of each
 BASE = Opt("--base", "base", metavar="REF", help="Find changed tests against this ref (default: origin/master).")
 FILE = Opt("--file", "file", metavar="PATH",
            help="Run the tests in this file, changed or not (relative to the current directory).")
+BUILD_OPTIONS = (CONFIGURATION, OFFLINE, STANDALONE, FORCE_GN, PLAN, DEVICE, ALL_DEVICES, PHYSICAL,
+                 SKIP_SUPPORT_REFRESH, SYNC_ARG)
 TARGET = Positional("target", help="mac, android, or ios (default: configured platform, else this host).")
 BUILD_SIDE_EFFECTS = ("Writes the build output under the checkout's src/out, applies Core patches when they are "
                       "out of date and no local edits are at risk, and may update the Metal toolchain setting for the "
@@ -111,15 +119,16 @@ def build_registry():
                     examples=("bcore vpython3 -- tools/example.py --flag", "bcore vpython3 --cwd out -- ../script.py")),
         clean.SPEC,
         CommandSpec("build", "Prepare and compile Brave for a target, then verify its output.", cmd_build.cmd_build,
-                    positionals=(TARGET,), options=(CONFIGURATION, OFFLINE, FORCE_GN, PLAN, DEVICE, ALL_DEVICES, PHYSICAL, SKIP_SUPPORT_REFRESH, SYNC_ARG),
+                    positionals=(TARGET,), options=BUILD_OPTIONS,
                     forward=True, side_effects=BUILD_SIDE_EFFECTS + " iOS: runs xcodebuild, whose Debug scheme "
                     "builds Core's output under src/out and repoints out/ios_current_link.",
                     notes="Unknown options and extra arguments go to 'bpm run build' after the generated ones; "
                           "for iOS they go to xcodebuild. --device chooses the iOS Simulator to build for.",
-                    examples=("bcore build", "bcore build mac --offline", "bcore build --plan")),
+                    examples=("bcore build", "bcore build mac --offline", "bcore build mac --standalone",
+                              "bcore build --plan")),
         CommandSpec("build-run", "Build, then restart the browser with exactly the output that build produced.",
                     cmd_build.cmd_build_run, aliases=("br",), positionals=(TARGET,),
-                    options=(CONFIGURATION, OFFLINE, FORCE_GN, PLAN, DEVICE, ALL_DEVICES, PHYSICAL, SKIP_SUPPORT_REFRESH, SYNC_ARG), forward=True,
+                    options=BUILD_OPTIONS, forward=True,
                     side_effects=BUILD_SIDE_EFFECTS + " Then stops any running instance of the same application and "
                                                      "launches the new build. iOS also opens the selected "
                                                      "Simulator window and checks the launched process.",
@@ -132,14 +141,14 @@ def build_registry():
                     examples=("bcore sync", "bcore sync mac,android --plan")),
         CommandSpec("sync-build", "Sync, then build; stops at the first failed phase.", cmd_build.cmd_sync_build,
                     aliases=("sb",), positionals=(TARGET,),
-                    options=(CONFIGURATION, OFFLINE, FORCE_GN, PLAN, DEVICE, ALL_DEVICES, PHYSICAL, SKIP_SUPPORT_REFRESH, SYNC_ARG),
+                    options=BUILD_OPTIONS,
                     forward=True, side_effects="Sync effects, then build effects.",
                     examples=("bcore sb", "bcore sb --sync-arg=--force --sync-arg=-D"),
                     notes="Extra arguments go to the build phase only; pass sync arguments with --sync-arg, "
                           "for example --sync-arg=--force --sync-arg=-D."),
         CommandSpec("sync-build-run", "Sync, build, then restart the browser with the built output.",
                     cmd_build.cmd_sync_build_run, aliases=("sbr",), positionals=(TARGET,),
-                    options=(CONFIGURATION, OFFLINE, FORCE_GN, PLAN, DEVICE, ALL_DEVICES, PHYSICAL, SKIP_SUPPORT_REFRESH, SYNC_ARG), forward=True,
+                    options=BUILD_OPTIONS, forward=True,
                     side_effects="Sync, build, and restart effects.",
                     examples=("bcore sbr", "bcore sbr --sync-arg=--force --sync-arg=-D"),
                     notes="Extra arguments go to the build phase only; pass sync arguments with --sync-arg, "
@@ -177,14 +186,15 @@ def build_registry():
                               "bcore test android brave_java_unit_tests --filter='BraveAppearancePreferencesTest.*' "
                               "--device=emulator-5554")),
         CommandSpec("run", "Restart the browser with an existing output; never builds.", cmd_build.cmd_run,
-                    positionals=(TARGET,), options=(CONFIGURATION, ARTIFACT, PLAN, DEVICE, ALL_DEVICES, PHYSICAL),
+                    positionals=(TARGET,), options=(CONFIGURATION, RUN_STANDALONE, ARTIFACT, PLAN, DEVICE, ALL_DEVICES,
+                                                    PHYSICAL),
                     side_effects="macOS: quits any running instance of the same application (from any checkout), "
                                  "then launches the selected one. Android: installs the APK over the existing app on "
                                  "the selected devices, stops that package there, and launches it. Profiles and app data are kept.",
                     notes="Older or independently built outputs may run. iOS checks source freshness, opens "
                           "the selected Simulator window, and checks the app stays running for one second. "
                           "Other targets do not inspect source state.",
-                    examples=("bcore run", "bcore run --artifact ./out/Custom/'Brave Browser Development.app'")),
+                    examples=("bcore run", "bcore run mac --standalone", "bcore run --artifact ./out/Custom/'Brave Browser Development.app'")),
         CommandSpec("deploy", "Install the Android build on a device and launch it (same as 'run android').",
                     cmd_build.cmd_deploy, positionals=(Positional("target", True, help="android"),),
                     options=(CONFIGURATION, ARTIFACT, PLAN, DEVICE, ALL_DEVICES, PHYSICAL),

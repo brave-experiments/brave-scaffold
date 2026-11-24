@@ -47,9 +47,13 @@ NOT_RUN = {
 
 # Fixture state an example assumes, and the exit codes that show it behaved as documented.
 BUILT, BUILT_CUSTOM, ANDROID, ANDROID_BUILT = "built", "built-custom", "android", "android-built"
+BUILT_STANDALONE = "built-standalone"
 MAC_EXAMPLES = {
     "bcore build": (None, {0}), "bcore build --offline": (None, {0}), "bcore build --plan": (None, {0}),
-    "bcore build -C Custom": (None, {0}), "bcore test brave_unit_tests": (None, {0}),
+    "bcore build -C Custom": (None, {0}), "bcore build --standalone": (None, {0}),
+    "bcore build mac --standalone": (None, {0}), "bcore build-run mac --standalone": (None, {0}),
+    "bcore run mac --standalone": (BUILT_STANDALONE, {0}),
+    "bcore test brave_unit_tests": (None, {0}),
     "bcore test mac brave_browser_tests --filter 'Example.*'": (None, {0}),
     "bcore test brave_browser_tests -- --gtest_repeat=2": (None, {0}),
     "bcore run": (BUILT, {0}),
@@ -126,6 +130,8 @@ def prepare(test, state):
         assert test.document("build")[0].returncode == 0
     if state == BUILT_CUSTOM:
         assert test.document("build", "-C", "Custom")[0].returncode == 0
+    if state == BUILT_STANDALONE:
+        assert test.document("build", "--standalone")[0].returncode == 0
 
 
 def _mac_test(command, state, expected):

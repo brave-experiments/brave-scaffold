@@ -33,7 +33,7 @@ Terminal errors show paths, reasons, and suggested commands, with a short limit 
 | --- | --- | --- |
 | `bcore android setup` | Prepare shared Android-on-Mac support and link this workspace | Uses the network; writes the shared checkout and preserves existing workspace copies |
 | `bpm [options] <package args>` | Checkout's package manager | Whatever the package command does |
-| `bcore build [target]` | Prepare, compile, and verify the output ([macOS](macos.md), [iOS](ios.md)); iOS runs `xcodebuild` | Writes build output; may apply patches |
+| `bcore build [target]` | Prepare, compile, and verify the output ([macOS](macos.md), [iOS](ios.md)); iOS runs `xcodebuild`; `--standalone` builds a macOS app that runs on another Mac ([details](macos.md#standalone-builds-for-another-mac)) | Writes build output; may apply patches |
 | `bcore build-run [target]` (`br`) | Build, then restart the browser with the output that build produced; extras go to the build phase | Effects of each phase |
 | `bcore capabilities` | Supported, limited, unverified, unsupported combinations | None; needs no checkout |
 | `bcore cd <checkout>` | Print the checkout's `src/brave` directory; with `scripts/bcore-shell.sh` sourced, change the shell's directory ([details](#cd)) | None |

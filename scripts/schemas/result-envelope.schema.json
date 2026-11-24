@@ -215,6 +215,9 @@
         "verified": {
           "type": "boolean"
         },
+        "standalone": {
+          "type": "boolean"
+        },
         "bundle_identifier": {
           "type": "string"
         },

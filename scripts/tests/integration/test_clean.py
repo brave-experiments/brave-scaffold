@@ -122,6 +122,14 @@ class CleanTests(SandboxTest):
         self.assertEqual(self.names(document), ["ios_Debug_simulator", "ios_Debug_x64_simulator"],
                          "derived data holds products for every architecture and is only matched without --arch")
 
+    def test_standalone_outputs_match_their_configuration_and_architecture(self):
+        self.make_dirs("Debug_standalone_arm64", "Debug_standalone", "Release_standalone_arm64")
+        result, document = self.clean("mac", "--arch", "arm64", "--configuration", "debug")
+        self.assertIn("Debug_standalone_arm64", self.names(document))
+        self.assertNotIn("Debug_standalone", self.names(document))
+        self.assertNotIn("Release_standalone_arm64", self.names(document))
+        self.assertTrue(clean.matches("Debug_standalone", "mac", "debug", "x64"))
+
     def test_without_an_arch_every_architecture_matches(self):
         self.make_dirs("Release", "android_Debug")
         result, document = self.clean("mac")

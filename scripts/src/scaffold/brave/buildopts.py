@@ -24,6 +24,12 @@ ANDROID_GN_ARGS = (("is_component_build", "false"), ("enable_android_secondary_a
 # Chromium's arm.gni turns branch protection off whenever the build host is an arm64 Mac, which strips it from
 # Android arm64 targets. Without BTI landing pads in V8's builtins, every renderer dies with SIGILL on BTI phones.
 ANDROID_ARM64_GN_ARGS = (("arm_control_flow_integrity", '"standard"'),)
+# A macOS component build loads hundreds of libraries from the output directory, so its app cannot be copied
+# elsewhere. --standalone links them into the bundle instead, in its own output directory so that component
+# builds and tests in the default directory never switch it back.
+STANDALONE_GN_ARG = ("is_component_build", "false")
+# Core's isComponentBuild(): component for Debug and Component outside Android; iOS forces it off.
+COMPONENT_CONFIGURATIONS = ("debug", "component")
 CONFIG_TOKENS = ("Debug", "Release", "Component", "Static")
 OS_ALIASES = {"mac": "mac", "macos": "mac", "android": "android", "ios": "ios", "linux": "linux",
               "win": "win", "windows": "win"}
@@ -153,6 +159,8 @@ class Effective:
     unresolved: list
     changes_output: bool = True
     chosen_gn_keys: frozenset = frozenset()
+    standalone: bool = False
+    component_build: bool | None = None
 
 
 def conflict(field_name, scaffold_value, forwarded_value, example):
@@ -171,19 +179,37 @@ def resolve_output_dir(src, build_dir):
     return path if path.is_absolute() else Path(os.path.normpath(src / "out" / build_dir))
 
 
-def default_build_dir(target, configuration, arch, tests=False):
+def default_build_dir(target, configuration, arch, tests=False, standalone=False):
     """Directory name (under src/out) Core's build script uses by default.
 
-    Android tests build in their own directory so they never change an app build's output.
+    Android tests build in their own directory so they never change an app build's output. Standalone macOS
+    builds get their own directory for the same reason: switching a directory between component and
+    non-component builds rebuilds almost everything in it.
     """
+    configuration = configuration + "_standalone" if standalone else configuration
     name = configuration if arch == "x64" else "%s_%s" % (configuration, arch)
     if target == "android" and tests:
         return "android_tests_" + name
     return name if target == "mac" else "%s_%s" % (target, name)
 
 
+def standalone_not_mac(target):
+    """Android and iOS builds are never component builds, so --standalone would change nothing there."""
+    reason = {"android": "; Android builds are already non-component builds",
+              "ios": "; iOS builds are already non-component builds"}.get(target, "")
+    return ScaffoldError("INVALID_INPUT", "--standalone applies to macOS only%s." % reason,
+                         details={"target": target, "example": "bcore build mac --standalone"})
+
+
+def component_build(target, configuration, gn_values):
+    """Whether Core builds the output as a component build; a forwarded --gn value decides first."""
+    if "is_component_build" in gn_values:
+        return {"true": True, "false": False}.get(gn_values["is_component_build"])  # None: computed by GN
+    return target == "mac" and configuration.lower() in COMPONENT_CONFIGURATIONS
+
+
 def resolve_effective(src, forwarded_tokens, target, configuration, explicit_target, explicit_configuration,
-                      explicit_offline, default_arch="arm64", tests=False):
+                      explicit_offline, default_arch="arm64", tests=False, standalone=False):
     """Combine scaffold selections with interpreted forwarded options.
 
     Explicit scaffold selections that disagree with forwarded ones fail before
@@ -200,6 +226,12 @@ def resolve_effective(src, forwarded_tokens, target, configuration, explicit_tar
         if explicit_target and os_name != explicit_target:
             raise conflict("The target", explicit_target, os_name, "bcore build %s" % os_name)
         effective_target, sources["target"] = os_name, "forwarded"
+    if standalone and effective_target != "mac":
+        raise standalone_not_mac(effective_target)
+    if standalone and fwd.gn_values.get("is_component_build", "false") != "false":
+        raise conflict("The component build setting", "--standalone (is_component_build:false)",
+                       "--gn=is_component_build:%s" % fwd.gn_values["is_component_build"],
+                       "bcore build mac --standalone")
     effective_configuration = configuration
     if fwd.build_config is not None:
         forwarded_config = fwd.build_config.lower()
@@ -217,7 +249,9 @@ def resolve_effective(src, forwarded_tokens, target, configuration, explicit_tar
         generated.append("--target_os=%s" % effective_target)
     if fwd.target_arch is None:
         generated.append("--target_arch=%s" % arch)
-    default_dir = default_build_dir(effective_target, effective_configuration, arch, tests)
+    # Configurations Core already builds without components (Release) need no directory of their own.
+    own_dir = standalone and component_build(effective_target, effective_configuration, {})
+    default_dir = default_build_dir(effective_target, effective_configuration, arch, tests, own_dir)
     build_dir_arg = fwd.build_dir if fwd.build_dir is not None else default_dir
     if fwd.build_dir is None:
         generated.extend(["-C", default_dir])
@@ -231,6 +265,8 @@ def resolve_effective(src, forwarded_tokens, target, configuration, explicit_tar
         for key, value in ANDROID_GN_ARGS + (ANDROID_ARM64_GN_ARGS if arch == "arm64" else ()):
             if key not in fwd.gn_keys:
                 generated.append("--gn=%s:%s" % (key, value))
+    if standalone and STANDALONE_GN_ARG[0] not in fwd.gn_keys:
+        generated.append("--gn=%s:%s" % STANDALONE_GN_ARG)
     if effective_configuration == "Release" and fwd.channel is None:
         generated.append("--channel=release")
     offline = explicit_offline or fwd.offline or fwd.remoteexec is False
@@ -261,6 +297,8 @@ def resolve_effective(src, forwarded_tokens, target, configuration, explicit_tar
                      output_dir=None if fwd.ninja_directory else output,
                      preparation_dir=output, build_dir_arg=build_dir_arg, generated=generated, forwarded=list(forwarded_tokens),
                      build_target=fwd.target, channel=fwd.channel, offline=offline, sources=sources,
-                     unresolved=unresolved, changes_output=not fwd.leaves_output,
+                     unresolved=unresolved, changes_output=not fwd.leaves_output, standalone=standalone,
+                     component_build=False if standalone else component_build(effective_target, effective_configuration,
+                                                                              fwd.gn_values),
                      chosen_gn_keys=frozenset(fwd.gn_keys | ({"use_remoteexec"} if fwd.remoteexec is not None
                                                              else set())))

@@ -158,6 +158,8 @@ def build_step(identity, effective, subcommand, arguments, argv, needs, conditio
 
 def verify_step(effective, needs):
     expectation = "an Android APK" if effective.target == "android" else "the Brave application"
+    if effective.standalone:
+        expectation += " with every library it loads inside its bundle"
     return Step("verify-output", "Check that the build produced %s in the resolved output." % expectation,
                 "unresolved" if effective.unresolved else "planned",
                 reads=[str(effective.output_dir)] if effective.output_dir else [], needs=list(needs),
