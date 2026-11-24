@@ -66,44 +66,17 @@ def read_bundle(path):
             "version": info.get("CFBundleShortVersionString")}
 
 
-COMPONENT_SETTING = re.compile(r"^\s*is_component_build\s*=\s*([^\s#]+)", re.MULTILINE)
-GENERATED_IMPORT = re.compile(r'^\s*import\(\s*"[^"]*args_generated\.gni"\s*\)', re.MULTILINE)
-UNKNOWN = "unknown"  # set to an expression GN evaluates, such as is_debug
-
-
-def _last_component_value(output_dir, name, after_import=False):
-    """True, False, UNKNOWN for a computed value, or None when the file sets nothing."""
-    try:
-        text = (Path(output_dir) / name).read_text(encoding="utf-8", errors="replace")
-    except OSError:
-        return None
-    if after_import:
-        imports = list(GENERATED_IMPORT.finditer(text))
-        text = text[imports[-1].end():] if imports else text
-    found = COMPONENT_SETTING.findall(text)
-    if not found:
-        return None
-    return {"true": True, "false": False}.get(found[-1], UNKNOWN)
-
-
-def args_gn_component_override(output_dir):
-    """A user's own is_component_build line in args.gn after the import; GN keeps it whatever Core generates.
-
-    Returns True, False, UNKNOWN, or None when args.gn sets nothing there.
-    """
-    return _last_component_value(output_dir, "args.gn", after_import=True)
+COMPONENT_SETTING = re.compile(r"^\s*is_component_build\s*=\s*(true|false)\b", re.MULTILINE)
 
 
 def recorded_component_build(output_dir):
-    """Whether the output directory was last generated as a component build, or None when it cannot be told.
-
-    Core writes its arguments to args_generated.gni, which args.gn imports; a value written in args.gn after
-    the import wins, and one written before it is replaced by the import.
-    """
-    override = args_gn_component_override(output_dir)
-    if override is None:
-        override = _last_component_value(output_dir, "args_generated.gni")
-    return None if override == UNKNOWN else override
+    """Whether Core last generated the output directory as a component build, or None when it cannot be told."""
+    try:
+        text = (Path(output_dir) / "args_generated.gni").read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+    found = COMPONENT_SETTING.findall(text)
+    return (found[-1] == "true") if found else None
 
 
 # --- restart -------------------------------------------------------------------

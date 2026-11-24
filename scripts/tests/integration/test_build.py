@@ -380,7 +380,7 @@ class StandaloneBuildTests(BuildTestCase):
         result, document = self.document("run", "mac", "--standalone", "--plan")
         self.assertEqual(document["error"]["details"]["searched"], "verified standalone build records")
 
-    def test_run_standalone_skips_an_output_whose_latest_standalone_build_failed_the_check(self):
+    def test_run_standalone_warns_when_a_later_standalone_build_failed_the_check(self):
         self.assertEqual(self.document("build", "--standalone")[0].returncode, 0)
         library = self.src / "out" / "Debug_standalone_arm64" / "libbase.dylib"
         library.write_bytes(macho_bytes())
@@ -388,42 +388,10 @@ class StandaloneBuildTests(BuildTestCase):
         helper.write_bytes(macho_bytes(["@rpath/libbase.dylib"], ["@loader_path/../../.."], filetype=2))
         result, document = self.document("build", "--standalone", env=self.env(FAKE_EXTRA_MACHO=str(helper)))
         self.assertEqual(document["error"]["code"], "ARTIFACT_MISMATCH")
-        result, document = self.document("run", "mac", "--standalone", "--plan")
-        self.assertEqual(document["error"]["code"], "ARTIFACT_MISSING")
-        result, document = self.document("build", "--standalone", env=self.env(FAKE_EXIT="1"))
-        self.assertEqual(document["error"]["code"], "CHILD_FAILED")
-        result, document = self.document("run", "mac", "--standalone", "--plan")
-        self.assertEqual(document["error"]["code"], "ARTIFACT_MISSING", "a later failed compile does not forgive it")
-
-    def test_run_keeps_the_default_app_once_core_regenerates_it_as_a_component_build(self):
-        self.assertEqual(self.document("build", "--standalone", "-C", "Debug_arm64")[0].returncode, 0)
-        self.write_args(component=True)
-        result, document = self.document("run", "mac", "--plan")
-        self.assertIsNone(document["error"], result.stdout)
-
-    def test_run_standalone_skips_an_output_regenerated_as_a_component_build(self):
-        self.assertEqual(self.document("build", "--standalone")[0].returncode, 0)
-        self.write_args(component=True, name="Debug_standalone_arm64")
-        result, document = self.document("run", "mac", "--standalone", "--plan")
-        self.assertEqual(document["error"]["code"], "ARTIFACT_MISSING")
-
-    def test_standalone_conflicts_with_a_component_setting_in_args_gn_before_anything_runs(self):
-        out = self.src / "out" / "Debug_standalone_arm64"
-        out.mkdir(parents=True)
-        (out / "args.gn").write_text('import("//out/Debug_standalone_arm64/args_generated.gni")\n'
-                                     'is_component_build = true\n')
-        for value in ("true", "is_debug"):
-            (out / "args.gn").write_text('import("//out/Debug_standalone_arm64/args_generated.gni")\n'
-                                         'is_component_build = %s\n' % value)
-            for extra in ([], ["--plan"]):
-                with self.subTest(value=value, extra=extra):
-                    result, document = self.document("build", "--standalone", *extra)
-                    self.assertEqual((result.returncode, document["error"]["code"]), (2, "SELECTOR_CONFLICT"))
-                    self.assertIn("args.gn", document["error"]["message"])
-        result, document = self.document("build", "--standalone", "--ninja", "C:Elsewhere")
-        self.assertEqual(document["error"]["code"], "SELECTOR_CONFLICT", "a Ninja directory does not hide args.gn")
-        self.assertEqual(self.node_calls(), [])
-
+        result, document = self.document("run", "mac", "--standalone")
+        self.assertIsNone(document["error"], result.stderr)
+        self.assertIn("ARTIFACT_FRESHNESS_UNKNOWN", [item["code"] for item in document["warnings"]],
+                      "the older verified build may run, with a warning")
     def test_plain_run_points_at_the_standalone_build_when_only_that_exists(self):
         self.assertEqual(self.document("build", "--standalone")[0].returncode, 0)
         result, document = self.document("run", "mac", "--plan")
@@ -431,23 +399,6 @@ class StandaloneBuildTests(BuildTestCase):
         self.assertIn("--standalone", document["error"]["message"])
         self.assertIn("--standalone", document["error"]["repairs"][0]["argv"])
         self.assertEqual(document["error"]["repairs"][0]["argv"][:3], ["bcore", "run", "mac"])
-
-    def test_run_standalone_repairs_keep_the_configuration(self):
-        result, document = self.document("run", "mac", "--standalone", "--configuration", "release", "--plan")
-        self.assertEqual(document["error"]["code"], "ARTIFACT_MISSING")
-        for item in document["error"]["repairs"]:
-            self.assertEqual(item["argv"][-4:-2], ["--configuration", "release"], item["argv"])
-
-    def test_a_user_override_in_args_gn_prints_no_rebuild_notice(self):
-        out = self.src / "out" / "Debug_arm64"
-        out.mkdir(parents=True)
-        (out / "args.gn").write_text('import("//out/Debug_arm64/args_generated.gni")\nis_component_build = false\n')
-        (out / "args_generated.gni").write_text("is_component_build=true\n")
-        result, _ = self.document("build")
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertNotIn("Full rebuild:", result.stderr)
-        self.assertIs(json.loads(result.stdout)["data"]["build"]["effective"]["component_build"], False,
-                      "the reported mode is what GN builds")
 
     def test_standalone_and_an_explicit_artifact_are_not_combined(self):
         self.assertEqual(self.document("build")[0].returncode, 0)

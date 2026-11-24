@@ -51,18 +51,6 @@ def select_build(ctx, target_token, forwarded, tests=False):
             "iOS builds run through Xcode, not the package build command.",
             details={"forwarded": "ios", "example": "bcore build ios"})
     require_available_target(effective.target, "test" if tests else "build")
-    # The directory GN generates, even when a forwarded Ninja -C leaves the artifact directory unresolved.
-    gn_dir = effective.output_dir or effective.preparation_dir
-    override = macos.args_gn_component_override(gn_dir) if gn_dir is not None else None
-    if not effective.standalone and override is not None:
-        effective.component_build = None if override == macos.UNKNOWN else override  # GN keeps the user's line
-    if effective.standalone and override in (True, macos.UNKNOWN):
-        raise ScaffoldError(
-            "SELECTOR_CONFLICT", "--standalone asks for a non-component build, but %s sets is_component_build to %s "
-            "after its import, and GN keeps that line. Remove the line or drop --standalone." % (
-                Path(gn_dir) / "args.gn", "true" if override is True else "a computed value"),
-            details={"scaffold": "--standalone (is_component_build:false)", "forwarded": "args.gn",
-                     "example": "bcore build mac --standalone"})
     return identity, effective
 
 
@@ -211,8 +199,6 @@ def component_mode_notice(effective):
     """Console notice when this build switches the output between component and non-component builds."""
     if effective.target != "mac" or effective.output_dir is None or effective.component_build is None:
         return None
-    if macos.args_gn_component_override(effective.output_dir) is not None:
-        return None  # GN keeps the user's own setting in args.gn, so the mode does not change
     previous = macos.recorded_component_build(effective.output_dir)
     if previous is None or previous == effective.component_build:
         return None
@@ -958,11 +944,6 @@ def run_candidates(ctx, identity, target, configuration, arch, standalone=False)
     for state in output_states(identity, ctx.state_root):
         success = state.get("success") or {}
         artifact = success.get("artifact") or {}
-        if not state.get("output_dir"):
-            continue
-        if standalone and (failed_check_since_success(state) or
-                           macos.recorded_component_build(state["output_dir"]) is True):
-            continue  # a later build failed the bundle check, or the directory is component again
         if artifact.get("target") == target and artifact.get("configuration") == configuration \
                 and artifact.get("arch") == arch:
             # A configuration Core already builds without components (Release) is the same build either way.
@@ -972,9 +953,7 @@ def run_candidates(ctx, identity, target, configuration, arch, standalone=False)
             else:
                 # The default directory may hold the other mode, for example after --standalone -C Debug_arm64.
                 other_mode.add(os.path.realpath(artifact["path"]))
-    # Unless the directory has since been generated as a component build again, for example by Core's own build.
-    if paths and not standalone and os.path.realpath(paths[0]) in other_mode \
-            and macos.recorded_component_build(default) is not True:
+    if paths and not standalone and os.path.realpath(paths[0]) in other_mode:
         paths.pop(0)
     for path in paths:
         try:
@@ -983,14 +962,6 @@ def run_candidates(ctx, identity, target, configuration, arch, standalone=False)
             continue
         found[os.path.realpath(path)] = bundle
     return list(found.values())
-
-
-def failed_check_since_success(state):
-    """Whether a build after the recorded success failed output verification, such as the standalone check."""
-    success_id = (state.get("success") or {}).get("operation_id")
-    attempts = state.get("attempts") or []
-    start = next((index for index, item in enumerate(attempts) if item.get("operation_id") == success_id), -1)
-    return any(item.get("outcome") == "output-invalid" for item in attempts[start + 1:])
 
 
 def select_artifact(ctx, identity, target, configuration, arch):
@@ -1006,15 +977,14 @@ def select_artifact(ctx, identity, target, configuration, arch):
     standalone = bool(ctx.parsed.get("standalone"))
     candidates = run_candidates(ctx, identity, target, configuration, arch, standalone)
     if not candidates:
-        selection = ["--configuration", configuration.lower()] if configuration != "Debug" else []
-        mode = (["--standalone"] if standalone else []) + selection
+        mode = ["--standalone"] if standalone else []
         message = "No %s %s %s%s application was found for this checkout." % (
             target, configuration, arch, " standalone" if standalone else "")
         repairs = [repair(["bcore", "build", target, *mode, "--checkout", str(identity.core)]),
                    repair(["bcore", "build-run", target, *mode, "--checkout", str(identity.core)])]
         if not standalone and run_candidates(ctx, identity, target, configuration, arch, standalone=True):
             message += " A standalone build exists; run it with --standalone."
-            repairs.insert(0, repair(["bcore", "run", target, "--standalone", *selection, "--checkout",
+            repairs.insert(0, repair(["bcore", "run", target, "--standalone", "--checkout",
                                       str(identity.core)]))
         raise ScaffoldError(
             "ARTIFACT_MISSING", message,

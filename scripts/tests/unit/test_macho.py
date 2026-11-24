@@ -141,21 +141,13 @@ class OutsideReferenceTests(BundleTestCase):
 
 
 class RecordedComponentBuildTests(BundleTestCase):
-    def test_the_generated_value_is_read_and_args_gn_overrides_it(self):
+    def test_the_value_core_generated_is_read(self):
         self.out.mkdir(parents=True)
         self.assertIsNone(macos.recorded_component_build(self.out))
-        (self.out / "args.gn").write_text('import("//out/Debug_arm64/args_generated.gni")\n')
         (self.out / "args_generated.gni").write_text("is_debug=true\nis_component_build=true\n")
         self.assertIs(macos.recorded_component_build(self.out), True)
-        (self.out / "args.gn").write_text('import("//out/Debug_arm64/args_generated.gni")\nis_component_build = false\n')
+        (self.out / "args_generated.gni").write_text("is_component_build=false\n")
         self.assertIs(macos.recorded_component_build(self.out), False)
-        (self.out / "args.gn").write_text('is_component_build = false\nimport("//out/Debug_arm64/args_generated.gni")\n')
-        self.assertIs(macos.recorded_component_build(self.out), True, "the import comes later and wins")
-        (self.out / "args.gn").write_text('import("//out/Debug_arm64/args_generated.gni")\nis_component_build = false\n'
-                                          '# keep in sync with args_generated.gni\n')
-        self.assertIs(macos.args_gn_component_override(self.out), False, "a later mention is not the import")
-        (self.out / "args.gn").write_text('import("//out/Debug_arm64/args_generated.gni")\nis_component_build = is_debug\n')
-        self.assertIsNone(macos.recorded_component_build(self.out), "a computed value is unknown")
 
 
 if __name__ == "__main__":
