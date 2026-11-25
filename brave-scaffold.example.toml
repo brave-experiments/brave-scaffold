@@ -6,6 +6,10 @@
 # Copy to brave-scaffold.toml and replace the example Core path before use.
 schema_version = 1
 
+# Optional bravebot checkout for bbot; relative paths resolve beside this file.
+# Defaults to bravebot beside the scaffold's scripts/ directory.
+# bravebot_path = "bravebot"
+
 [logging]
 # Console detail: quiet, normal, or verbose. Diagnostic logs are always saved.
 verbosity = "normal"

@@ -1,0 +1,461 @@
+#!/bin/sh
+# Copyright (c) 2026 The Brave Authors. All rights reserved.
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this file,
+# You can obtain one at https://mozilla.org/MPL/2.0/.
+
+# Runs release builds of a local bravebot checkout. `bbot build` makes the
+# copies; every other invocation runs one and never rebuilds.
+#
+#   bbot --source <dir|name> <command>   use a worktree of the checkout for build, br, make and cal
+#   bbot build [ui]   build the checkout as it is now and install the copy:
+#                     the terminal app, or with `ui` the desktop app (macOS)
+#   bbot br [args]    build the terminal app, then run it with args
+#   bbot br ui        build the desktop app, then open it
+#   bbot make args    run make with args in the checkout
+#   bbot cal          shorthand for: bbot make check-all-local (also check-all-local)
+#   bbot status       show the installed builds and whether the checkout has moved on
+#   bbot ui           open the installed desktop app
+#   bbot [args]       run the installed terminal app in this directory with args
+#
+# The checkout is `bravebot_path` in brave-scaffold.toml, else <scaffold>/bravebot.
+# `--source <dir|name>` before the command selects one of its Git worktrees: a
+# directory, or a name under <checkout>/.worktrees. BBOT_SOURCE sets the default.
+# The installed builds are single copies under <scaffold>/.bbot, so building from
+# another worktree replaces the copy, and the build record names its source.
+#
+# Builds run through direnv in the checkout, because the backend credentials are
+# compiled in and only that checkout has the approved .envrc. Without direnv, or
+# with a missing or blocked .envrc, builds stop instead of running without them.
+unset CDPATH
+invocation="bbot $*"
+
+# Resolve this installation through any symlinks, as bcore does.
+self=$0
+while [ -h "$self" ]; do
+  case $self in
+    */*) link_dir=${self%/*} ;;
+    *) link_dir=. ;;
+  esac
+  link_dir=$(cd -P "$link_dir" && pwd)
+  target=$(PATH="$PATH:/usr/bin:/bin" readlink "$self")
+  case $target in
+    /*) self=$target ;;
+    *) self=$link_dir/$target ;;
+  esac
+done
+case $self in
+  */*) scripts_dir=${self%/*} ;;
+  *) scripts_dir=. ;;
+esac
+scripts_dir=$(cd -P "$scripts_dir" && pwd)
+scaffold_dir=${scripts_dir%/*}
+config=$scaffold_dir/brave-scaffold.toml
+
+# The checkout path from the scaffold configuration, read with the scaffold's own interpreter.
+configured_path() {
+  [ -f "$config" ] || return 0
+  python="$scripts_dir/.venv/bin/python"
+  if [ ! -x "$python" ]; then
+    echo "bbot: the scaffold Python runtime is missing: $python (needed to read $config)" >&2
+    exit 3
+  fi
+  "$python" -I -c '
+import os, sys, tomllib
+from pathlib import Path
+path = Path(sys.argv[1])
+try:
+    value = tomllib.loads(path.read_text(encoding="utf-8")).get("bravebot_path")
+except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError) as error:
+    sys.exit("bbot: cannot read %s: %s" % (path, error))
+if value is not None:
+    if not isinstance(value, str) or not value:
+        sys.exit("bbot: bravebot_path in %s must be a non-empty directory path" % path)
+    value = Path(value).expanduser()
+    print(os.path.normpath(value if value.is_absolute() else path.parent / value))
+' "$config" || exit 1
+}
+
+main_dir=$(configured_path) || exit
+[ -n "$main_dir" ] || main_dir=$scaffold_dir/bravebot
+
+common_dir() {
+  git -C "$1" rev-parse --path-format=absolute --git-common-dir 2>/dev/null
+}
+
+# The top level of the checkout or of any linked worktree of the same repository.
+require_checkout_worktree() {
+  main_common=$(common_dir "$main_dir") &&
+    [ "$(git -C "$main_dir" rev-parse --show-toplevel 2>/dev/null)" = "$(cd -P "$main_dir" 2>/dev/null && pwd)" ] || {
+    echo "bbot: $main_dir is not a Git checkout; set bravebot_path in $config" >&2
+    exit 1
+  }
+  if [ "$(common_dir "$1")" != "$main_common" ]; then
+    echo "bbot: $1 is not a worktree of $main_dir" >&2
+    exit 1
+  fi
+  top=$(git -C "$1" rev-parse --show-toplevel)
+  if [ "$top" != "$(cd -P "$1" && pwd)" ]; then
+    echo "bbot: $1 is inside a worktree; use its top level, $top" >&2
+    exit 1
+  fi
+}
+
+# A name under <checkout>/.worktrees (a value without a slash or leading dot is tried as a name first), or a directory,
+# as an absolute path.
+resolve_source() {
+  case $1 in
+    */*|.*) ;;
+    *) [ -d "$main_dir/.worktrees/$1" ] && { (cd -P "$main_dir/.worktrees/$1" && pwd); return; } ;;
+  esac
+  if [ -d "$1" ]; then
+    (cd -P "$1" && pwd)
+  else
+    echo "bbot: no worktree '$1' (not a directory, not under $main_dir/.worktrees)" >&2
+    return 1
+  fi
+}
+
+# --source wins, then BBOT_SOURCE, then the worktree of the checkout containing the current directory, then the
+# checkout itself. Only the commands that use a source resolve them (see select_source).
+source_dir=$main_dir
+source_given=
+if [ "${1-}" = --source ]; then
+  [ $# -ge 3 ] || { echo "usage: bbot --source <dir|name> <command>" >&2; exit 2; }
+  case $3 in
+    build|br|make|cal|check-all-local|status) ;;
+    *) echo "usage: bbot --source <dir|name> build|br|make|cal|status ..." >&2; exit 2 ;;
+  esac
+  source_dir=$(resolve_source "$2") || exit 1
+  source_given=1
+  shift 2
+fi
+
+select_source() {
+  [ -z "$source_given" ] || return 0
+  if [ -n "${BBOT_SOURCE-}" ]; then
+    source_dir=$(resolve_source "$BBOT_SOURCE") || exit 1
+    return 0
+  fi
+  here=$(git rev-parse --show-toplevel 2>/dev/null) || return 0
+  main_common=$(common_dir "$main_dir") || return 0
+  [ "$(common_dir "$here")" = "$main_common" ] && source_dir=$here
+  return 0
+}
+install_dir=$scaffold_dir/.bbot
+binary=$install_dir/bravebot
+record=$install_dir/build-info
+app="$install_dir/ui/Brave Bot.app"
+app_record=$install_dir/ui/build-info
+
+# Changes in the source, leaving out worktrees kept inside the checkout. A status that cannot be read counts
+# as a change, so a build is never recorded as clean without evidence.
+changes() {
+  git -C "$1" status --porcelain -- . ':(exclude).worktrees' 2>/dev/null || echo "status unavailable"
+}
+
+source_state() {
+  sha=$(git -C "$source_dir" rev-parse HEAD 2>/dev/null) || return 1
+  if [ -n "$(changes "$source_dir")" ]; then
+    dirty=dirty
+  else
+    dirty=clean
+  fi
+}
+
+# One log per build, make, or cal: the invocation, source, each command with its directory, its output, and
+# its exit status. Environment values are never written. The newest 20 logs are kept.
+start_log() {
+  mkdir -p "$install_dir/logs" && chmod 700 "$install_dir" || exit
+  log=$install_dir/logs/$(date -u +%Y%m%dT%H%M%SZ)-$$-$1.log
+  printf '%s\nstarted=%s\nsource=%s\nsha=%s\nstate=%s\n' "$invocation" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    "$source_dir" "$sha" "$dirty" >"$log" || exit
+  echo "Log: $log" >&2
+  # Temporary files an interrupted earlier run left behind; one operator uses the checkout at a time.
+  rm -f "$install_dir/logs"/*.log.cargo-report "$install_dir/logs"/*.log.status
+  ls -1 "$install_dir/logs" | grep '\.log$' | sort -r | tail -n +21 | while IFS= read -r old; do
+    rm -f "$install_dir/logs/$old"
+  done
+}
+
+# run_logged <directory> <file for stdout, or empty> <command...>: stream output to stderr and the log.
+run_logged() {
+  run_dir=$1 stdout_file=$2
+  shift 2
+  command_line=$(printf '$ (in %s) %s' "$run_dir" "$*")
+  echo "$command_line" >&2
+  printf '\n%s\n' "$command_line" >>"$log"
+  status_file=$log.status
+  {
+    if [ -n "$stdout_file" ]; then
+      (cd "$run_dir" && "$@" >"$stdout_file")
+    else
+      (cd "$run_dir" && "$@")
+    fi 2>&1
+    echo $? >"$status_file"
+  } | tee -a "$log" >&2
+  code=$(cat "$status_file" 2>/dev/null) || code=1
+  rm -f "$status_file"
+  echo "exit=$code" >>"$log"
+  return "$code"
+}
+
+# The source may change while a long build runs; then the record cannot claim the commit read before it.
+recheck_source() {
+  started_sha=$sha
+  if ! source_state || [ "$sha" != "$started_sha" ] || [ "$dirty" = dirty ]; then
+    sha=$started_sha
+    dirty=dirty
+  fi
+}
+
+# refuse <exit status> <message>: stop before building, on the console and in the log.
+refuse() {
+  echo "bbot: $2" >&2
+  printf 'refused: %s\nexit=%s\n' "$2" "$1" >>"$log"
+  exit "$1"
+}
+
+# prepare_build <log name>
+prepare_build() {
+  select_source
+  require_checkout_worktree "$source_dir"
+  source_state || { echo "bbot: $source_dir is not a Git worktree" >&2; exit 1; }
+  start_log "$1"
+  command -v direnv >/dev/null 2>&1 ||
+    refuse 3 "direnv is required to load the credentials in $main_dir/.envrc; nothing was built"
+  [ -f "$main_dir/.envrc" ] || refuse 1 "$main_dir/.envrc is missing; nothing was built"
+  errors=$(direnv exec "$main_dir" true 2>&1 >/dev/null)
+  status=$?
+  printf '\n$ direnv exec %s true\nexit=%s\n' "$main_dir" "$status" >>"$log"
+  case $errors in
+    *".envrc is blocked"*)
+      echo "$errors" >&2
+      refuse 1 "the environment in $main_dir is not approved; review its .envrc and run 'direnv allow' there"
+      ;;
+  esac
+  case $status in
+    [1-9]*)
+      [ -n "$errors" ] && echo "$errors" >&2
+      refuse 1 "loading the environment in $main_dir failed; nothing was built"
+      ;;
+  esac
+}
+
+write_record() {
+  printf 'source=%s\nsha=%s\nstate=%s\nbuilt=%s\n' "$source_dir" "$sha" "$2" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >"$1" || {
+    echo "bbot: could not write $1" >&2
+    exit 1
+  }
+}
+
+# Before replacing an installed copy, mark its record so an interrupted install is not mistaken for a good one.
+# The record keeps describing the copy still in place; only its state changes.
+begin_install() {
+  mkdir -p "$install_dir" "${1%/*}" && chmod 700 "$install_dir" || exit  # the copies hold credentials
+  if [ -f "$1" ]; then
+    sed 's/^state=.*/state=installing/' "$1" >"$1.new" && mv "$1.new" "$1" || {
+      echo "bbot: could not update $1" >&2
+      exit 1
+    }
+  else
+    write_record "$1" installing
+  fi
+}
+
+warn_if_stale() {
+  [ -f "$1" ] || {
+    echo "bbot: warning: the installed copy has no build record, so it cannot be checked; run 'bbot build$2'" >&2
+    return 0
+  }
+  built_source=$(sed -n 's/^source=//p' "$1" 2>/dev/null)
+  [ -n "$built_source" ] || built_source=$source_dir
+  built_sha=$(sed -n 's/^sha=//p' "$1" 2>/dev/null)
+  built_state=$(sed -n 's/^state=//p' "$1" 2>/dev/null)
+  if [ "$built_state" = installing ]; then
+    echo "bbot: warning: an earlier install did not finish, so the installed copy may not match its record; run 'bbot build$2'" >&2
+    return 0
+  fi
+  current=$(git -C "$built_source" rev-parse HEAD 2>/dev/null) || {
+    echo "bbot: warning: $built_source no longer exists, so the build cannot be checked against it" >&2
+    return 0
+  }
+  if [ "$current" != "$built_sha" ]; then
+    echo "bbot: warning: the installed build does not match HEAD of $built_source; run 'bbot build$2' to update" >&2
+  elif [ "$built_state" = dirty ]; then
+    echo "bbot: warning: the installed build was made from uncommitted changes in $built_source" >&2
+  elif [ -n "$(changes "$built_source")" ]; then
+    echo "bbot: warning: $built_source has uncommitted changes the installed build may not include" >&2
+  fi
+}
+
+# Whether a process runs from the installed desktop app or one of its helpers. Only executable paths are
+# listed, and the path reaches awk through the environment, so no process's arguments (not even this
+# check's) can match, and the path is compared as text, not as a pattern.
+# A process list that cannot be read refuses the install rather than assuming nothing runs.
+app_running() {
+  processes=$(ps -axo comm= 2>/dev/null) ||
+    refuse 1 "cannot list running processes to check whether Brave Bot runs from $app; nothing was installed"
+  printf '%s\n' "$processes" |
+    BBOT_APP_PREFIX="$app/" awk 'index($0, ENVIRON["BBOT_APP_PREFIX"]) == 1 { found = 1 } END { exit !found }'
+}
+
+# The previous desktop app, set aside by an install that did not finish, goes back in place.
+restore_app_aside() {
+  if [ ! -e "$app" ] && [ -e "$app.old" ]; then
+    mv "$app.old" "$app" || exit
+  fi
+}
+
+show_build() {
+  if [ -e "$2" ] || [ -e "$2.old" ]; then
+    echo "[$1]"
+    cat "$3" 2>/dev/null || echo "(no build record)"
+  else
+    echo "[$1] not installed"
+  fi
+}
+
+build_cli() {
+  prepare_build build
+  # Run in the source so its toolchain file and cargo configuration apply, and ask cargo where the binary went.
+  # bravebot's build refuses missing credentials unless BRAVEBOT_ALLOW_UNCONFIGURED_BUILD=1, which its own
+  # release bundle also turns off; set inside the loaded environment so neither the shell nor .envrc can skip it.
+  report=$log.cargo-report
+  run_logged "$source_dir" "$report" direnv exec "$main_dir" env BRAVEBOT_ALLOW_UNCONFIGURED_BUILD=0 \
+    cargo build --release --locked --manifest-path "$source_dir/Cargo.toml" --bin bravebot \
+    --message-format=json-render-diagnostics || {
+    code=$?
+    rm -f "$report"
+    exit "$code"
+  }
+  built=$(sed -n 's/.*"executable":"\([^"]*\)".*/\1/p' "$report" | tail -n 1)
+  rm -f "$report"
+  [ -n "$built" ] && [ -x "$built" ] || refuse 1 "cargo reported no bravebot executable; nothing was installed"
+  recheck_source
+  mkdir -p "$install_dir" && chmod 700 "$install_dir" || exit
+  cp "$built" "$binary.new" || {
+    rm -f "$binary.new"
+    refuse 1 "could not copy $built"
+  }
+  # Mark the record only now: until this point the installed copy is untouched.
+  begin_install "$record"
+  mv "$binary.new" "$binary" || {
+    rm -f "$binary.new"
+    refuse 1 "could not install $binary"
+  }
+  write_record "$record" "$dirty"
+  echo "bbot: installed $binary ($sha, $dirty)" | tee -a "$log" >&2
+}
+
+build_ui() {
+  [ "$(uname -s)" = Darwin ] || { echo "bbot build ui: macOS only" >&2; exit 1; }
+  # A shell under Rosetta reports x86_64 from uname, so ask the hardware.
+  if [ "$(sysctl -n hw.optional.arm64 2>/dev/null)" = 1 ]; then
+    arch=arm64
+  else
+    case $(uname -m) in
+      x86_64) arch=x64 ;;
+      *) echo "bbot build ui: unsupported architecture $(uname -m)" >&2; exit 1 ;;
+    esac
+  fi
+  prepare_build build-ui
+  # Replacing the bundle under a running instance would make it load parts of a different build.
+  app_running && refuse 1 "Brave Bot is running from $app; quit Brave Bot first, then run 'bbot build ui' again"
+  built="$source_dir/ui/dist/Brave Bot-darwin-$arch/Brave Bot.app"
+  mkdir -p "$install_dir" && chmod 700 "$install_dir" || exit
+  marker=$install_dir/.ui-build-started
+  : >"$marker" || exit
+  run_logged "$source_dir" "" direnv exec "$main_dir" make -C "$source_dir" app-bundle || exit
+  # An older bundle left at the same path is not this build's output.
+  if [ ! -d "$built" ] || [ -z "$(find "$built" -newer "$marker" -print 2>/dev/null | head -n 1)" ]; then
+    produced=
+    for bundle in "$source_dir/ui/dist"/"Brave Bot-darwin-"*; do
+      [ -n "$(find "$bundle" -newer "$marker" -print 2>/dev/null | head -n 1)" ] && produced="$produced ${bundle##*/}"
+    done
+    refuse 1 "the build did not produce a new $built${produced:+; it produced:$produced}; nothing was installed"
+  fi
+  recheck_source
+  restore_app_aside
+  rm -rf "$app.new" "$app.old" || exit
+  ditto "$built" "$app.new" || refuse 1 "could not copy $built"
+  # Again, just before the swap, because the app may have been opened while the build or the copy ran.
+  if app_running; then
+    rm -rf "$app.new"
+    refuse 1 "Brave Bot was opened from $app during the build; quit Brave Bot first, then run 'bbot build ui' again"
+  fi
+  begin_install "$app_record"
+  # Keep the previous app until the new one is in place.
+  if [ -e "$app" ]; then
+    mv "$app" "$app.old" || refuse 1 "could not set aside $app"
+  fi
+  mv "$app.new" "$app" || { [ -e "$app.old" ] && mv "$app.old" "$app"; refuse 1 "could not install $app"; }
+  rm -rf "$app.old"
+  write_record "$app_record" "$dirty"
+  echo "bbot: installed $app ($sha, $dirty)" | tee -a "$log" >&2
+}
+
+case ${1-} in
+  build)
+    case ${2-} in
+      "") [ $# -eq 1 ] || { echo "usage: bbot build [ui]" >&2; exit 2; }; build_cli ;;
+      ui) [ $# -eq 2 ] || { echo "usage: bbot build [ui]" >&2; exit 2; }; build_ui ;;
+      *) echo "usage: bbot build [ui]" >&2; exit 2 ;;
+    esac
+    ;;
+  br)
+    if [ "${2-}" = ui ]; then
+      [ $# -eq 2 ] || { echo "usage: bbot br ui" >&2; exit 2; }
+      build_ui
+      exec open "$app"
+    fi
+    shift
+    build_cli
+    exec "$binary" "$@"
+    ;;
+  make)
+    shift
+    prepare_build make
+    run_logged "$source_dir" "" direnv exec "$main_dir" make -C "$source_dir" "$@"
+    exit
+    ;;
+  cal|check-all-local)
+    [ $# -eq 1 ] || { echo "usage: bbot $1" >&2; exit 2; }
+    prepare_build cal
+    run_logged "$source_dir" "" direnv exec "$main_dir" make -C "$source_dir" check-all-local
+    exit
+    ;;
+  status)
+    show_build cli "$binary" "$record"
+    show_build ui "$app" "$app_record"
+    if [ -z "$source_given" ] && [ -n "${BBOT_SOURCE-}" ]; then
+      source_dir=$(resolve_source "$BBOT_SOURCE") || source_dir=
+    else
+      select_source
+    fi
+    if ! common_dir "$main_dir" >/dev/null; then
+      echo "[worktree]"
+      echo "$main_dir is not a Git checkout; set bravebot_path in $config"
+    elif [ -n "$source_dir" ] && [ "$(common_dir "$source_dir")" != "$(common_dir "$main_dir")" ]; then
+      echo "[worktree]"
+      echo "$source_dir is not a worktree of $main_dir"
+    elif [ -n "$source_dir" ] && source_state; then
+      echo "[worktree]"
+      echo "source=$source_dir"
+      echo "sha=$sha"
+      echo "state=$dirty"
+    fi
+    ;;
+  ui)
+    [ $# -eq 1 ] || { echo "usage: bbot ui" >&2; exit 2; }
+    restore_app_aside
+    [ -d "$app" ] || { echo "bbot: no desktop app installed; run 'bbot build ui'" >&2; exit 1; }
+    warn_if_stale "$app_record" " ui"
+    exec open "$app"
+    ;;
+  *)
+    [ -x "$binary" ] || { echo "bbot: no build installed; run 'bbot build'" >&2; exit 1; }
+    warn_if_stale "$record" ""
+    exec "$binary" "$@"
+    ;;
+esac

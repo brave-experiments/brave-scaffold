@@ -20,7 +20,8 @@ SCHEMA_VERSION = 1
 CONFIG_NAME = "brave-scaffold.toml"
 ALIAS_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]*")
 PLATFORM_NAMES = ("mac", "macos", "android", "ios")
-TOP_FIELDS = {"schema_version", "logging", "notifications", "defaults", "checkouts", "android_support_path"}
+TOP_FIELDS = {"schema_version", "logging", "notifications", "defaults", "checkouts", "android_support_path",
+              "bravebot_path"}
 LOGGING_FIELDS = {"verbosity"}
 NOTIFICATION_FIELDS = {"policy", "delivery"}
 DEFAULT_FIELDS = {"platform", "android_device"}
@@ -56,6 +57,7 @@ class Config:
     checkouts: list = field(default_factory=list)
 
     android_support_path: Path | None = None
+    bravebot_path: Path | None = None  # validated so bcore accepts it; the bbot launcher reads the file itself
 
     @property
     def directory(self):
@@ -149,6 +151,12 @@ def _validate(path, data):
             raise _invalid(path, "android_support_path", "must be a non-empty directory path")
         support = Path(support).expanduser()
         config.android_support_path = support if support.is_absolute() else path.parent / support
+    bravebot = data.get("bravebot_path")
+    if bravebot is not None:
+        if not isinstance(bravebot, str) or not bravebot:
+            raise _invalid(path, "bravebot_path", "must be a non-empty directory path")
+        bravebot = Path(bravebot).expanduser()
+        config.bravebot_path = bravebot if bravebot.is_absolute() else path.parent / bravebot
     raw = data.get("checkouts", [])
     if not isinstance(raw, list):
         raise _invalid(path, "checkouts", "must be an array of tables", EXAMPLE)
