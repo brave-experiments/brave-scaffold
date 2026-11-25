@@ -117,6 +117,7 @@ During execution, `bcore` shows phases, commands, and live child output. A redac
 | Build and install on the one connected physical Android device | `bcore build-run android --physical` |
 | Build and launch in an iOS Simulator | `bcore build-run ios` |
 | Call a `brave-core` package script with the checkout's own tools | `bpm run <script>` |
+| Build and run a local [bravebot](https://github.com/brave/bravebot) checkout | `bbot build`, then `bbot` ([guide](docs/bravebot.md)) |
 
 `doctor` reports problems and suggested fixes without installing or repairing anything; its RBE checks do not test VPN or service connectivity. `cd` needs the optional [shell helper](docs/getting-started.md#install) to change directories; without it, it prints the path. Saved outcomes in `status` are history, not proof that your current source passes tests.
 
@@ -207,6 +208,7 @@ Fresh checkout creation is not supported. `bcore capabilities` lists the full st
 | Configure checkouts and environments | [Configuration and environments](docs/configuration-and-environments.md) |
 | Look up commands, options, results, exit codes | [Commands](docs/commands.md) |
 | Diagnose a failure | [Troubleshooting](docs/troubleshooting.md) |
+| Build and run bravebot | [bravebot](docs/bravebot.md) |
 | Change or extend the tools | [Development](docs/development.md) |
 
 ## FAQ

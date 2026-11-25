@@ -7,6 +7,7 @@
 ```text
 scripts/
   bcore, bpm, sync-support-repos  launchers (POSIX sh); resolve their own installation
+  bbot                      bravebot launcher (POSIX sh); see docs/bravebot.md
   pyproject.toml            project metadata; no dependencies
   .venv/                    scaffold runtime (ignored)
   schemas/                  versioned JSON schemas for results
