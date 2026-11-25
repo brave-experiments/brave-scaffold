@@ -44,6 +44,7 @@ delivery = "bell"
 | `checkouts[].core` | Path to the checkout's `src/brave` directory: absolute, starting with `~`, or relative to the configuration file. | required |
 | `checkouts[].alias` | Optional name, usable with `--checkout`. It does not make a default checkout. | none |
 | `checkouts[].direnv_dir` | Directory holding the checkout's `.envrc`. Relative paths resolve beside the configuration file. | set by `env init` |
+| `bravebot_path` | The bravebot checkout `bbot` builds ([bravebot](bravebot.md)): absolute, starting with `~`, or relative to the configuration file. | `bravebot` beside the scaffold's `scripts/` |
 
 Unknown fields, wrong types, and duplicate aliases, Core paths, or environment directories are rejected with the offending field and a valid example.
 

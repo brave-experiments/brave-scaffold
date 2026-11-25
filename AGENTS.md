@@ -22,6 +22,8 @@ test, run, and related inspection. It is not the general entry point for Brave
 developer tooling. A feature belongs here because it operates on a Core checkout,
 not merely because Core developers use it.
 
+`bbot` builds and runs a local [bravebot](https://github.com/brave/bravebot) checkout. It is a separate launcher with its own scope: it shares the scaffold's layout and local configuration, not `bcore`'s commands or records.
+
 Brave Scaffold is entirely supplementary to Brave Core and optional to use.
 Adopting or using it must require no changes to Brave Core. Preserve Core's
 supported standalone workflow. State this clearly in the README and setup guides;

@@ -11,12 +11,14 @@ __pycache__/
 /brave-scaffold.toml
 /environments/
 /.bcore/
+/.bbot/
 /.cache/
 /.worktrees/
 /.claude/settings.local.json
 
 # Local repositories
 /brave-browser*/
+/bravebot/
 /support/
 /bot/
 
