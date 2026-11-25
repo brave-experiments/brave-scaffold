@@ -6,7 +6,7 @@ do not infer missing requirements from an unrelated repository.
 ## Naming and attribution
 
 Use names that describe the work. Do not include an agent, model, or tool name as
-an authorship marker in branches, worktrees, commits, pull requests, code,
+an authorship marker in branches, commits, pull requests, code,
 comments, files, or documentation. Use branch names such as `add-checkout-context`
 or `fix-command-logging`, without an agent-name prefix.
 
@@ -138,6 +138,8 @@ Conventional Commits: `type(optional-scope): description`, for example
 `docs: explain setup`. Use `!` or a `BREAKING CHANGE:` footer for breaking changes.
 Describe what changed and why in plain words. The required unsigned marker is
 the sole prefix exception: `🚧 docs: explain setup`.
+
+Work in this repository's own checkout. Do not create Git worktrees (`git worktree add`) for it, including temporary ones: switch branches in place, after committing or stashing local work. Work left in a linked worktree is easy to lose and hides which branch the checkout is on.
 
 At the end of every turn that changes files, commit that turn's validated change as a
 Conventional Commit, staging only its files. Also commit at logical breakpoints within a turn. Do not amend, rebase, or rewrite existing commits without a request.
