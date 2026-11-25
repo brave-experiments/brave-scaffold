@@ -13,7 +13,6 @@ __pycache__/
 /.bcore/
 /.bbot/
 /.cache/
-/.worktrees/
 /.claude/settings.local.json
 
 # Local repositories
