@@ -135,6 +135,12 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(config.android_support_path, self.path.parent / "dependencies/android")
         self.fails('schema_version = 1\nandroid_support_path = 5\n', "android_support_path")
 
+    def test_bravebot_location_is_optional_and_relative_to_config(self):
+        self.assertIsNone(self.load('schema_version = 1\n').bravebot_path)
+        config = self.load('schema_version = 1\nbravebot_path = "bravebot"\n')
+        self.assertEqual(config.bravebot_path, self.path.parent / "bravebot")
+        self.fails('schema_version = 1\nbravebot_path = ""\n', "bravebot_path")
+
     def test_default_android_device_is_validated(self):
         config = self.load('schema_version = 1\n[defaults]\nandroid_device = "emulator-5554"\n')
         self.assertEqual(config.default_android_device, "emulator-5554")
